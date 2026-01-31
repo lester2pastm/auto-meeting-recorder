@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -17,9 +17,23 @@ if (!fs.existsSync(AUDIO_DIR)) {
 let mainWindow;
 
 function createWindow() {
+  // 获取主屏幕尺寸
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  
+  // 计算窗口尺寸为屏幕的70%，保持宽高比
+  const targetWidth = Math.round(screenWidth * 0.7);
+  const targetHeight = Math.round(targetWidth * 900 / 1400); // 保持原宽高比 1400:900
+  
+  // 计算居中位置
+  const x = Math.round((screenWidth - targetWidth) / 2);
+  const y = Math.round((screenHeight - targetHeight) / 2);
+  
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: targetWidth,
+    height: targetHeight,
+    x: x,
+    y: y,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
