@@ -126,10 +126,46 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    position: sticky;
+    position: relative;
     top: 0;
     z-index: 100;
     box-shadow: var(--card-shadow);
+}
+
+/* 语言切换按钮 */
+.lang-toggle {
+    position: absolute;
+    right: 24px;
+    width: 48px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+    user-select: none;
+    -webkit-user-select: none;
+    z-index: 1010;
+}
+
+.lang-toggle:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.lang-toggle:active {
+    transform: scale(0.95);
+}
+
+.lang-toggle .lang-text {
+    pointer-events: none;
 }
 
 .top-header .logo {
@@ -214,7 +250,13 @@ body {
     grid-area: main;
     padding: 24px;
     overflow-y: auto;
+    overflow-x: hidden;
     max-height: calc(100vh - 70px);
+}
+
+/* 隐藏 body 和 html 的滚动条，只保留主内容区的滚动条 */
+html, body {
+    overflow: hidden;
 }
 
 /* 视图切换 */
@@ -1033,11 +1075,13 @@ section.hidden {
     display: flex;
     align-items: center;
     gap: 10px;
+    pointer-events: none;
 }
 
 .toast.show {
     opacity: 1;
     transform: translateY(0);
+    pointer-events: auto;
 }
 
 .toast.success {

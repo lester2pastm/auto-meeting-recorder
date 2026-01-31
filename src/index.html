@@ -27,8 +27,12 @@
                         <line x1="12" y1="19" x2="12" y2="22"/>
                     </svg>
                 </div>
-                <h1>自动会议纪要</h1>
+                <h1 data-i18n="appTitle">自动会议纪要</h1>
             </div>
+            <!-- 语言切换按钮 -->
+            <button id="langToggle" class="lang-toggle" title="切换语言">
+                <span class="lang-text">EN</span>
+            </button>
         </header>
 
         <!-- 侧边栏导航 -->
@@ -39,21 +43,21 @@
                         <circle cx="12" cy="12" r="10"/>
                         <circle cx="12" cy="12" r="4" fill="currentColor"/>
                     </svg>
-                    <span>录音</span>
+                    <span data-i18n="navRecorder">录音</span>
                 </button>
                 <button class="nav-item" data-view="history">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
                         <polyline points="12 6 12 12 16 14"/>
                     </svg>
-                    <span>历史</span>
+                    <span data-i18n="navHistory">历史</span>
                 </button>
                 <button class="nav-item" data-view="settings">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"/>
                         <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.24-4.24l-4.24 4.24M6.34 6.34l-4.24-4.24"/>
                     </svg>
-                    <span>设置</span>
+                    <span data-i18n="navSettings">设置</span>
                 </button>
             </nav>
         </aside>
@@ -84,7 +88,7 @@
                         </div>
                         <div class="recording-indicator" id="recordingIndicator">
                             <div class="pulse-dot"></div>
-                            <span>录音中</span>
+                            <span data-i18n="recordingStatus">录音中</span>
                         </div>
                     </div>
                     
@@ -96,26 +100,26 @@
                                 <circle cx="12" cy="12" r="10"/>
                                 <circle cx="12" cy="12" r="4" fill="currentColor"/>
                             </svg>
-                            <span>开始录音</span>
+                            <span data-i18n="startRecording">开始录音</span>
                         </button>
                         <button id="btnPauseRecording" class="control-btn secondary" style="display: none;">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="6" y="4" width="4" height="16" rx="1"/>
                                 <rect x="14" y="4" width="4" height="16" rx="1"/>
                             </svg>
-                            <span>暂停</span>
+                            <span data-i18n="pause">暂停</span>
                         </button>
                         <button id="btnResumeRecording" class="control-btn secondary" style="display: none;">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/>
                             </svg>
-                            <span>继续</span>
+                            <span data-i18n="resume">继续</span>
                         </button>
                         <button id="btnStopRecording" class="control-btn danger" style="display: none;">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
                             </svg>
-                            <span>停止</span>
+                            <span data-i18n="stop">停止</span>
                         </button>
                     </div>
                     
@@ -130,7 +134,7 @@
                                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                 </svg>
                             </div>
-                            <h2>实时字幕</h2>
+                            <h2 data-i18n="fullText">会议全文</h2>
                             <button id="btnCopySubtitle" class="icon-btn" title="复制全文">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -145,7 +149,7 @@
                                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                                     <line x1="12" y1="19" x2="12" y2="22"/>
                                 </svg>
-                                <p>开始录音后将显示转写内容</p>
+                                <p data-i18n="emptySubtitleHint">开始录音后将显示转写内容</p>
                             </div>
                         </div>
                     </div>
@@ -161,7 +165,7 @@
                                     <polyline points="10 9 9 9 8 9"/>
                                 </svg>
                             </div>
-                            <h2>会议纪要</h2>
+                            <h2 data-i18n="meetingSummary">会议纪要</h2>
                             <button id="btnCopySummary" class="icon-btn" title="复制纪要">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -178,7 +182,7 @@
                                     <line x1="16" y1="17" x2="8" y2="17"/>
                                     <polyline points="10 9 9 9 8 9"/>
                                 </svg>
-                                <p>录音结束后自动生成会议纪要</p>
+                                <p data-i18n="emptySummaryHint">录音结束后自动生成会议纪要</p>
                             </div>
                         </div>
                     </div>
@@ -188,8 +192,8 @@
             <!-- 历史视图 -->
             <div id="historyView" class="view">
                 <div class="view-header">
-                    <h2>历史记录</h2>
-                    <p>查看和管理之前的会议记录</p>
+                    <h2 data-i18n="historyTitle">历史记录</h2>
+                    <p data-i18n="historyDesc">查看和管理之前的会议记录</p>
                 </div>
                 <div id="historyList" class="history-list"></div>
             </div>
@@ -197,8 +201,8 @@
             <!-- 设置视图 -->
             <div id="settingsView" class="view">
                 <div class="view-header">
-                    <h2>设置</h2>
-                    <p>配置API和模板</p>
+                    <h2 data-i18n="settingsTitle">设置</h2>
+                    <p data-i18n="settingsDesc">配置API和模板</p>
                 </div>
                 <div class="settings-content">
                     <div class="settings-group glass-card">
@@ -209,10 +213,10 @@
                                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                                 </svg>
                             </span>
-                            语音识别API配置
+                            <span data-i18n="sttConfig">语音识别API配置</span>
                         </h3>
                         <div class="form-group">
-                            <label for="sttApiUrl">API地址</label>
+                            <label for="sttApiUrl" data-i18n="apiUrl">API地址</label>
                             <input type="text" id="sttApiUrl" placeholder="https://api.example.com/v1/audio/transcriptions">
                         </div>
                         <div class="form-group">
@@ -220,14 +224,14 @@
                             <input type="password" id="sttApiKey" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx">
                         </div>
                         <div class="form-group">
-                            <label for="sttModel">模型名称</label>
+                            <label for="sttModel" data-i18n="modelName">模型名称</label>
                             <input type="text" id="sttModel" placeholder="whisper-1">
                         </div>
                         <button id="btnTestSttApi" class="action-btn test-btn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="20 6 9 17 4 12"/>
                             </svg>
-                            测试连接
+                            <span data-i18n="testConnection">测试连接</span>
                         </button>
                     </div>
 
@@ -239,10 +243,10 @@
                                     <polyline points="14 2 14 8 20 8"/>
                                 </svg>
                             </span>
-                            纪要生成API配置
+                            <span data-i18n="summaryConfig">纪要生成API配置</span>
                         </h3>
                         <div class="form-group">
-                            <label for="summaryApiUrl">API地址</label>
+                            <label for="summaryApiUrl" data-i18n="apiUrl">API地址</label>
                             <input type="text" id="summaryApiUrl" placeholder="https://api.example.com/v1/chat/completions">
                         </div>
                         <div class="form-group">
@@ -250,14 +254,14 @@
                             <input type="password" id="summaryApiKey" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx">
                         </div>
                         <div class="form-group">
-                            <label for="summaryModel">模型名称</label>
+                            <label for="summaryModel" data-i18n="modelName">模型名称</label>
                             <input type="text" id="summaryModel" placeholder="gpt-3.5-turbo">
                         </div>
                         <button id="btnTestSummaryApi" class="action-btn test-btn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="20 6 9 17 4 12"/>
                             </svg>
-                            测试连接
+                            <span data-i18n="testConnection">测试连接</span>
                         </button>
                     </div>
 
@@ -270,10 +274,10 @@
                                     <line x1="9" y1="15" x2="15" y2="15"/>
                                 </svg>
                             </span>
-                            纪要模板配置
+                            <span data-i18n="templateConfig">纪要模板配置</span>
                         </h3>
                         <div class="form-group">
-                            <label for="summaryTemplate">纪要模板（Markdown格式）</label>
+                            <label for="summaryTemplate" data-i18n="templateLabel">纪要模板（Markdown格式）</label>
                             <textarea id="summaryTemplate" rows="15"></textarea>
                         </div>
                         <button id="btnSaveTemplate" class="action-btn save-btn">
@@ -282,7 +286,7 @@
                                 <polyline points="17 21 17 13 7 13 7 21"/>
                                 <polyline points="7 3 7 8 15 8"/>
                             </svg>
-                            保存模板
+                            <span data-i18n="saveTemplate">保存模板</span>
                         </button>
                     </div>
                 </div>
@@ -293,6 +297,7 @@
         <div id="toast" class="toast"></div>
     </div>
 
+    <script src="js/i18n.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/recorder.js"></script>
     <script src="js/api.js"></script>

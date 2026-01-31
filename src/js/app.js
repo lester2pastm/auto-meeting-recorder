@@ -5,6 +5,11 @@ async function initApp() {
     try {
         await initDB();
         
+        // 初始化国际化
+        if (typeof i18n !== 'undefined') {
+            i18n.init();
+        }
+        
         // 优先从文件系统加载配置（Electron 环境）
         if (typeof window !== 'undefined' && window.electronAPI) {
             const fileConfig = await loadConfigFromFile();
@@ -45,10 +50,10 @@ async function initApp() {
         
         setupEventListeners();
         
-        showToast('应用初始化成功', 'success');
+        showToast(i18n ? i18n.get('initSuccess') : '应用初始化成功', 'success');
     } catch (error) {
         console.error('Failed to initialize app:', error);
-        showToast('应用初始化失败', 'error');
+        showToast(i18n ? i18n.get('initFailed') : '应用初始化失败', 'error');
     }
 }
 

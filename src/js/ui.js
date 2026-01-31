@@ -92,6 +92,7 @@ function updateSubtitleContent(text) {
         if (text && text.trim()) {
             subtitleContent.textContent = text;
         } else {
+            const emptyHint = i18n ? i18n.get('emptySubtitleHint') : '开始录音后将显示转写内容';
             subtitleContent.innerHTML = `
                 <div class="empty-state">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -99,7 +100,7 @@ function updateSubtitleContent(text) {
                         <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                         <line x1="12" y1="19" x2="12" y2="22"/>
                     </svg>
-                    <p>暂无转写内容</p>
+                    <p>${emptyHint}</p>
                 </div>
             `;
         }
@@ -112,6 +113,7 @@ function updateSummaryContent(summary) {
         if (summary && summary.trim()) {
             summaryContent.textContent = summary;
         } else {
+            const emptyHint = i18n ? i18n.get('emptySummaryHint') : '录音结束后自动生成会议纪要';
             summaryContent.innerHTML = `
                 <div class="empty-state">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -121,7 +123,7 @@ function updateSummaryContent(summary) {
                         <line x1="16" y1="17" x2="8" y2="17"/>
                         <polyline points="10 9 9 9 8 9"/>
                     </svg>
-                    <p>暂无会议纪要</p>
+                    <p>${emptyHint}</p>
                 </div>
             `;
         }
@@ -130,9 +132,9 @@ function updateSummaryContent(summary) {
 
 function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
-        showToast('复制成功', 'success');
+        showToast(i18n ? i18n.get('copySuccess') : '复制成功', 'success');
     }).catch(err => {
-        showToast('复制失败', 'error');
+        showToast(i18n ? i18n.get('copyFailed') : '复制失败', 'error');
         console.error('Copy error:', err);
     });
 }
@@ -142,18 +144,21 @@ function renderHistoryList(meetings) {
     if (!historyList) return;
 
     if (meetings.length === 0) {
+        const noRecordsText = i18n ? i18n.get('noRecording') : '暂无历史记录';
         historyList.innerHTML = `
             <div class="empty-state" style="padding: 60px 20px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 64px; height: 64px; margin-bottom: 20px;">
                     <circle cx="12" cy="12" r="10"/>
                     <polyline points="12 6 12 12 16 14"/>
                 </svg>
-                <p style="font-size: 1.1rem;">暂无历史记录</p>
-                <p style="font-size: 0.9rem; margin-top: 8px;">开始录音后会自动保存记录</p>
+                <p style="font-size: 1.1rem;">${noRecordsText}</p>
             </div>
         `;
         return;
     }
+
+    const viewText = i18n ? i18n.get('view') : '查看';
+    const deleteText = i18n ? i18n.get('delete') : '删除';
 
     historyList.innerHTML = meetings.map(meeting => `
         <div class="history-item">
@@ -167,14 +172,14 @@ function renderHistoryList(meetings) {
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                         <circle cx="12" cy="12" r="3"/>
                     </svg>
-                    查看
+                    ${viewText}
                 </button>
                 <button class="delete-btn" onclick="deleteMeeting('${meeting.id}')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                     </svg>
-                    删除
+                    ${deleteText}
                 </button>
             </div>
         </div>
