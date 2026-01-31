@@ -33,3 +33,7 @@ audio_files/
 
 # Config files (user specific)
 config.json
+*.config.json
+.env
+.env.local
+.env.*.local
