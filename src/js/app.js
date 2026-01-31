@@ -5,7 +5,20 @@ async function initApp() {
     try {
         await initDB();
         
-        currentSettings = await getSettings();
+        // 优先从文件系统加载配置（Electron 环境）
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            const fileConfig = await loadConfigFromFile();
+            if (fileConfig.success && fileConfig.config) {
+                currentSettings = fileConfig.config;
+                await saveSettings(currentSettings); // 同步到 IndexedDB
+            } else {
+                // 如果文件系统没有配置，尝试从 IndexedDB 加载
+                currentSettings = await getSettings();
+            }
+        } else {
+            currentSettings = await getSettings();
+        }
+        
         if (!currentSettings) {
             currentSettings = {
                 sttApiUrl: '',
@@ -17,6 +30,11 @@ async function initApp() {
                 summaryTemplate: DEFAULT_TEMPLATE
             };
             await saveSettings(currentSettings);
+            
+            // 同时保存到文件系统
+            if (typeof window !== 'undefined' && window.electronAPI) {
+                await saveConfigToFile(currentSettings);
+            }
         }
         
         loadSettings(currentSettings);
@@ -277,6 +295,12 @@ async function handleSaveTemplate() {
         const settings = getSettingsFromUI();
         await saveSettings(settings);
         currentSettings = settings;
+        
+        // 同时保存到文件系统（Electron 环境）
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            await saveConfigToFile(settings);
+        }
+        
         showToast('模板已保存', 'success');
     } catch (error) {
         console.error('Failed to save template:', error);
@@ -289,7 +313,7 @@ async function viewMeetingDetail(id) {
         const meeting = await getMeeting(id);
         if (meeting) {
             currentMeetingId = id;
-            renderMeetingDetail(meeting);
+            await renderMeetingDetail(meeting);
             showSection('detailSection');
         } else {
             showToast('未找到会议记录', 'error');

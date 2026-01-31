@@ -47,74 +47,88 @@ async function startRecording() {
             });
         });
 
-        // 获取系统音频（通过屏幕分享）
-        console.log('正在请求屏幕分享以获取系统音频...');
-        console.log('提示: 请在弹出的对话框中选择"整个屏幕"或"标签页"，并勾选"分享音频"选项');
+        // 获取系统音频（通过 Electron desktopCapturer）
+        console.log('正在通过 Electron 获取系统音频...');
         
-        let displayStream;
+        let systemAudioStream;
         try {
-            displayStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false
+            // 检查是否在 Electron 环境中
+            if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
+                // Electron 环境：使用 desktopCapturer
+                console.log('检测到 Electron 环境，使用 desktopCapturer');
+                const result = await window.electronAPI.getDesktopCapturerSources();
+                
+                if (!result.success) {
+                    throw new Error('获取屏幕分享源失败: ' + result.error);
                 }
-            });
+                
+                const sources = result.sources;
+                console.log('获取到屏幕分享源数量:', sources.length);
+                
+                if (sources.length === 0) {
+                    throw new Error('没有可用的屏幕分享源');
+                }
+                
+                // 选择第一个屏幕源（通常是整个屏幕）
+                const screenSource = sources.find(s => s.name === 'Entire screen') || sources[0];
+                console.log('选择的屏幕源:', screenSource.name, 'ID:', screenSource.id);
+                
+                // 使用 getUserMedia 配合 chromeMediaSource 获取系统音频
+                systemAudioStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: screenSource.id
+                        }
+                    },
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: screenSource.id
+                        }
+                    }
+                });
+                
+                console.log('系统音频流获取成功（Electron 方式）');
+            } else {
+                // 浏览器环境：使用 getDisplayMedia
+                console.log('检测到浏览器环境，使用 getDisplayMedia');
+                console.log('提示: 请在弹出的对话框中选择"整个屏幕"或"标签页"，并勾选"分享音频"选项');
+                
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+                
+                console.log('屏幕分享获取成功');
+                
+                const systemAudioTrack = displayStream.getAudioTracks()[0];
+                if (!systemAudioTrack) {
+                    console.error('错误: 未获取到系统音频轨道');
+                    displayStream.getTracks().forEach(track => track.stop());
+                    throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
+                }
+                
+                // 停止视频轨道，只保留音频
+                displayStream.getVideoTracks().forEach(track => track.stop());
+                
+                // 创建系统音频流（只包含音频轨道）
+                systemAudioStream = new MediaStream([systemAudioTrack]);
+                console.log('系统音频流创建成功（浏览器方式）');
+            }
         } catch (err) {
-            console.error('getDisplayMedia 失败:', err.name, err.message);
-            throw new Error('用户取消了屏幕分享或浏览器不支持: ' + err.message);
+            console.error('获取系统音频失败:', err.name, err.message);
+            throw new Error('获取系统音频失败: ' + err.message);
         }
         
-        console.log('屏幕分享获取成功');
-        console.log('DisplayStream 轨道信息:');
-        console.log('  视频轨道数:', displayStream.getVideoTracks().length);
-        console.log('  音频轨道数:', displayStream.getAudioTracks().length);
-        
-        displayStream.getTracks().forEach((track, i) => {
-            console.log(`  轨道[${i}]:`, {
-                kind: track.kind,
-                label: track.label,
-                enabled: track.enabled,
-                muted: track.muted,
-                readyState: track.readyState
-            });
+        console.log('系统音频流状态:', {
+            active: systemAudioStream.active,
+            audioTracks: systemAudioStream.getAudioTracks().length
         });
-
-        const systemAudioTrack = displayStream.getAudioTracks()[0];
-        if (!systemAudioTrack) {
-            console.error('错误: 未获取到系统音频轨道');
-            displayStream.getTracks().forEach(track => track.stop());
-            throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
-        }
-
-        console.log('系统音频轨道获取成功:', {
-            label: systemAudioTrack.label,
-            enabled: systemAudioTrack.enabled,
-            muted: systemAudioTrack.muted
-        });
-
-        // 监听音频轨道状态变化
-        systemAudioTrack.onended = () => {
-            console.log('系统音频轨道已结束 (onended)');
-        };
-        systemAudioTrack.onmute = () => {
-            console.log('系统音频轨道已静音 (onmute)');
-        };
-        systemAudioTrack.onunmute = () => {
-            console.log('系统音频轨道已取消静音 (onunmute)');
-        };
-
-        // 关键修复：不要停止 displayStream 的音频轨道，只停止视频轨道
-        // 因为 systemAudioTrack 是从 displayStream 来的，停止它会丢失音频
-        displayStream.getVideoTracks().forEach(track => {
-            console.log('停止视频轨道:', track.label);
-            track.stop();
-        });
-        
-        // 创建系统音频流（只包含音频轨道）
-        systemAudioStream = new MediaStream([systemAudioTrack]);
-        console.log('系统音频流创建成功');
 
         // 测试系统音频流是否活跃
         console.log('系统音频流状态:', {

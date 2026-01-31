@@ -1,130 +1,184 @@
-# 自动会议纪要Web应用
+# Auto Meeting Recorder
 
-一个基于浏览器的自动会议纪要生成应用，支持会议语音录制、语音转文字、文字转纪要的全流程自动化。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 功能特性
+A cross-platform desktop application for automatic meeting minutes generation. It supports meeting audio recording, speech-to-text transcription, and AI-powered meeting summary generation.
 
-- 会议语音录制（开始/暂停/停止）
-- 语音转文字（支持兼容OpenAI格式的API）
-- 自动生成会议纪要
-- 历史记录管理
-- API配置和测试
-- 纪要模板自定义
-- 本地数据存储（IndexedDB）
+[中文文档](README_CN.md)
 
-## 快速开始
+## Features
 
-### 环境要求
+- **Audio Recording**: Record meeting audio with support for microphone and system audio
+- **Speech-to-Text**: Transcribe audio to text using OpenAI-compatible APIs (Whisper)
+- **AI Summary Generation**: Automatically generate meeting minutes using LLM APIs
+- **History Management**: Save and manage all meeting records locally
+- **Customizable Templates**: Customize meeting minutes templates with Markdown
+- **Cross-Platform**: Works on Windows, macOS, and Linux
+- **Privacy-First**: All data stored locally, no cloud dependency
 
-- 现代浏览器（Chrome、Firefox、Edge）
-- 无需安装任何依赖
+## Screenshots
 
-### 使用方法
+*Screenshots will be added soon*
 
-1. 直接用浏览器打开 `index.html` 文件
-2. 首次使用需要配置API
-3. 点击"设置"按钮进入设置页面
-4. 配置语音识别API和纪要生成API
-5. 返回主页面，点击"开始录音"开始录制会议
+## Quick Start
 
-## API配置
+### Prerequisites
 
-### 语音识别API
+- Node.js 16+ (for development)
+- Modern browser (Chrome, Firefox, Edge) for web version
+- API keys for speech recognition and summary generation
 
-需要配置兼容OpenAI Whisper格式的API：
+### Installation
 
-- API地址：例如 `https://api.openai.com/v1/audio/transcriptions`
-- API Key：你的API密钥
-- 模型名称：例如 `whisper-1`、`whisper-large-v3` 等
+#### Desktop App (Electron)
 
-### 纪要生成API
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/auto-meeting-recorder.git
+cd auto-meeting-recorder
+```
 
-需要配置兼容OpenAI Chat格式的API：
+2. Install dependencies:
+```bash
+npm install
+```
 
-- API地址：例如 `https://api.openai.com/v1/chat/completions`
-- API Key：你的API密钥
-- 模型名称：例如 `gpt-3.5-turbo`、`gpt-4` 等
+3. Run the app:
+```bash
+npm run dev
+```
 
-### 纪要模板
+4. Build for production:
+```bash
+# Windows
+npm run build:win
 
-使用Markdown格式自定义纪要模板，默认模板包含以下部分：
+# macOS
+npm run build:mac
 
-- 会议概述
-- 主要议题
-- 讨论要点
-- 决策事项
-- 待办事项
-- 其他事项
+# Linux
+npm run build:linux
+```
 
-## 使用流程
+#### Web Version
 
-1. 配置API（首次使用）
-2. 点击"开始录音"
-3. 录音过程中可以暂停/继续
-4. 点击"停止录音"结束录制
-5. 系统自动进行语音转文字
-6. 系统自动生成会议纪要
-7. 可以复制字幕和纪要内容
-8. 记录自动保存到历史记录
+Simply open `src/index.html` in your browser.
 
-## 历史记录
+## API Configuration
 
-- 点击"历史"按钮查看所有会议记录
-- 点击"查看"查看会议详情
-- 点击"删除"删除会议记录
-- 支持播放录音、下载录音
-- 支持复制转写文本和纪要
+The app requires API keys for speech recognition and meeting summary generation.
 
-## 数据存储
+### Speech-to-Text API
 
-所有数据存储在浏览器的IndexedDB中，包括：
+Compatible with OpenAI Whisper API format:
 
-- 录音文件
-- 转写文本
-- 会议纪要
-- API配置
+- **API URL**: e.g., `https://api.openai.com/v1/audio/transcriptions`
+- **API Key**: Your API key
+- **Model**: e.g., `whisper-1`, `whisper-large-v3`
 
-## 浏览器兼容性
+Supported providers:
+- OpenAI
+- Alibaba Cloud (Bailian/DashScope)
+- SiliconFlow
+- Other OpenAI-compatible services
+
+### Summary Generation API
+
+Compatible with OpenAI Chat API format:
+
+- **API URL**: e.g., `https://api.openai.com/v1/chat/completions`
+- **API Key**: Your API key
+- **Model**: e.g., `gpt-3.5-turbo`, `gpt-4`, `claude-3`
+
+### Meeting Minutes Template
+
+Customize the template using Markdown. Default template includes:
+
+- Meeting Overview
+- Main Topics
+- Discussion Points
+- Decisions
+- Action Items
+- Other Notes
+
+## Usage
+
+1. **First Time Setup**: Configure API settings in the Settings page
+2. **Start Recording**: Click "Start Recording" to begin capturing audio
+3. **Pause/Resume**: Use pause button during breaks
+4. **Stop Recording**: Click "Stop" to finish recording
+5. **Generate Minutes**: The app will automatically transcribe and generate meeting minutes
+6. **View History**: Access all past meetings in the History page
+
+## Project Structure
+
+```
+auto-meeting-recorder/
+├── electron/           # Electron main process
+│   ├── main.js        # Main entry
+│   └── preload.js     # Preload script
+├── src/               # Application source
+│   ├── css/           # Stylesheets
+│   ├── js/            # JavaScript modules
+│   │   ├── app.js     # Main application logic
+│   │   ├── api.js     # API integrations
+│   │   ├── recorder.js # Audio recording
+│   │   ├── storage.js # Data persistence
+│   │   └── ui.js      # UI interactions
+│   └── index.html     # Main HTML
+├── docs/              # Documentation
+├── package.json       # Project config
+└── README.md          # This file
+```
+
+## Browser Compatibility
 
 - Chrome 90+
 - Firefox 88+
 - Edge 90+
 
-## 注意事项
+## Data Storage
 
-1. 首次使用需要授予麦克风权限
-2. 需要有效的API Key才能使用语音识别和纪要生成功能
-3. 录音文件和转写文本会上传到API服务器
-4. 数据存储在本地，清除浏览器数据会丢失所有记录
+All data is stored locally:
 
-## 项目结构
+- **Desktop**: Electron store + IndexedDB
+- **Web**: Browser IndexedDB
 
-```
-自动会议纪要web应用/
-├── index.html          # 主页面
-├── css/
-│   └── style.css      # 样式文件
-├── js/
-│   ├── app.js         # 主应用逻辑
-│   ├── recorder.js    # 录音功能
-│   ├── storage.js     # 数据存储
-│   ├── api.js         # API调用
-│   └── ui.js          # UI交互
-├── README.md          # 项目说明
-└── 需求文档.md        # 需求文档
-```
+Data includes:
+- Audio recordings
+- Transcriptions
+- Meeting minutes
+- API settings
 
-## 后续计划
+## Privacy & Security
 
-- 实时字幕（边录音边转写）
-- 多种纪要模板支持
-- 纪要重新生成功能
-- 纪要人工编辑功能
-- 会议信息录入
-- 历史记录搜索
-- 存储空间管理
-- 会议纪要导出
+- All data stored locally on your device
+- API keys are never shared or transmitted except to your configured API endpoints
+- No analytics or telemetry
+- No cloud services required
 
-## 许可证
+## Contributing
 
-MIT License
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Built with [Electron](https://www.electronjs.org/)
+- Speech recognition powered by OpenAI Whisper and compatible APIs
+- Meeting summaries generated by Large Language Models
+
+## Support
+
+If you find this project helpful, please give it a ⭐ on GitHub!
+
+For issues and feature requests, please use the [GitHub Issues](https://github.com/yourusername/auto-meeting-recorder/issues) page.

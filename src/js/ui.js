@@ -191,11 +191,32 @@ function formatDate(dateString) {
     return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-function renderMeetingDetail(meeting) {
+async function renderMeetingDetail(meeting) {
     const detailContent = document.getElementById('detailContent');
     if (!detailContent) return;
 
-    const audioUrl = URL.createObjectURL(meeting.audioFile);
+    // 处理音频文件
+    let audioUrl = '';
+    let hasAudioFile = false;
+    
+    if (meeting.audioFile && meeting.audioFile instanceof Blob) {
+        // 使用内存中的 Blob
+        audioUrl = URL.createObjectURL(meeting.audioFile);
+        hasAudioFile = true;
+    } else if (meeting.audioFilename && typeof window !== 'undefined' && window.electronAPI) {
+        // 从文件系统加载音频
+        try {
+            const result = await getAudioFile(meeting.audioFilename);
+            if (result.success && result.blob) {
+                audioUrl = URL.createObjectURL(result.blob);
+                hasAudioFile = true;
+            }
+        } catch (error) {
+            console.error('Failed to load audio file:', error);
+        }
+    }
+
+    const isElectronEnv = typeof window !== 'undefined' && window.electronAPI;
 
     detailContent.innerHTML = `
         <div class="detail-section">
@@ -226,18 +247,24 @@ function renderMeetingDetail(meeting) {
                 </svg>
                 录音文件
             </h3>
+            ${hasAudioFile ? `
             <audio controls class="audio-player">
                 <source src="${audioUrl}" type="audio/webm">
                 您的浏览器不支持音频播放
             </audio>
-            <button class="action-btn test-btn" onclick="downloadAudio('${meeting.id}')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                下载录音
-            </button>
+            ` : '<p style="color: #888;">音频文件不可用</p>'}
+            <div class="detail-actions">
+                ${isElectronEnv && meeting.audioFilename ? `
+                <button class="action-btn test-btn" id="btnExportAudio_${meeting.id}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    导出音频
+                </button>
+                ` : ''}
+            </div>
         </div>
 
         <div class="detail-section">
@@ -275,6 +302,34 @@ function renderMeetingDetail(meeting) {
             </button>
         </div>
     `;
+
+    // 绑定导出按钮事件
+    if (isElectronEnv && meeting.audioFilename) {
+        const exportBtn = document.getElementById(`btnExportAudio_${meeting.id}`);
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => exportMeetingAudio(meeting));
+        }
+    }
+}
+
+// 导出会议音频
+async function exportMeetingAudio(meeting) {
+    try {
+        if (!meeting.audioFilename) {
+            showToast('没有可导出的音频文件', 'error');
+            return;
+        }
+
+        const result = await exportAudioFile(meeting.audioFilename, meeting.audioFilename);
+        if (result.success) {
+            showToast(`音频已导出到: ${result.filePath}`, 'success');
+        } else {
+            showToast('导出失败: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to export audio:', error);
+        showToast('导出音频失败', 'error');
+    }
 }
 
 function updateRecordingButtons(state) {
