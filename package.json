@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.meetingminutes.app",
-    "productName": "自动会议纪要",
+    "productName": "AutoMeetingRecorder",
     "directories": {
       "output": "dist"
     },
