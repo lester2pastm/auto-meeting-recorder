@@ -1,6 +1,6 @@
 {
   "name": "meeting-minutes-app",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
   "scripts": {
@@ -9,11 +9,24 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "electron": "^28.0.0",
-    "electron-builder": "^24.0.0"
+    "electron-builder": "^24.0.0",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "playwright": "^1.58.1",
+    "serve": "^14.2.5"
   },
   "dependencies": {
     "electron-store": "^8.1.0"

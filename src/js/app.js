@@ -139,6 +139,10 @@ function handleResumeRecording() {
 
 async function handleStopRecording() {
     try {
+        // 在停止前保存时长
+        const currentDuration = getRecordingDuration();
+        setLastRecordingDuration(currentDuration);
+        
         const audioBlob = await stopRecording();
         updateRecordingButtons(getRecordingState());
         
@@ -208,12 +212,19 @@ async function generateMeetingSummary(transcript, audioBlob) {
     }
 }
 
+// 保存最后一次录音时长
+let lastRecordingDuration = '00:00:00';
+
+function setLastRecordingDuration(duration) {
+    lastRecordingDuration = duration;
+}
+
 async function saveMeetingRecord(transcript, summary, audioBlob) {
     try {
         const meeting = {
             id: Date.now().toString(),
-            date: new Date().toISOString().split('T')[0],
-            duration: getRecordingDuration(),
+            date: new Date().toISOString(),
+            duration: lastRecordingDuration,
             audioFile: audioBlob,
             transcript: transcript,
             summary: summary
@@ -319,7 +330,7 @@ async function viewMeetingDetail(id) {
         if (meeting) {
             currentMeetingId = id;
             await renderMeetingDetail(meeting);
-            showSection('detailSection');
+            openDetailModal();
         } else {
             showToast('未找到会议记录', 'error');
         }
@@ -329,7 +340,23 @@ async function viewMeetingDetail(id) {
     }
 }
 
-async function deleteMeeting(id) {
+function openDetailModal() {
+    const modal = document.getElementById('detailModal');
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeDetailModal() {
+    const modal = document.getElementById('detailModal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+async function handleDeleteMeeting(id) {
     if (!confirm('确定要删除这条会议记录吗？')) {
         return;
     }

@@ -331,6 +331,23 @@
     <!-- Toast 通知 -->
     <div id="toast" class="toast"></div>
 
+    <!-- 会议详情弹窗 -->
+    <div id="detailModal" class="modal">
+        <div class="modal-overlay" onclick="closeDetailModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="meetingDetail">会议详情</h2>
+                <button class="modal-close" onclick="closeDetailModal()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="detailContent" class="modal-body"></div>
+        </div>
+    </div>
+
     <script src="js/i18n.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/recorder.js"></script>

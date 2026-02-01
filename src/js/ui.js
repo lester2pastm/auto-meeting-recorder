@@ -188,7 +188,7 @@ function renderHistoryList(meetings) {
                     </svg>
                     ${viewText}
                 </button>
-                <button class="btn btn-danger" onclick="deleteMeeting('${meeting.id}')">
+                <button class="btn btn-danger" onclick="handleDeleteMeeting('${meeting.id}')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -201,7 +201,10 @@ function renderHistoryList(meetings) {
 }
 
 function formatDate(dateString) {
+    if (!dateString) return '';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
