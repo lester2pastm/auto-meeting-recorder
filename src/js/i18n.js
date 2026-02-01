@@ -7,6 +7,8 @@ const i18n = {
     translations: {
         zh: {
             appTitle: '自动会议纪要',
+            appSubtitle: '实时语音转写，智能生成会议纪要',
+            brandName: '会议纪要',
             navRecorder: '录音',
             navHistory: '历史',
             navSettings: '设置',
@@ -53,6 +55,8 @@ const i18n = {
         },
         en: {
             appTitle: 'Auto Meeting Minutes',
+            appSubtitle: 'Real-time transcription, intelligent meeting summaries',
+            brandName: 'Meeting Minutes',
             navRecorder: 'Record',
             navHistory: 'History',
             navSettings: 'Settings',
@@ -144,8 +148,8 @@ const i18n = {
         const elements = document.querySelectorAll('[data-i18n]');
         elements.forEach(el => {
             const key = el.getAttribute('data-i18n');
-            const translation = this.t(this.currentLang, key);
-            if (translation) {
+            const translation = this.get(key);
+            if (translation && translation !== key) {
                 // 如果是 input 或 textarea，更新 placeholder
                 if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
                     el.placeholder = translation;
@@ -154,10 +158,10 @@ const i18n = {
                 }
             }
         });
-        
+
         // 更新页面标题
-        document.title = this.t(this.currentLang, 'appTitle');
-        
+        document.title = this.get('appTitle');
+
         // 更新 html lang 属性
         document.documentElement.lang = this.currentLang === 'zh' ? 'zh-CN' : 'en';
     },
