@@ -90,16 +90,18 @@ function updateSubtitleContent(text) {
     const subtitleContent = document.getElementById('subtitleContent');
     if (subtitleContent) {
         if (text && text.trim()) {
-            subtitleContent.textContent = text;
+            subtitleContent.innerHTML = `<div class="content-text">${escapeHtml(text)}</div>`;
         } else {
             const emptyHint = i18n ? i18n.get('emptySubtitleHint') : '开始录音后将显示转写内容';
             subtitleContent.innerHTML = `
                 <div class="empty-state">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                        <line x1="12" y1="19" x2="12" y2="22"/>
-                    </svg>
+                    <div class="empty-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="22"/>
+                        </svg>
+                    </div>
                     <p>${emptyHint}</p>
                 </div>
             `;
@@ -107,22 +109,30 @@ function updateSubtitleContent(text) {
     }
 }
 
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 function updateSummaryContent(summary) {
     const summaryContent = document.getElementById('summaryContent');
     if (summaryContent) {
         if (summary && summary.trim()) {
-            summaryContent.textContent = summary;
+            summaryContent.innerHTML = `<div class="content-text">${escapeHtml(summary)}</div>`;
         } else {
             const emptyHint = i18n ? i18n.get('emptySummaryHint') : '录音结束后自动生成会议纪要';
             summaryContent.innerHTML = `
                 <div class="empty-state">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                        <line x1="16" y1="13" x2="8" y2="13"/>
-                        <line x1="16" y1="17" x2="8" y2="17"/>
-                        <polyline points="10 9 9 9 8 9"/>
-                    </svg>
+                    <div class="empty-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                            <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                    </div>
                     <p>${emptyHint}</p>
                 </div>
             `;
@@ -146,12 +156,14 @@ function renderHistoryList(meetings) {
     if (meetings.length === 0) {
         const noRecordsText = i18n ? i18n.get('noRecording') : '暂无历史记录';
         historyList.innerHTML = `
-            <div class="empty-state" style="padding: 60px 20px;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 64px; height: 64px; margin-bottom: 20px;">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
-                </svg>
-                <p style="font-size: 1.1rem;">${noRecordsText}</p>
+            <div class="empty-state" style="padding: 80px 20px;">
+                <div class="empty-icon" style="width: 64px; height: 64px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                </div>
+                <p>${noRecordsText}</p>
             </div>
         `;
         return;
@@ -164,18 +176,20 @@ function renderHistoryList(meetings) {
         <div class="history-item">
             <div class="history-item-info">
                 <div class="history-item-date">${formatDate(meeting.date)}</div>
-                <div class="history-item-duration">${meeting.duration}</div>
+                <div class="history-item-meta">
+                    <span class="history-item-duration">${meeting.duration}</span>
+                </div>
             </div>
             <div class="history-item-actions">
-                <button class="view-btn" onclick="viewMeetingDetail('${meeting.id}')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+                <button class="btn btn-outline" onclick="viewMeetingDetail('${meeting.id}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                         <circle cx="12" cy="12" r="3"/>
                     </svg>
                     ${viewText}
                 </button>
-                <button class="delete-btn" onclick="deleteMeeting('${meeting.id}')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+                <button class="btn btn-danger" onclick="deleteMeeting('${meeting.id}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                     </svg>
@@ -344,7 +358,6 @@ function updateRecordingButtons(state) {
     const btnStop = document.getElementById('btnStopRecording');
     const audioBars = document.getElementById('audioBars');
     const recordingIndicator = document.getElementById('recordingIndicator');
-    const recorderCard = document.querySelector('.recorder-card');
 
     if (state.isRecording) {
         btnStart.style.display = 'none';
@@ -352,25 +365,19 @@ function updateRecordingButtons(state) {
             btnPause.style.display = 'none';
             btnResume.style.display = 'inline-flex';
             btnStop.style.display = 'inline-flex';
-            audioBars.classList.remove('active');
             recordingIndicator.classList.remove('active');
-            recorderCard.classList.remove('recording');
         } else {
             btnPause.style.display = 'inline-flex';
             btnResume.style.display = 'none';
             btnStop.style.display = 'inline-flex';
-            audioBars.classList.add('active');
             recordingIndicator.classList.add('active');
-            recorderCard.classList.add('recording');
         }
     } else {
         btnStart.style.display = 'inline-flex';
         btnPause.style.display = 'none';
         btnResume.style.display = 'none';
         btnStop.style.display = 'none';
-        audioBars.classList.remove('active');
         recordingIndicator.classList.remove('active');
-        recorderCard.classList.remove('recording');
     }
 }
 
