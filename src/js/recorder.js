@@ -250,6 +250,8 @@ function resumeRecording() {
         isPaused = false;
         recordingPausedTime += Date.now() - pauseStartTime;
         startTimer();
+        // 重启波形动画
+        drawWaveform();
     }
 }
 
