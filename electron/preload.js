@@ -16,4 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 屏幕分享源获取（用于系统音频录制）
   getDesktopCapturerSources: () => ipcRenderer.invoke('get-desktop-capturer-sources'),
+
+  // Linux 依赖警告相关
+  dismissLinuxDependencyWarning: () => ipcRenderer.invoke('dismiss-linux-dependency-warning'),
+  onLinuxDependencyMissing: (callback) => ipcRenderer.on('linux-dependency-missing', (event, data) => callback(data)),
 });

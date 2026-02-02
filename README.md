@@ -1,7 +1,7 @@
 # Auto Meeting Recorder
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.3-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -135,9 +135,29 @@
 
 | Platform | Download |
 |----------|----------|
-| Windows | [AutoMeetingRecorder-1.2.0-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-1.2.0-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-1.2.0-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Windows | [AutoMeetingRecorder-1.2.3-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| macOS | [AutoMeetingRecorder-1.2.3-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Linux | [AutoMeetingRecorder-1.2.3-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+
+**Linux System Dependencies**
+
+To use system audio recording on Linux, you need to install the following dependencies:
+
+```bash
+# Ubuntu/Debian (X11 desktop environment)
+sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk
+
+# Ubuntu/Debian (Wayland desktop environment)
+sudo apt install xdg-desktop-portal xdg-desktop-portal-wlr
+
+# Fedora
+sudo dnf install xdg-desktop-portal xdg-desktop-portal-gtk
+
+# Arch Linux
+sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk
+```
+
+> **Note**: If these dependencies are not installed, the app can still record microphone audio, but system audio recording will not be available.
 
 **Build from Source**
 

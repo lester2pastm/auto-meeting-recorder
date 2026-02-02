@@ -51,7 +51,16 @@ const i18n = {
             testFailed: '连接失败',
             noRecording: '暂无录音数据',
             generatingSummary: '正在生成会议纪要...',
-            summaryGenerated: '会议纪要已生成'
+            summaryGenerated: '会议纪要已生成',
+            linuxDependencyTitle: 'Linux 系统依赖提示',
+            linuxDependencyMessage1: '检测到您的系统缺少屏幕录制所需的依赖包。',
+            linuxDependencyMessage2: '应用可以正常使用麦克风录制，但无法录制系统音频。',
+            linuxDependencyInstallCmd: '安装命令',
+            copy: '复制',
+            dismissLater: '稍后再说',
+            doNotShowAgain: '不再提示',
+            copiedToClipboard: '已复制到剪贴板',
+            copyFailed: '复制失败'
         },
         en: {
             appTitle: 'Auto Meeting Minutes',
@@ -99,7 +108,16 @@ const i18n = {
             testFailed: 'Connection failed',
             noRecording: 'No recording data available',
             generatingSummary: 'Generating meeting summary...',
-            summaryGenerated: 'Meeting summary generated'
+            summaryGenerated: 'Meeting summary generated',
+            linuxDependencyTitle: 'Linux System Dependency',
+            linuxDependencyMessage1: 'Your system is missing required dependencies for screen recording.',
+            linuxDependencyMessage2: 'The app can still record microphone audio, but system audio recording is not available.',
+            linuxDependencyInstallCmd: 'Install Command',
+            copy: 'Copy',
+            dismissLater: 'Later',
+            doNotShowAgain: 'Don\'t show again',
+            copiedToClipboard: 'Copied to clipboard',
+            copyFailed: 'Copy failed'
         }
     },
     

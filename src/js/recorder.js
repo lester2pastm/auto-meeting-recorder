@@ -50,7 +50,8 @@ async function startRecording() {
         // 获取系统音频（通过 Electron desktopCapturer）
         console.log('正在通过 Electron 获取系统音频...');
         
-        let systemAudioStream;
+        let systemAudioStream = null;
+        let systemAudioFailed = false;
         try {
             // 检查是否在 Electron 环境中
             if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
@@ -121,22 +122,19 @@ async function startRecording() {
                 console.log('系统音频流创建成功（浏览器方式）');
             }
         } catch (err) {
-            console.error('获取系统音频失败:', err.name, err.message);
-            throw new Error('获取系统音频失败: ' + err.message);
+            console.warn('获取系统音频失败，将仅录制麦克风音频:', err.name, err.message);
+            systemAudioFailed = true;
+            // 不再抛出错误，而是继续只录制麦克风
         }
         
-        console.log('系统音频流状态:', {
-            active: systemAudioStream.active,
-            audioTracks: systemAudioStream.getAudioTracks().length
-        });
+        if (systemAudioStream) {
+            console.log('系统音频流状态:', {
+                active: systemAudioStream.active,
+                audioTracks: systemAudioStream.getAudioTracks().length
+            });
+        }
 
-        // 测试系统音频流是否活跃
-        console.log('系统音频流状态:', {
-            active: systemAudioStream.active,
-            audioTracks: systemAudioStream.getAudioTracks().length
-        });
-
-        const combinedStream = await combineAudioStreams(microphoneStream, systemAudioStream, audioContext);
+        const combinedStream = await combineAudioStreams(microphoneStream, systemAudioStream, audioContext, systemAudioFailed);
         console.log('音频流合并成功');
 
         mediaRecorder = new MediaRecorder(combinedStream, {
@@ -185,19 +183,24 @@ async function startRecording() {
     }
 }
 
-async function combineAudioStreams(micStream, sysStream, ctx) {
+async function combineAudioStreams(micStream, sysStream, ctx, systemAudioFailed) {
     const micSource = ctx.createMediaStreamSource(micStream);
-    const sysSource = ctx.createMediaStreamSource(sysStream);
-
     const micGain = ctx.createGain();
-    const sysGain = ctx.createGain();
-
     micSource.connect(micGain);
-    sysSource.connect(sysGain);
 
     const destination = ctx.createMediaStreamDestination();
     micGain.connect(destination);
-    sysGain.connect(destination);
+
+    // 如果系统音频获取成功，则合并系统音频
+    if (!systemAudioFailed && sysStream) {
+        const sysSource = ctx.createMediaStreamSource(sysStream);
+        const sysGain = ctx.createGain();
+        sysSource.connect(sysGain);
+        sysGain.connect(destination);
+        console.log('已合并麦克风音频和系统音频');
+    } else {
+        console.log('仅录制麦克风音频（系统音频不可用）');
+    }
 
     return destination.stream;
 }

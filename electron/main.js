@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
+const util = require('util');
 const Store = require('electron-store');
 
 // 初始化配置存储
@@ -12,6 +14,59 @@ const AUDIO_DIR = path.join(app.getPath('userData'), 'audio_files');
 // 确保音频目录存在
 if (!fs.existsSync(AUDIO_DIR)) {
   fs.mkdirSync(AUDIO_DIR, { recursive: true });
+}
+
+// 检测 Linux 系统依赖
+async function checkLinuxDependencies() {
+  // 只在 Linux 平台检测
+  if (process.platform !== 'linux') {
+    return { hasDependencies: true };
+  }
+
+  // 检查是否已经提示过
+  const hasPrompted = store.get('linuxDependencyPrompted', false);
+  if (hasPrompted) {
+    return { hasDependencies: true };
+  }
+
+  const execPromise = util.promisify(exec);
+
+  try {
+    // 检测 xdg-desktop-portal 是否安装
+    await execPromise('which xdg-desktop-portal');
+    return { hasDependencies: true };
+  } catch (error) {
+    // 检测具体是哪个 portal 后端可用
+    let installCommand = '';
+    let packageManager = '';
+
+    try {
+      await execPromise('which apt');
+      packageManager = 'apt';
+      installCommand = 'sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk';
+    } catch {
+      try {
+        await execPromise('which dnf');
+        packageManager = 'dnf';
+        installCommand = 'sudo dnf install xdg-desktop-portal xdg-desktop-portal-gtk';
+      } catch {
+        try {
+          await execPromise('which pacman');
+          packageManager = 'pacman';
+          installCommand = 'sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk';
+        } catch {
+          packageManager = 'unknown';
+          installCommand = '请查阅文档安装 xdg-desktop-portal 和对应的后端包';
+        }
+      }
+    }
+
+    return {
+      hasDependencies: false,
+      packageManager,
+      installCommand
+    };
+  }
 }
 
 let mainWindow;
@@ -60,8 +115,20 @@ function createWindow() {
 }
 
 // 应用就绪
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
+
+  // Linux 系统依赖检测
+  const depCheck = await checkLinuxDependencies();
+  if (!depCheck.hasDependencies && mainWindow) {
+    // 延迟显示提示，等待窗口加载完成
+    setTimeout(() => {
+      mainWindow.webContents.send('linux-dependency-missing', {
+        installCommand: depCheck.installCommand,
+        packageManager: depCheck.packageManager
+      });
+    }, 2000);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -141,6 +208,16 @@ ipcMain.handle('list-audio-files', async () => {
 ipcMain.handle('save-config', async (event, config) => {
   try {
     store.set('config', config);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC 处理器：标记 Linux 依赖提示已显示
+ipcMain.handle('dismiss-linux-dependency-warning', async () => {
+  try {
+    store.set('linuxDependencyPrompted', true);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };

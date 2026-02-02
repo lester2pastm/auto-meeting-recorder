@@ -50,11 +50,66 @@ async function initApp() {
         
         setupEventListeners();
         
+        // Linux 依赖检测提示
+        setupLinuxDependencyWarning();
+        
         showToast(i18n ? i18n.get('initSuccess') : '应用初始化成功', 'success');
     } catch (error) {
         console.error('Failed to initialize app:', error);
         showToast(i18n ? i18n.get('initFailed') : '应用初始化失败', 'error');
     }
+}
+
+// Linux 系统依赖警告
+function setupLinuxDependencyWarning() {
+    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onLinuxDependencyMissing) {
+        window.electronAPI.onLinuxDependencyMissing((data) => {
+            showLinuxDependencyDialog(data);
+        });
+    }
+}
+
+// 显示 Linux 依赖提示对话框
+function showLinuxDependencyDialog(data) {
+    const dialog = document.createElement('div');
+    dialog.className = 'linux-dependency-dialog';
+    dialog.innerHTML = `
+        <div class="linux-dependency-content">
+            <h3>${i18n ? i18n.get('linuxDependencyTitle') : 'Linux 系统依赖提示'}</h3>
+            <p>${i18n ? i18n.get('linuxDependencyMessage1') : '检测到您的系统缺少屏幕录制所需的依赖包。'}</p>
+            <p>${i18n ? i18n.get('linuxDependencyMessage2') : '应用可以正常使用麦克风录制，但无法录制系统音频。'}</p>
+            <div class="install-command">
+                <code>${data.installCommand}</code>
+                <button class="btn-copy" onclick="copyToClipboard('${data.installCommand}')">${i18n ? i18n.get('copy') : '复制'}</button>
+            </div>
+            <div class="dialog-buttons">
+                <button class="btn-secondary" onclick="dismissLinuxWarning(false)">${i18n ? i18n.get('dismissLater') : '稍后再说'}</button>
+                <button class="btn-secondary" onclick="dismissLinuxWarning(true)">${i18n ? i18n.get('doNotShowAgain') : '不再提示'}</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+}
+
+// 关闭 Linux 依赖提示
+async function dismissLinuxWarning(dontShowAgain) {
+    const dialog = document.querySelector('.linux-dependency-dialog');
+    if (dialog) {
+        dialog.remove();
+    }
+    
+    if (dontShowAgain && typeof window !== 'undefined' && window.electronAPI) {
+        await window.electronAPI.dismissLinuxDependencyWarning();
+    }
+}
+
+// 复制到剪贴板
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showToast(i18n ? i18n.get('copiedToClipboard') : '已复制到剪贴板', 'success');
+    }).catch(() => {
+        showToast(i18n ? i18n.get('copyFailed') : '复制失败', 'error');
+    });
 }
 
 function setupEventListeners() {
