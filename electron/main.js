@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const util = require('util');
 const Store = require('electron-store');
 
@@ -69,6 +69,123 @@ async function checkLinuxDependencies() {
   }
 }
 
+let remapSourceModuleIndex = null;
+
+async function setupPulseAudioRemapSource() {
+  if (process.platform !== 'linux') {
+    return { success: true, needsSetup: false };
+  }
+
+  const execPromise = util.promisify(exec);
+
+  try {
+    await execPromise('which pactl');
+    await execPromise('pactl info');
+  } catch {
+    return { success: false, error: 'PulseAudio 不可用' };
+  }
+
+  try {
+    const { stdout: sourcesOutput } = await execPromise('pactl list sources short');
+    
+    if (sourcesOutput.includes('Computer-sound')) {
+      console.log('Computer-sound 源已存在');
+      return { success: true, needsSetup: false, deviceName: 'Computer-sound' };
+    }
+
+    let monitorName = null;
+
+    try {
+      const { stdout: monitorOutput } = await execPromise('pacmd list-sources | grep -B 1 analog-stereo.monitor | grep name:');
+      
+      const lines = monitorOutput.split('\n');
+      
+      if (lines.length <= 2) {
+        const regex = /name:\s*<(.+)>/i;
+        const match = monitorOutput.match(regex);
+        
+        if (match && match.length > 1) {
+          monitorName = match[1];
+          console.log('找到 monitor 源:', monitorName);
+        }
+      }
+    } catch (error) {
+      console.log('查找 analog-stereo.monitor 失败，尝试查找其他 monitor 源');
+    }
+
+    if (!monitorName) {
+      const { stdout: allSources } = await execPromise('pactl list sources short');
+      const monitorSources = allSources
+        .split('\n')
+        .filter(line => line.includes('.monitor'))
+        .map(line => line.split('\t')[1]);
+      
+      if (monitorSources.length > 0) {
+        monitorName = monitorSources[0];
+        console.log('使用替代 monitor 源:', monitorName);
+      } else {
+        return { success: false, error: '未找到可用的 monitor 源' };
+      }
+    }
+
+    console.log('创建 remap-source...');
+    const moduleGenerate = spawn('pactl', [
+      'load-module',
+      'module-remap-source',
+      `master=${monitorName}`,
+      'source_properties=device.description=Computer-sound'
+    ]);
+
+    return new Promise((resolve) => {
+      moduleGenerate.on('error', (err) => {
+        console.error('创建 remap-source 失败:', err);
+        resolve({ success: false, error: err.message });
+      });
+
+      moduleGenerate.on('close', (code) => {
+        if (code === 0) {
+          console.log('remap-source 创建成功');
+          
+          setTimeout(() => {
+            resolve({ 
+              success: true, 
+              needsSetup: true, 
+              deviceName: 'Computer-sound',
+              monitorName 
+            });
+          }, 1000);
+        } else {
+          resolve({ success: false, error: `创建失败，退出码: ${code}` });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('设置 PulseAudio remap-source 失败:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function cleanupPulseAudioRemapSource() {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  try {
+    const { stdout } = await execPromise('pactl list modules short');
+    const lines = stdout.split('\n');
+    
+    for (const line of lines) {
+      if (line.includes('module-remap-source') && line.includes('Computer-sound')) {
+        const moduleIndex = line.split('\t')[0];
+        await execPromise(`pactl unload-module ${moduleIndex}`);
+        console.log('已清理 remap-source 模块');
+      }
+    }
+  } catch (error) {
+    console.error('清理 remap-source 失败:', error);
+  }
+}
+
 let mainWindow;
 
 function createWindow() {
@@ -121,13 +238,26 @@ app.whenReady().then(async () => {
   // Linux 系统依赖检测
   const depCheck = await checkLinuxDependencies();
   if (!depCheck.hasDependencies && mainWindow) {
-    // 延迟显示提示，等待窗口加载完成
     setTimeout(() => {
       mainWindow.webContents.send('linux-dependency-missing', {
         installCommand: depCheck.installCommand,
         packageManager: depCheck.packageManager
       });
     }, 2000);
+  }
+
+  // Linux PulseAudio remap-source 设置
+  if (process.platform === 'linux') {
+    const remapSetup = await setupPulseAudioRemapSource();
+    
+    if (remapSetup.success && remapSetup.needsSetup) {
+      setTimeout(() => {
+        mainWindow.webContents.send('pulseaudio-remap-source-ready', {
+          deviceName: remapSetup.deviceName,
+          monitorName: remapSetup.monitorName
+        });
+      }, 1500);
+    }
   }
 
   app.on('activate', () => {
@@ -283,4 +413,46 @@ ipcMain.handle('get-desktop-capturer-sources', async () => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// IPC 处理器：设置 PulseAudio remap-source
+ipcMain.handle('setup-pulseaudio-remap-source', async () => {
+  return await setupPulseAudioRemapSource();
+});
+
+// IPC 处理器：获取系统音频设备
+ipcMain.handle('get-system-audio-devices', async () => {
+  if (process.platform !== 'linux') {
+    return { success: true, devices: [] };
+  }
+
+  try {
+    const { stdout } = await execPromise('pactl list sources short');
+    const lines = stdout.split('\n');
+    const devices = [];
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      
+      const [index, name, description] = line.split('\t');
+      
+      if (name.includes('Computer-sound') || name.includes('.monitor')) {
+        devices.push({
+          index,
+          name,
+          description: description || name
+        });
+      }
+    }
+
+    return { success: true, devices };
+  } catch (error) {
+    console.error('获取系统音频设备失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 应用退出时清理
+app.on('before-quit', async () => {
+  await cleanupPulseAudioRemapSource();
 });
