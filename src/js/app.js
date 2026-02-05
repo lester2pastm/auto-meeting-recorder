@@ -67,6 +67,13 @@ function setupLinuxDependencyWarning() {
             showLinuxDependencyDialog(data);
         });
     }
+    
+    // PulseAudio remap-source 就绪通知
+    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onPulseAudioRemapSourceReady) {
+        window.electronAPI.onPulseAudioRemapSourceReady((data) => {
+            showPulseAudioRemapSourceReadyDialog(data);
+        });
+    }
 }
 
 // 显示 Linux 依赖提示对话框
@@ -100,6 +107,68 @@ async function dismissLinuxWarning(dontShowAgain) {
     
     if (dontShowAgain && typeof window !== 'undefined' && window.electronAPI) {
         await window.electronAPI.dismissLinuxDependencyWarning();
+    }
+}
+
+// 显示 PulseAudio remap-source 就绪通知
+function showPulseAudioRemapSourceReadyDialog(data) {
+    const dialog = document.createElement('div');
+    dialog.className = 'pulseaudio-ready-dialog';
+    dialog.innerHTML = `
+        <div class="pulseaudio-ready-content">
+            <h3>系统音频设备已就绪</h3>
+            <p>已成功创建系统音频录制设备</p>
+            <div class="device-info">
+                <p><strong>设备名称:</strong> ${data.deviceName}</p>
+                ${data.monitorName ? `<p><strong>源设备:</strong> ${data.monitorName}</p>` : ''}
+            </div>
+            <p>现在您可以开始录制会议，系统音频将被自动捕获。</p>
+            <div class="dialog-buttons">
+                <button class="btn-primary" onclick="dismissPulseAudioReadyDialog()">知道了</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    
+    // 5秒后自动关闭
+    setTimeout(() => {
+        dismissPulseAudioReadyDialog();
+    }, 5000);
+}
+
+// 关闭 PulseAudio remap-source 就绪通知
+function dismissPulseAudioReadyDialog() {
+    const dialog = document.querySelector('.pulseaudio-ready-dialog');
+    if (dialog) {
+        dialog.remove();
+    }
+}
+
+// 显示 PulseAudio remap-source 错误通知
+function showPulseAudioErrorDialog(error) {
+    const dialog = document.createElement('div');
+    dialog.className = 'pulseaudio-error-dialog';
+    dialog.innerHTML = `
+        <div class="pulseaudio-error-content">
+            <h3>系统音频设置失败</h3>
+            <p>无法创建系统音频录制设备</p>
+            <div class="error-info">
+                <p><strong>错误信息:</strong> ${error}</p>
+            </div>
+            <p>应用将仅录制麦克风音频。如需录制系统音频，请检查 PulseAudio 配置。</p>
+            <div class="dialog-buttons">
+                <button class="btn-primary" onclick="dismissPulseAudioErrorDialog()">知道了</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+}
+
+// 关闭 PulseAudio remap-source 错误通知
+function dismissPulseAudioErrorDialog() {
+    const dialog = document.querySelector('.pulseaudio-error-dialog');
+    if (dialog) {
+        dialog.remove();
     }
 }
 

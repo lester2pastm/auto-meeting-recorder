@@ -47,15 +47,81 @@ async function startRecording() {
             });
         });
 
-        // 获取系统音频（通过 Electron desktopCapturer）
-        console.log('正在通过 Electron 获取系统音频...');
+        // 获取系统音频
+        console.log('正在获取系统音频...');
         
         let systemAudioStream = null;
         let systemAudioFailed = false;
         try {
-            // 检查是否在 Electron 环境中
-            if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
-                // Electron 环境：使用 desktopCapturer
+            // 检测平台
+            if (typeof process !== 'undefined' && process.platform === 'linux' && window.electronAPI) {
+                // Linux 平台：使用 PulseAudio remap-source
+                console.log('检测到 Linux 平台，使用 PulseAudio remap-source');
+                
+                // 枚举所有音频设备
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                console.log('音频设备列表:', devices.map(d => ({
+                    kind: d.kind,
+                    label: d.label,
+                    deviceId: d.deviceId
+                })));
+                
+                // 查找 Computer-sound 设备
+                const systemAudioDevice = devices.find(d => 
+                    d.kind === 'audioinput' && 
+                    (d.label.includes('Computer-sound') || d.label.includes('computer'))
+                );
+                
+                if (!systemAudioDevice) {
+                    console.warn('未找到 Computer-sound 设备，尝试重新设置...');
+                    
+                    // 尝试重新设置 remap-source
+                    const setupResult = await window.electronAPI.setupPulseAudioRemapSource();
+                    
+                    if (!setupResult.success) {
+                        console.error('设置系统音频失败:', setupResult.error);
+                        if (typeof showPulseAudioErrorDialog === 'function') {
+                            showPulseAudioErrorDialog(setupResult.error);
+                        }
+                        throw new Error('设置系统音频失败: ' + setupResult.error);
+                    }
+                    
+                    // 等待设备注册
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    // 重新枚举设备
+                    const newDevices = await navigator.mediaDevices.enumerateDevices();
+                    const newSystemAudioDevice = newDevices.find(d => 
+                        d.kind === 'audioinput' && 
+                        (d.label.includes('Computer-sound') || d.label.includes('computer'))
+                    );
+                    
+                    if (!newSystemAudioDevice) {
+                        throw new Error('无法找到系统音频设备');
+                    }
+                    
+                    systemAudioStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: { exact: newSystemAudioDevice.deviceId },
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                } else {
+                    systemAudioStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: { exact: systemAudioDevice.deviceId },
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                }
+                
+                console.log('系统音频流获取成功（Linux PulseAudio 方式）');
+            } else if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
+                // Electron 环境（非 Linux）：使用 desktopCapturer
                 console.log('检测到 Electron 环境，使用 desktopCapturer');
                 const result = await window.electronAPI.getDesktopCapturerSources();
                 
