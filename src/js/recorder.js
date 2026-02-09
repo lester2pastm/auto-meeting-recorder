@@ -215,9 +215,9 @@ async function startRecording() {
         let systemAudioFailed = false;
         try {
             // 检测平台
-            if (typeof process !== 'undefined' && process.platform === 'linux' && window.electronAPI) {
-                // Linux 平台：先尝试 PulseAudio remap-source，失败则回退到 ffmpeg
-                console.log('检测到 Linux 平台，尝试 PulseAudio remap-source');
+            if (typeof process !== 'undefined' && (process.platform === 'linux' || process.platform === 'darwin') && window.electronAPI) {
+                // Linux/macOS 平台：先尝试 WebRTC 方式，失败则回退到 ffmpeg
+                console.log(`检测到 ${process.platform} 平台，尝试 WebRTC 获取系统音频`);
                 
                 // 枚举所有音频设备
                 const devices = await navigator.mediaDevices.enumerateDevices();
@@ -232,46 +232,30 @@ async function startRecording() {
                 });
                 console.log('=== 音频设备列表结束 ===');
                 
-                // 查找 Computer-sound 设备
-                let systemAudioDevice = findSystemAudioDevice(devices);
-                
-                console.log('查找结果 - systemAudioDevice:', systemAudioDevice ? {
-                    label: systemAudioDevice.label,
-                    deviceId: systemAudioDevice.deviceId
-                } : '未找到');
-                
-                if (!systemAudioDevice) {
-                    console.warn('未找到 Computer-sound 设备，尝试重新设置...');
+                // Linux 平台：尝试 PulseAudio remap-source
+                if (process.platform === 'linux') {
+                    let systemAudioDevice = findSystemAudioDevice(devices);
                     
-                    // 尝试重新设置 remap-source
-                    const setupResult = await window.electronAPI.setupPulseAudioRemapSource();
-                    
-                    if (!setupResult.success) {
-                        console.error('设置系统音频失败:', setupResult.error);
-                        throw new Error('设置系统音频失败: ' + setupResult.error);
-                    }
-                    
-                    console.log('remap-source 设置成功，等待设备注册...');
-                    // 等待更长时间，确保设备被 Chromium 完全识别
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                    
-                    // 重新枚举设备
-                    const newDevices = await navigator.mediaDevices.enumerateDevices();
-                    console.log('=== 重新枚举设备列表 ===');
-                    newDevices.forEach((d, i) => {
-                        console.log(`设备[${i}]:`, {
-                            kind: d.kind,
-                            label: d.label,
-                            deviceId: d.deviceId
-                        });
-                    });
-                    console.log('=== 重新枚举设备列表结束 ===');
-                    
-                    systemAudioDevice = findSystemAudioDevice(newDevices);
+                    console.log('查找结果 - systemAudioDevice:', systemAudioDevice ? {
+                        label: systemAudioDevice.label,
+                        deviceId: systemAudioDevice.deviceId
+                    } : '未找到');
                     
                     if (!systemAudioDevice) {
-                        console.error('=== 设备查找失败 ===');
-                        console.log('重新枚举后的设备列表:');
+                        console.warn('未找到 Computer-sound 设备，尝试重新设置...');
+                        
+                        const setupResult = await window.electronAPI.setupPulseAudioRemapSource();
+                        
+                        if (!setupResult.success) {
+                            console.error('设置系统音频失败:', setupResult.error);
+                            throw new Error('设置系统音频失败: ' + setupResult.error);
+                        }
+                        
+                        console.log('remap-source 设置成功，等待设备注册...');
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        
+                        const newDevices = await navigator.mediaDevices.enumerateDevices();
+                        console.log('=== 重新枚举设备列表 ===');
                         newDevices.forEach((d, i) => {
                             console.log(`设备[${i}]:`, {
                                 kind: d.kind,
@@ -279,20 +263,55 @@ async function startRecording() {
                                 deviceId: d.deviceId
                             });
                         });
-                        throw new Error('无法找到系统音频设备');
+                        console.log('=== 重新枚举设备列表结束 ===');
+                        
+                        systemAudioDevice = findSystemAudioDevice(newDevices);
+                        
+                        if (!systemAudioDevice) {
+                            console.error('=== 设备查找失败 ===');
+                            throw new Error('无法找到系统音频设备');
+                        }
                     }
+                    
+                    console.log('=== 准备获取系统音频流 ===');
+                    console.log('使用设备:', {
+                        label: systemAudioDevice.label,
+                        deviceId: systemAudioDevice.deviceId
+                    });
+                    
+                    systemAudioStream = await getSystemAudioStreamWithRetry(systemAudioDevice);
+                    console.log('系统音频流获取成功（Linux PulseAudio 方式）');
+                } else {
+                    // macOS 平台：直接使用 getDisplayMedia
+                    console.log('macOS 平台，使用 getDisplayMedia 获取系统音频');
+                    console.log('提示: 请在弹出的对话框中选择"整个屏幕"，并勾选"分享音频"选项');
+                    
+                    const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    
+                    console.log('屏幕分享获取成功');
+                    
+                    const systemAudioTrack = displayStream.getAudioTracks()[0];
+                    if (!systemAudioTrack) {
+                        console.error('错误: 未获取到系统音频轨道');
+                        displayStream.getTracks().forEach(track => track.stop());
+                        throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
+                    }
+                    
+                    const systemAudioVideoTrack = displayStream.getVideoTracks()[0];
+                    if (systemAudioVideoTrack) {
+                        systemAudioVideoTrack.stop();
+                    }
+                    
+                    systemAudioStream = new MediaStream([systemAudioTrack]);
+                    console.log('系统音频流创建成功（macOS getDisplayMedia 方式）');
                 }
-                
-                console.log('=== 准备获取系统音频流 ===');
-                console.log('使用设备:', {
-                    label: systemAudioDevice.label,
-                    deviceId: systemAudioDevice.deviceId
-                });
-                
-                // 使用重试机制获取系统音频流
-                systemAudioStream = await getSystemAudioStreamWithRetry(systemAudioDevice);
-                
-                console.log('系统音频流获取成功（Linux PulseAudio 方式）');
             } else if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
                 console.log('检测到 Electron 环境，使用 getDisplayMedia 获取系统音频');
                 console.log('提示: 请在弹出的对话框中选择"整个屏幕"，并勾选"分享音频"选项');
@@ -355,8 +374,8 @@ async function startRecording() {
         } catch (err) {
             console.warn('获取系统音频失败:', err.name, err.message);
             
-            // Linux 平台：尝试回退到 ffmpeg 方案
-            if (typeof process !== 'undefined' && process.platform === 'linux' && window.electronAPI) {
+            // Linux/macOS 平台：尝试回退到 ffmpeg 方案
+            if (typeof process !== 'undefined' && (process.platform === 'linux' || process.platform === 'darwin') && window.electronAPI) {
                 console.log('=== 尝试回退到 ffmpeg 方案 ===');
                 
                 try {
@@ -364,7 +383,7 @@ async function startRecording() {
                     const ffmpegCheck = await window.electronAPI.checkFFmpeg();
                     
                     if (ffmpegCheck.available) {
-                        console.log('ffmpeg 可用，使用 ffmpeg 录制系统音频');
+                        console.log(`ffmpeg 可用，使用 ffmpeg 录制系统音频 (${ffmpegCheck.platform})`);
                         usingFFmpeg = true;
                         
                         // 生成临时文件路径

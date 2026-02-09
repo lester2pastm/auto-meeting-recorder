@@ -84,10 +84,19 @@ async function checkLinuxDependencies() {
   }
 }
 
-// 检查 ffmpeg 是否可用
+// 检查 ffmpeg 是否可用并获取音频设备
 async function checkFFmpeg() {
-  if (process.platform !== 'linux') {
-    return { available: false, reason: 'Not on Linux' };
+  if (process.platform === 'win32') {
+    return { 
+      available: true, 
+      platform: 'windows',
+      audioInput: 'dshow',
+      reason: 'Windows uses WebRTC, ffmpeg not needed'
+    };
+  }
+
+  if (process.platform !== 'linux' && process.platform !== 'darwin') {
+    return { available: false, reason: 'Unsupported platform' };
   }
 
   const execPromise = util.promisify(exec);
@@ -96,20 +105,72 @@ async function checkFFmpeg() {
     await execPromise('which ffmpeg');
     const { stdout } = await execPromise('ffmpeg -version');
     
-    // 检查是否支持 pulse 或 pipewire
-    const hasPulse = stdout.includes('--enable-libpulse');
-    const hasPipeWire = stdout.includes('--enable-libpipewire');
-    
-    if (hasPulse || hasPipeWire) {
-      return { 
-        available: true, 
-        audioInput: hasPulse ? 'pulse' : 'pipewire' 
-      };
-    } else {
-      return { 
-        available: false, 
-        reason: 'FFmpeg does not support pulseaudio or pipewire' 
-      };
+    // 检查平台支持
+    if (process.platform === 'linux') {
+      const hasPulse = stdout.includes('--enable-libpulse');
+      const hasPipeWire = stdout.includes('--enable-libpipewire');
+      
+      if (hasPulse || hasPipeWire) {
+        // 尝试列出可用的音频设备
+        let audioInput = 'pulse';
+        let availableDevices = [];
+        
+        try {
+          if (hasPulse) {
+            const { stdout: pulseDevices } = await execPromise('ffmpeg -f pulse -list_devices true -i dummy 2>&1');
+            console.log('PulseAudio 设备列表:', pulseDevices);
+            availableDevices = parseFFmpegDevices(pulseDevices, 'PulseAudio');
+          }
+          
+          if (hasPipeWire && availableDevices.length === 0) {
+            const { stdout: pwDevices } = await execPromise('ffmpeg -f pipewire -list_devices true -i dummy 2>&1');
+            console.log('PipeWire 设备列表:', pwDevices);
+            availableDevices = parseFFmpegDevices(pwDevices, 'PipeWire');
+            audioInput = 'pipewire';
+          }
+        } catch (deviceError) {
+          console.warn('获取音频设备列表失败:', deviceError.message);
+        }
+        
+        return { 
+          available: true, 
+          platform: 'linux',
+          audioInput,
+          availableDevices
+        };
+      } else {
+        return { 
+          available: false, 
+          reason: 'FFmpeg does not support pulseaudio or pipewire' 
+        };
+      }
+    } else if (process.platform === 'darwin') {
+      // macOS
+      const hasAvFoundation = stdout.includes('--enable-avfoundation');
+      
+      if (hasAvFoundation) {
+        let availableDevices = [];
+        
+        try {
+          const { stdout: avDevices } = await execPromise('ffmpeg -f avfoundation -list_devices true -i "" 2>&1');
+          console.log('AVFoundation 设备列表:', avDevices);
+          availableDevices = parseFFmpegDevices(avDevices, 'AVFoundation');
+        } catch (deviceError) {
+          console.warn('获取音频设备列表失败:', deviceError.message);
+        }
+        
+        return { 
+          available: true, 
+          platform: 'darwin',
+          audioInput: 'avfoundation',
+          availableDevices
+        };
+      } else {
+        return { 
+          available: false, 
+          reason: 'FFmpeg does not support avfoundation' 
+        };
+      }
     }
   } catch (error) {
     return { 
@@ -117,6 +178,41 @@ async function checkFFmpeg() {
       reason: 'FFmpeg not found or not executable' 
     };
   }
+}
+
+// 解析 ffmpeg 设备列表输出
+function parseFFmpegDevices(output, inputType) {
+  const devices = [];
+  const lines = output.split('\n');
+  
+  let currentType = null;
+  
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    
+    if (trimmedLine.includes('[AVFoundation input device')) {
+      currentType = 'audio';
+      continue;
+    }
+    
+    if (trimmedLine.includes('PulseAudio') || trimmedLine.includes('PipeWire')) {
+      currentType = 'audio';
+      continue;
+    }
+    
+    if (currentType === 'audio' && trimmedLine.startsWith('[')) {
+      const match = trimmedLine.match(/\[(\d+)\]\s+(.+)/);
+      if (match) {
+        devices.push({
+          index: match[1],
+          name: match[2].trim(),
+          inputType
+        });
+      }
+    }
+  }
+  
+  return devices;
 }
 
 let remapSourceModuleIndex = null;
@@ -274,8 +370,12 @@ async function cleanupPulseAudioRemapSource() {
 
 // 使用 ffmpeg 录制系统音频
 async function startFFmpegAudioCapture(audioFilePath) {
-  if (process.platform !== 'linux') {
-    return { success: false, error: 'Not on Linux' };
+  if (process.platform === 'win32') {
+    return { success: false, error: 'Windows uses WebRTC, ffmpeg not needed' };
+  }
+
+  if (process.platform !== 'linux' && process.platform !== 'darwin') {
+    return { success: false, error: 'Unsupported platform' };
   }
 
   const ffmpegCheck = await checkFFmpeg();
@@ -283,7 +383,7 @@ async function startFFmpegAudioCapture(audioFilePath) {
     return { success: false, error: ffmpegCheck.reason };
   }
 
-  const audioInput = ffmpegCheck.audioInput;
+  const { audioInput, availableDevices } = ffmpegCheck;
   
   try {
     // 确保目录存在
@@ -292,10 +392,42 @@ async function startFFmpegAudioCapture(audioFilePath) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    let inputDevice = 'default';
+    
+    // 根据平台选择合适的输入设备
+    if (process.platform === 'linux') {
+      // Linux: 使用 default 或指定的音频设备
+      if (availableDevices && availableDevices.length > 0) {
+        // 尝试找到系统音频设备（包含 monitor 或 output 的设备）
+        const systemDevice = availableDevices.find(d => 
+          d.name.toLowerCase().includes('monitor') || 
+          d.name.toLowerCase().includes('output') ||
+          d.name.toLowerCase().includes('default')
+        );
+        
+        if (systemDevice) {
+          inputDevice = systemDevice.name;
+          console.log('使用系统音频设备:', inputDevice);
+        }
+      }
+    } else if (process.platform === 'darwin') {
+      // macOS: 需要使用设备索引
+      if (availableDevices && availableDevices.length > 0) {
+        // 查找系统音频设备（通常是第一个音频设备）
+        const audioDevice = availableDevices[0];
+        inputDevice = `:${audioDevice.index}`;
+        console.log('使用 macOS 音频设备:', audioDevice.name, `索引:${audioDevice.index}`);
+      } else {
+        // 如果没有找到设备，使用默认方式
+        inputDevice = ':0';
+        console.log('使用默认 macOS 音频设备');
+      }
+    }
+
     // 构建 ffmpeg 命令
     const args = [
       '-f', audioInput,
-      '-i', 'default',
+      '-i', inputDevice,
       '-c:a', 'libopus',
       '-b:a', '128k',
       '-f', 'webm',
@@ -312,7 +444,11 @@ async function startFFmpegAudioCapture(audioFilePath) {
 
     // 监听错误输出
     ffmpegAudioProcess.stderr.on('data', (data) => {
-      console.log('FFmpeg stderr:', data.toString());
+      const output = data.toString();
+      // 只记录重要信息，避免过多日志
+      if (output.includes('Error') || output.includes('error') || output.includes('Input/output error')) {
+        console.log('FFmpeg stderr:', output);
+      }
     });
 
     // 监听进程退出
@@ -329,7 +465,7 @@ async function startFFmpegAudioCapture(audioFilePath) {
         } else {
           reject(new Error('FFmpeg 进程启动失败'));
         }
-      }, 1000);
+      }, 2000);
 
       ffmpegAudioProcess.on('error', (err) => {
         clearTimeout(timeout);
