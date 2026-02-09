@@ -469,6 +469,40 @@ ipcMain.handle('get-system-audio-devices', async () => {
   }
 });
 
+// IPC 处理器：获取所有 PulseAudio 源的详细信息（用于诊断）
+ipcMain.handle('get-pulseaudio-sources-detailed', async () => {
+  if (process.platform !== 'linux') {
+    return { success: true, sources: [] };
+  }
+
+  try {
+    const { stdout } = await execPromise('pactl list sources');
+    const sources = [];
+    
+    // 解析 PulseAudio 输出
+    const sourceBlocks = stdout.split(/Source #\d+/).filter(block => block.trim());
+    
+    for (const block of sourceBlocks) {
+      const nameMatch = block.match(/Name:\s*(.+)/);
+      const descMatch = block.match(/Description:\s*(.+)/);
+      const deviceMatch = block.match(/device\.string = "(.+)"/);
+      
+      if (nameMatch) {
+        sources.push({
+          name: nameMatch[1].trim(),
+          description: descMatch ? descMatch[1].trim() : '',
+          device: deviceMatch ? deviceMatch[1].trim() : ''
+        });
+      }
+    }
+    
+    return { success: true, sources };
+  } catch (error) {
+    console.error('获取 PulseAudio 源详细信息失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // 应用退出时清理
 app.on('before-quit', async () => {
   await cleanupPulseAudioRemapSource();

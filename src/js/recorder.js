@@ -56,6 +56,43 @@ async function startRecording() {
         // 获取系统音频
         console.log('正在获取系统音频...');
         
+        // 诊断：对比 PulseAudio 设备和 Chromium 设备
+        if (typeof process !== 'undefined' && process.platform === 'linux' && window.electronAPI) {
+            console.log('=== 开始诊断：对比 PulseAudio 和 Chromium 设备 ===');
+            
+            try {
+                // 获取 PulseAudio 设备列表
+                const pulseAudioResult = await window.electronAPI.getPulseAudioSourcesDetailed();
+                if (pulseAudioResult.success) {
+                    console.log('PulseAudio 源列表:');
+                    pulseAudioResult.sources.forEach((source, i) => {
+                        console.log(`  PulseAudio[${i}]:`, {
+                            name: source.name,
+                            description: source.description,
+                            device: source.device
+                        });
+                    });
+                }
+                
+                // 获取 Chromium 设备列表
+                const chromiumDevices = await navigator.mediaDevices.enumerateDevices();
+                console.log('Chromium 音频输入设备列表:');
+                chromiumDevices.forEach((device, i) => {
+                    if (device.kind === 'audioinput') {
+                        console.log(`  Chromium[${i}]:`, {
+                            label: device.label,
+                            deviceId: device.deviceId,
+                            groupId: device.groupId
+                        });
+                    }
+                });
+                
+                console.log('=== 诊断完成 ===');
+            } catch (error) {
+                console.error('诊断失败:', error);
+            }
+        }
+        
         let systemAudioStream = null;
         let systemAudioFailed = false;
         try {
