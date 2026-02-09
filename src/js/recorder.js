@@ -20,6 +20,11 @@ let microphoneStream = null;
 let systemAudioStream = null;
 let destinationStream = null;
 
+// ffmpeg 相关变量
+let usingFFmpeg = false;
+let ffmpegSystemAudioPath = null;
+let ffmpegMicAudioPath = null;
+
 // 辅助函数：查找系统音频设备
 function findSystemAudioDevice(devices) {
     // 首先尝试精确匹配 Computer-sound
@@ -211,8 +216,8 @@ async function startRecording() {
         try {
             // 检测平台
             if (typeof process !== 'undefined' && process.platform === 'linux' && window.electronAPI) {
-                // Linux 平台：使用 PulseAudio remap-source
-                console.log('检测到 Linux 平台，使用 PulseAudio remap-source');
+                // Linux 平台：先尝试 PulseAudio remap-source，失败则回退到 ffmpeg
+                console.log('检测到 Linux 平台，尝试 PulseAudio remap-source');
                 
                 // 枚举所有音频设备
                 const devices = await navigator.mediaDevices.enumerateDevices();
@@ -243,9 +248,6 @@ async function startRecording() {
                     
                     if (!setupResult.success) {
                         console.error('设置系统音频失败:', setupResult.error);
-                        if (typeof showPulseAudioErrorDialog === 'function') {
-                            showPulseAudioErrorDialog(setupResult.error);
-                        }
                         throw new Error('设置系统音频失败: ' + setupResult.error);
                     }
                     
@@ -351,9 +353,55 @@ async function startRecording() {
                 console.log('系统音频流创建成功（浏览器方式）');
             }
         } catch (err) {
-            console.warn('获取系统音频失败，将仅录制麦克风音频:', err.name, err.message);
-            systemAudioFailed = true;
-            // 不再抛出错误，而是继续只录制麦克风
+            console.warn('获取系统音频失败:', err.name, err.message);
+            
+            // Linux 平台：尝试回退到 ffmpeg 方案
+            if (typeof process !== 'undefined' && process.platform === 'linux' && window.electronAPI) {
+                console.log('=== 尝试回退到 ffmpeg 方案 ===');
+                
+                try {
+                    // 检查 ffmpeg 是否可用
+                    const ffmpegCheck = await window.electronAPI.checkFFmpeg();
+                    
+                    if (ffmpegCheck.available) {
+                        console.log('ffmpeg 可用，使用 ffmpeg 录制系统音频');
+                        usingFFmpeg = true;
+                        
+                        // 生成临时文件路径
+                        const timestamp = Date.now();
+                        ffmpegSystemAudioPath = `ffmpeg_system_${timestamp}.webm`;
+                        ffmpegMicAudioPath = `ffmpeg_mic_${timestamp}.webm`;
+                        
+                        // 启动 ffmpeg 录制系统音频
+                        const startResult = await window.electronAPI.startFFmpegAudioCapture(ffmpegSystemAudioPath);
+                        
+                        if (startResult.success) {
+                            console.log('ffmpeg 系统音频录制已启动');
+                            systemAudioFailed = false;
+                        } else {
+                            console.error('ffmpeg 系统音频录制启动失败:', startResult.error);
+                            systemAudioFailed = true;
+                            usingFFmpeg = false;
+                        }
+                    } else {
+                        console.warn('ffmpeg 不可用:', ffmpegCheck.reason);
+                        systemAudioFailed = true;
+                        
+                        // 显示 ffmpeg 安装提示
+                        if (typeof showFFmpegErrorDialog === 'function') {
+                            showFFmpegErrorDialog(ffmpegCheck.reason);
+                        }
+                    }
+                } catch (ffmpegError) {
+                    console.error('ffmpeg 回退方案失败:', ffmpegError);
+                    systemAudioFailed = true;
+                    usingFFmpeg = false;
+                }
+            } else {
+                systemAudioFailed = true;
+            }
+            
+            console.log('将仅录制麦克风音频');
         }
         
         if (systemAudioStream) {
@@ -487,15 +535,93 @@ function resumeRecording() {
     }
 }
 
-function stopRecording() {
-    return new Promise((resolve, reject) => {
+async function stopRecording() {
+    return new Promise(async (resolve, reject) => {
         if (mediaRecorder && isRecording) {
             const originalOnStop = mediaRecorder.onstop;
             
-            mediaRecorder.onstop = (event) => {
+            mediaRecorder.onstop = async (event) => {
                 if (originalOnStop) {
                     originalOnStop(event);
                 }
+                
+                // 如果使用 ffmpeg，需要合并音频
+                if (usingFFmpeg && window.electronAPI) {
+                    console.log('=== 使用 ffmpeg，开始合并音频 ===');
+                    
+                    try {
+                        // 停止 ffmpeg 录制
+                        const stopResult = await window.electronAPI.stopFFmpegAudioCapture();
+                        
+                        if (stopResult.success && stopResult.filePath) {
+                            console.log('ffmpeg 系统音频录制已停止:', stopResult.filePath);
+                            
+                            // 保存麦克风音频到临时文件
+                            const micAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                            const micAudioBuffer = await micAudioBlob.arrayBuffer();
+                            const micAudioData = Array.from(new Uint8Array(micAudioBuffer));
+                            
+                            const saveResult = await window.electronAPI.saveAudio({
+                                blob: micAudioData,
+                                filename: ffmpegMicAudioPath
+                            });
+                            
+                            if (saveResult.success) {
+                                console.log('麦克风音频已保存:', saveResult.filePath);
+                                
+                                // 合并音频文件
+                                const timestamp = Date.now();
+                                const mergedFilename = `merged_${timestamp}.webm`;
+                                const mergeResult = await window.electronAPI.mergeAudioFiles(
+                                    stopResult.filePath,
+                                    saveResult.filePath,
+                                    mergedFilename
+                                );
+                                
+                                if (mergeResult.success) {
+                                    console.log('音频合并成功:', mergeResult.filePath);
+                                    
+                                    // 读取合并后的音频文件
+                                    const getAudioResult = await window.electronAPI.getAudio(mergedFilename);
+                                    
+                                    if (getAudioResult.success) {
+                                        const mergedBuffer = new Uint8Array(getAudioResult.data);
+                                        audioBlob = new Blob([mergedBuffer], { type: 'audio/webm' });
+                                        console.log('合并后的音频 Blob 创建成功, 大小:', audioBlob.size);
+                                        
+                                        // 清理临时文件
+                                        await window.electronAPI.deleteAudio(ffmpegSystemAudioPath);
+                                        await window.electronAPI.deleteAudio(ffmpegMicAudioPath);
+                                        await window.electronAPI.deleteAudio(mergedFilename);
+                                        
+                                        console.log('临时文件已清理');
+                                    } else {
+                                        console.error('读取合并后的音频失败:', getAudioResult.error);
+                                        // 回退到仅使用麦克风音频
+                                    }
+                                } else {
+                                    console.error('合并音频失败:', mergeResult.error);
+                                    // 回退到仅使用麦克风音频
+                                }
+                            } else {
+                                console.error('保存麦克风音频失败:', saveResult.error);
+                                // 回退到仅使用麦克风音频
+                            }
+                        } else {
+                            console.error('停止 ffmpeg 录制失败:', stopResult.error);
+                            // 回退到仅使用麦克风音频
+                        }
+                    } catch (ffmpegError) {
+                        console.error('ffmpeg 音频处理失败:', ffmpegError);
+                        // 回退到仅使用麦克风音频
+                    }
+                    
+                    // 重置 ffmpeg 标志
+                    usingFFmpeg = false;
+                    ffmpegSystemAudioPath = null;
+                    ffmpegMicAudioPath = null;
+                }
+                
                 resolve(audioBlob);
             };
             
