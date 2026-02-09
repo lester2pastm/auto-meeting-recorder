@@ -20,6 +20,119 @@ let microphoneStream = null;
 let systemAudioStream = null;
 let destinationStream = null;
 
+// 辅助函数：查找系统音频设备
+function findSystemAudioDevice(devices) {
+    // 首先尝试精确匹配 Computer-sound
+    let device = devices.find(d => 
+        d.kind === 'audioinput' && d.label === 'Computer-sound'
+    );
+    
+    if (device) {
+        console.log('找到精确匹配的 Computer-sound 设备');
+        return device;
+    }
+    
+    // 尝试包含匹配
+    device = devices.find(d => 
+        d.kind === 'audioinput' && (
+            d.label.includes('Computer-sound') || 
+            d.label.includes('computer') ||
+            d.label.includes('Computer')
+        )
+    );
+    
+    if (device) {
+        console.log('找到包含匹配的 Computer-sound 设备:', device.label);
+        return device;
+    }
+    
+    // 尝试匹配 remap 或 monitor 源
+    device = devices.find(d => 
+        d.kind === 'audioinput' && (
+            d.label.toLowerCase().includes('remap') ||
+            d.label.toLowerCase().includes('monitor')
+        )
+    );
+    
+    if (device) {
+        console.log('找到 remap/monitor 设备:', device.label);
+        return device;
+    }
+    
+    return null;
+}
+
+// 辅助函数：带重试机制的系统音频流获取
+async function getSystemAudioStreamWithRetry(device, maxRetries = 3) {
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`尝试获取系统音频流 (${attempt}/${maxRetries})...`);
+        
+        try {
+            // 尝试使用 exact deviceId
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    deviceId: { exact: device.deviceId },
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            });
+            
+            console.log(`第 ${attempt} 次尝试成功获取系统音频流`);
+            return stream;
+        } catch (error) {
+            lastError = error;
+            console.warn(`第 ${attempt} 次尝试失败:`, {
+                name: error.name,
+                message: error.message,
+                constraint: error.constraint
+            });
+            
+            // 如果是 NotReadableError，等待后重试
+            if (error.name === 'NotReadableError' && attempt < maxRetries) {
+                const waitTime = attempt * 2000; // 递增等待时间: 2s, 4s
+                console.log(`等待 ${waitTime}ms 后重试...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                
+                // 重新枚举设备，deviceId 可能已改变
+                console.log('重新枚举设备...');
+                const newDevices = await navigator.mediaDevices.enumerateDevices();
+                const newDevice = findSystemAudioDevice(newDevices);
+                
+                if (newDevice && newDevice.deviceId !== device.deviceId) {
+                    console.log('设备ID已更新:', {
+                        oldId: device.deviceId,
+                        newId: newDevice.deviceId
+                    });
+                    device = newDevice;
+                }
+            } else if (attempt === maxRetries) {
+                // 最后一次尝试：使用 ideal 而不是 exact
+                console.log('使用 ideal constraint 进行最后一次尝试...');
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: { ideal: device.deviceId },
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    console.log('使用 ideal constraint 成功获取系统音频流');
+                    return stream;
+                } catch (finalError) {
+                    console.error('最后一次尝试也失败:', finalError);
+                    throw finalError;
+                }
+            }
+        }
+    }
+    
+    throw lastError || new Error('无法获取系统音频流');
+}
+
 async function startRecording() {
     try {
         console.log('=== 开始录音调试 ===');
@@ -93,7 +206,7 @@ async function startRecording() {
             }
         }
         
-        let systemAudioStream = null;
+        systemAudioStream = null;
         let systemAudioFailed = false;
         try {
             // 检测平台
@@ -115,16 +228,7 @@ async function startRecording() {
                 console.log('=== 音频设备列表结束 ===');
                 
                 // 查找 Computer-sound 设备
-                // 使用更灵活的匹配方式，因为设备标签可能不完全匹配
-                const systemAudioDevice = devices.find(d => 
-                    d.kind === 'audioinput' && (
-                        d.label.includes('Computer-sound') || 
-                        d.label.includes('computer') ||
-                        d.label.includes('Computer') ||
-                        d.label.toLowerCase().includes('remap') ||
-                        d.label.toLowerCase().includes('monitor')
-                    )
-                );
+                let systemAudioDevice = findSystemAudioDevice(devices);
                 
                 console.log('查找结果 - systemAudioDevice:', systemAudioDevice ? {
                     label: systemAudioDevice.label,
@@ -146,8 +250,8 @@ async function startRecording() {
                     }
                     
                     console.log('remap-source 设置成功，等待设备注册...');
-                    // 增加等待时间，确保设备被 Chromium 完全识别
-                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    // 等待更长时间，确保设备被 Chromium 完全识别
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                     
                     // 重新枚举设备
                     const newDevices = await navigator.mediaDevices.enumerateDevices();
@@ -161,18 +265,9 @@ async function startRecording() {
                     });
                     console.log('=== 重新枚举设备列表结束 ===');
                     
-                    // 使用更灵活的匹配方式
-                    const newSystemAudioDevice = newDevices.find(d => 
-                        d.kind === 'audioinput' && (
-                            d.label.includes('Computer-sound') || 
-                            d.label.includes('computer') ||
-                            d.label.includes('Computer') ||
-                            d.label.toLowerCase().includes('remap') ||
-                            d.label.toLowerCase().includes('monitor')
-                        )
-                    );
+                    systemAudioDevice = findSystemAudioDevice(newDevices);
                     
-                    if (!newSystemAudioDevice) {
+                    if (!systemAudioDevice) {
                         console.error('=== 设备查找失败 ===');
                         console.log('重新枚举后的设备列表:');
                         newDevices.forEach((d, i) => {
@@ -184,96 +279,47 @@ async function startRecording() {
                         });
                         throw new Error('无法找到系统音频设备');
                     }
-                    
-                    console.log('=== 准备获取系统音频流 ===');
-                    console.log('使用设备:', {
-                        label: newSystemAudioDevice.label,
-                        deviceId: newSystemAudioDevice.deviceId
-                    });
-                    
-                    try {
-                        systemAudioStream = await navigator.mediaDevices.getUserMedia({
-                            audio: {
-                                deviceId: { exact: newSystemAudioDevice.deviceId },
-                                echoCancellation: false,
-                                noiseSuppression: false,
-                                autoGainControl: false
-                            }
-                        });
-                        console.log('系统音频流获取成功');
-                    } catch (streamError) {
-                        console.error('getUserMedia 失败:', {
-                            name: streamError.name,
-                            message: streamError.message,
-                            constraint: streamError.constraint
-                        });
-                        throw streamError;
-                    }
-                } else {
-                    console.log('=== 找到 Computer-sound 设备，直接使用 ===');
-                    console.log('使用设备:', {
-                        label: systemAudioDevice.label,
-                        deviceId: systemAudioDevice.deviceId
-                    });
-                    
-                    try {
-                        systemAudioStream = await navigator.mediaDevices.getUserMedia({
-                            audio: {
-                                deviceId: { exact: systemAudioDevice.deviceId },
-                                echoCancellation: false,
-                                noiseSuppression: false,
-                                autoGainControl: false
-                            }
-                        });
-                        console.log('系统音频流获取成功');
-                    } catch (streamError) {
-                        console.error('getUserMedia 失败:', {
-                            name: streamError.name,
-                            message: streamError.message,
-                            constraint: streamError.constraint
-                        });
-                        throw streamError;
-                    }
                 }
+                
+                console.log('=== 准备获取系统音频流 ===');
+                console.log('使用设备:', {
+                    label: systemAudioDevice.label,
+                    deviceId: systemAudioDevice.deviceId
+                });
+                
+                // 使用重试机制获取系统音频流
+                systemAudioStream = await getSystemAudioStreamWithRetry(systemAudioDevice);
                 
                 console.log('系统音频流获取成功（Linux PulseAudio 方式）');
             } else if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
-                // Electron 环境（非 Linux）：使用 desktopCapturer
-                console.log('检测到 Electron 环境，使用 desktopCapturer');
-                const result = await window.electronAPI.getDesktopCapturerSources();
+                console.log('检测到 Electron 环境，使用 getDisplayMedia 获取系统音频');
+                console.log('提示: 请在弹出的对话框中选择"整个屏幕"，并勾选"分享音频"选项');
                 
-                if (!result.success) {
-                    throw new Error('获取屏幕分享源失败: ' + result.error);
-                }
-                
-                const sources = result.sources;
-                console.log('获取到屏幕分享源数量:', sources.length);
-                
-                if (sources.length === 0) {
-                    throw new Error('没有可用的屏幕分享源');
-                }
-                
-                // 选择第一个屏幕源（通常是整个屏幕）
-                const screenSource = sources.find(s => s.name === 'Entire screen') || sources[0];
-                console.log('选择的屏幕源:', screenSource.name, 'ID:', screenSource.id);
-                
-                // 使用 getUserMedia 配合 chromeMediaSource 获取系统音频
-                systemAudioStream = await navigator.mediaDevices.getUserMedia({
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
                     audio: {
-                        mandatory: {
-                            chromeMediaSource: 'desktop',
-                            chromeMediaSourceId: screenSource.id
-                        }
-                    },
-                    video: {
-                        mandatory: {
-                            chromeMediaSource: 'desktop',
-                            chromeMediaSourceId: screenSource.id
-                        }
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
                     }
                 });
                 
-                console.log('系统音频流获取成功（Electron 方式）');
+                console.log('屏幕分享获取成功');
+                
+                const systemAudioTrack = displayStream.getAudioTracks()[0];
+                if (!systemAudioTrack) {
+                    console.error('错误: 未获取到系统音频轨道');
+                    displayStream.getTracks().forEach(track => track.stop());
+                    throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
+                }
+                
+                const systemAudioVideoTrack = displayStream.getVideoTracks()[0];
+                if (systemAudioVideoTrack) {
+                    systemAudioVideoTrack.stop();
+                }
+                
+                systemAudioStream = new MediaStream([systemAudioTrack]);
+                console.log('系统音频流创建成功（Electron getDisplayMedia 方式）');
             } else {
                 // 浏览器环境：使用 getDisplayMedia
                 console.log('检测到浏览器环境，使用 getDisplayMedia');
