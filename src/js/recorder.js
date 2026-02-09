@@ -47,6 +47,12 @@ async function startRecording() {
             });
         });
 
+        // 关键步骤：触发一次设备权限请求，确保设备标签完全加载
+        // 这是 WebRTC 的已知特性 - 只有在用户授权后，设备标签才会显示
+        console.log('触发设备权限请求以加载设备标签...');
+        await navigator.mediaDevices.enumerateDevices();
+        console.log('设备标签加载完成');
+
         // 获取系统音频
         console.log('正在获取系统音频...');
         
@@ -60,17 +66,33 @@ async function startRecording() {
                 
                 // 枚举所有音频设备
                 const devices = await navigator.mediaDevices.enumerateDevices();
-                console.log('音频设备列表:', devices.map(d => ({
-                    kind: d.kind,
-                    label: d.label,
-                    deviceId: d.deviceId
-                })));
+                console.log('=== 音频设备详细列表 ===');
+                devices.forEach((d, i) => {
+                    console.log(`设备[${i}]:`, {
+                        kind: d.kind,
+                        label: d.label,
+                        deviceId: d.deviceId,
+                        groupId: d.groupId
+                    });
+                });
+                console.log('=== 音频设备列表结束 ===');
                 
                 // 查找 Computer-sound 设备
+                // 使用更灵活的匹配方式，因为设备标签可能不完全匹配
                 const systemAudioDevice = devices.find(d => 
-                    d.kind === 'audioinput' && 
-                    (d.label.includes('Computer-sound') || d.label.includes('computer'))
+                    d.kind === 'audioinput' && (
+                        d.label.includes('Computer-sound') || 
+                        d.label.includes('computer') ||
+                        d.label.includes('Computer') ||
+                        d.label.toLowerCase().includes('remap') ||
+                        d.label.toLowerCase().includes('monitor')
+                    )
                 );
+                
+                console.log('查找结果 - systemAudioDevice:', systemAudioDevice ? {
+                    label: systemAudioDevice.label,
+                    deviceId: systemAudioDevice.deviceId
+                } : '未找到');
                 
                 if (!systemAudioDevice) {
                     console.warn('未找到 Computer-sound 设备，尝试重新设置...');
@@ -86,37 +108,95 @@ async function startRecording() {
                         throw new Error('设置系统音频失败: ' + setupResult.error);
                     }
                     
-                    // 等待设备注册
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    console.log('remap-source 设置成功，等待设备注册...');
+                    // 增加等待时间，确保设备被 Chromium 完全识别
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                     
                     // 重新枚举设备
                     const newDevices = await navigator.mediaDevices.enumerateDevices();
+                    console.log('=== 重新枚举设备列表 ===');
+                    newDevices.forEach((d, i) => {
+                        console.log(`设备[${i}]:`, {
+                            kind: d.kind,
+                            label: d.label,
+                            deviceId: d.deviceId
+                        });
+                    });
+                    console.log('=== 重新枚举设备列表结束 ===');
+                    
+                    // 使用更灵活的匹配方式
                     const newSystemAudioDevice = newDevices.find(d => 
-                        d.kind === 'audioinput' && 
-                        (d.label.includes('Computer-sound') || d.label.includes('computer'))
+                        d.kind === 'audioinput' && (
+                            d.label.includes('Computer-sound') || 
+                            d.label.includes('computer') ||
+                            d.label.includes('Computer') ||
+                            d.label.toLowerCase().includes('remap') ||
+                            d.label.toLowerCase().includes('monitor')
+                        )
                     );
                     
                     if (!newSystemAudioDevice) {
+                        console.error('=== 设备查找失败 ===');
+                        console.log('重新枚举后的设备列表:');
+                        newDevices.forEach((d, i) => {
+                            console.log(`设备[${i}]:`, {
+                                kind: d.kind,
+                                label: d.label,
+                                deviceId: d.deviceId
+                            });
+                        });
                         throw new Error('无法找到系统音频设备');
                     }
                     
-                    systemAudioStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            deviceId: { exact: newSystemAudioDevice.deviceId },
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false
-                        }
+                    console.log('=== 准备获取系统音频流 ===');
+                    console.log('使用设备:', {
+                        label: newSystemAudioDevice.label,
+                        deviceId: newSystemAudioDevice.deviceId
                     });
+                    
+                    try {
+                        systemAudioStream = await navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                deviceId: { exact: newSystemAudioDevice.deviceId },
+                                echoCancellation: false,
+                                noiseSuppression: false,
+                                autoGainControl: false
+                            }
+                        });
+                        console.log('系统音频流获取成功');
+                    } catch (streamError) {
+                        console.error('getUserMedia 失败:', {
+                            name: streamError.name,
+                            message: streamError.message,
+                            constraint: streamError.constraint
+                        });
+                        throw streamError;
+                    }
                 } else {
-                    systemAudioStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            deviceId: { exact: systemAudioDevice.deviceId },
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false
-                        }
+                    console.log('=== 找到 Computer-sound 设备，直接使用 ===');
+                    console.log('使用设备:', {
+                        label: systemAudioDevice.label,
+                        deviceId: systemAudioDevice.deviceId
                     });
+                    
+                    try {
+                        systemAudioStream = await navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                deviceId: { exact: systemAudioDevice.deviceId },
+                                echoCancellation: false,
+                                noiseSuppression: false,
+                                autoGainControl: false
+                            }
+                        });
+                        console.log('系统音频流获取成功');
+                    } catch (streamError) {
+                        console.error('getUserMedia 失败:', {
+                            name: streamError.name,
+                            message: streamError.message,
+                            constraint: streamError.constraint
+                        });
+                        throw streamError;
+                    }
                 }
                 
                 console.log('系统音频流获取成功（Linux PulseAudio 方式）');
