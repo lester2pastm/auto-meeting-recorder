@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // PulseAudio remap-source 相关
   setupPulseAudioRemapSource: () => ipcRenderer.invoke('setup-pulseaudio-remap-source'),
   getSystemAudioDevices: () => ipcRenderer.invoke('get-system-audio-devices'),
+  getPulseAudioSourcesDetailed: () => ipcRenderer.invoke('get-pulseaudio-sources-detailed'),
   onPulseAudioRemapSourceReady: (callback) => 
     ipcRenderer.on('pulseaudio-remap-source-ready', (event, data) => callback(data)),
 
