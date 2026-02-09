@@ -18,12 +18,10 @@ if (!fs.existsSync(AUDIO_DIR)) {
 
 // 检测 Linux 系统依赖
 async function checkLinuxDependencies() {
-  // 只在 Linux 平台检测
   if (process.platform !== 'linux') {
     return { hasDependencies: true };
   }
 
-  // 检查是否已经提示过
   const hasPrompted = store.get('linuxDependencyPrompted', false);
   if (hasPrompted) {
     return { hasDependencies: true };
@@ -32,28 +30,38 @@ async function checkLinuxDependencies() {
   const execPromise = util.promisify(exec);
 
   try {
-    // 检测 xdg-desktop-portal 是否安装
-    await execPromise('which xdg-desktop-portal');
-    return { hasDependencies: true };
-  } catch (error) {
-    // 检测具体是哪个 portal 后端可用
-    let installCommand = '';
     let packageManager = '';
+    let installCommand = '';
 
     try {
-      await execPromise('which apt');
+      await execPromise('which dpkg');
       packageManager = 'apt';
       installCommand = 'sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk';
+      
+      const { stdout } = await execPromise('dpkg -l | grep xdg-desktop-portal');
+      if (stdout.includes('xdg-desktop-portal')) {
+        return { hasDependencies: true };
+      }
     } catch {
       try {
-        await execPromise('which dnf');
+        await execPromise('which rpm');
         packageManager = 'dnf';
         installCommand = 'sudo dnf install xdg-desktop-portal xdg-desktop-portal-gtk';
+        
+        const { stdout } = await execPromise('rpm -q xdg-desktop-portal');
+        if (stdout.includes('xdg-desktop-portal')) {
+          return { hasDependencies: true };
+        }
       } catch {
         try {
           await execPromise('which pacman');
           packageManager = 'pacman';
           installCommand = 'sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk';
+          
+          const { stdout } = await execPromise('pacman -Q xdg-desktop-portal');
+          if (stdout.includes('xdg-desktop-portal')) {
+            return { hasDependencies: true };
+          }
         } catch {
           packageManager = 'unknown';
           installCommand = '请查阅文档安装 xdg-desktop-portal 和对应的后端包';
@@ -65,6 +73,13 @@ async function checkLinuxDependencies() {
       hasDependencies: false,
       packageManager,
       installCommand
+    };
+  } catch (error) {
+    console.error('检测 Linux 依赖失败:', error);
+    return {
+      hasDependencies: false,
+      packageManager: 'unknown',
+      installCommand: '请查阅文档安装 xdg-desktop-portal 和对应的后端包'
     };
   }
 }
@@ -169,6 +184,8 @@ async function cleanupPulseAudioRemapSource() {
   if (process.platform !== 'linux') {
     return;
   }
+
+  const execPromise = util.promisify(exec);
 
   try {
     const { stdout } = await execPromise('pactl list modules short');
