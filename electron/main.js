@@ -101,10 +101,21 @@ async function setupPulseAudioRemapSource() {
   }
 
   try {
+    // 首先检查是否已存在 Computer-sound 源
     const { stdout: sourcesOutput } = await execPromise('pactl list sources short');
     
     if (sourcesOutput.includes('Computer-sound')) {
       console.log('Computer-sound 源已存在');
+      // 获取已存在源的 module index
+      const { stdout: modulesOutput } = await execPromise('pactl list modules short');
+      const lines = modulesOutput.split('\n');
+      for (const line of lines) {
+        if (line.includes('module-remap-source') && line.includes('Computer-sound')) {
+          remapSourceModuleIndex = line.split('\t')[0];
+          console.log('找到已存在的 remap-source module index:', remapSourceModuleIndex);
+          break;
+        }
+      }
       return { success: true, needsSetup: false, deviceName: 'Computer-sound' };
     }
 
@@ -144,36 +155,57 @@ async function setupPulseAudioRemapSource() {
     }
 
     console.log('创建 remap-source...');
-    const moduleGenerate = spawn('pactl', [
-      'load-module',
-      'module-remap-source',
-      `master=${monitorName}`,
-      'source_properties=device.description=Computer-sound'
-    ]);
-
-    return new Promise((resolve) => {
-      moduleGenerate.on('error', (err) => {
-        console.error('创建 remap-source 失败:', err);
-        resolve({ success: false, error: err.message });
-      });
-
-      moduleGenerate.on('close', (code) => {
-        if (code === 0) {
-          console.log('remap-source 创建成功');
+    
+    // 使用 exec 代替 spawn 以捕获 module index 输出
+    const { stdout: moduleOutput } = await execPromise(
+      `pactl load-module module-remap-source master=${monitorName} source_properties=device.description=Computer-sound`
+    );
+    
+    remapSourceModuleIndex = moduleOutput.trim();
+    console.log('remap-source 创建成功，module index:', remapSourceModuleIndex);
+    
+    // 验证源是否真正创建成功并可用了
+    let retryCount = 0;
+    const maxRetries = 10;
+    const checkInterval = 500; // 500ms
+    
+    while (retryCount < maxRetries) {
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+      
+      try {
+        const { stdout: checkOutput } = await execPromise('pactl list sources short');
+        if (checkOutput.includes('Computer-sound')) {
+          console.log(`Computer-sound 源在第 ${retryCount + 1} 次检查时已可用`);
           
-          setTimeout(() => {
-            resolve({ 
-              success: true, 
-              needsSetup: true, 
-              deviceName: 'Computer-sound',
-              monitorName 
-            });
-          }, 1000);
-        } else {
-          resolve({ success: false, error: `创建失败，退出码: ${code}` });
+          // 额外等待确保 Chromium 能识别
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          return { 
+            success: true, 
+            needsSetup: true, 
+            deviceName: 'Computer-sound',
+            monitorName,
+            moduleIndex: remapSourceModuleIndex
+          };
         }
-      });
-    });
+      } catch (checkError) {
+        console.log(`第 ${retryCount + 1} 次检查失败:`, checkError.message);
+      }
+      
+      retryCount++;
+    }
+    
+    console.warn('警告: Computer-sound 源创建后未在预期时间内检测到');
+    // 即使检测失败，也返回成功，因为模块已加载
+    return { 
+      success: true, 
+      needsSetup: true, 
+      deviceName: 'Computer-sound',
+      monitorName,
+      moduleIndex: remapSourceModuleIndex,
+      warning: '源创建成功但验证超时'
+    };
+    
   } catch (error) {
     console.error('设置 PulseAudio remap-source 失败:', error);
     return { success: false, error: error.message };
