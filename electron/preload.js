@@ -24,6 +24,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onPulseAudioRemapSourceReady: (callback) => 
     ipcRenderer.on('pulseaudio-remap-source-ready', (event, data) => callback(data)),
 
+  // ffmpeg 相关
+  checkFFmpeg: () => ipcRenderer.invoke('check-ffmpeg'),
+  startFFmpegAudioCapture: (audioFilePath) => ipcRenderer.invoke('start-ffmpeg-audio-capture', audioFilePath),
+  stopFFmpegAudioCapture: () => ipcRenderer.invoke('stop-ffmpeg-audio-capture'),
+  mergeAudioFiles: (systemAudioPath, micAudioPath, outputPath) => 
+    ipcRenderer.invoke('merge-audio-files', systemAudioPath, micAudioPath, outputPath),
+
   // Linux 依赖警告相关
   dismissLinuxDependencyWarning: () => ipcRenderer.invoke('dismiss-linux-dependency-warning'),
   onLinuxDependencyMissing: (callback) => ipcRenderer.on('linux-dependency-missing', (event, data) => callback(data)),

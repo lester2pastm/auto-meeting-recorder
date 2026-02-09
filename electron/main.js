@@ -36,7 +36,7 @@ async function checkLinuxDependencies() {
     try {
       await execPromise('which dpkg');
       packageManager = 'apt';
-      installCommand = 'sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk';
+      installCommand = 'sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk ffmpeg';
       
       const { stdout } = await execPromise('dpkg -l | grep xdg-desktop-portal');
       if (stdout.includes('xdg-desktop-portal')) {
@@ -46,7 +46,7 @@ async function checkLinuxDependencies() {
       try {
         await execPromise('which rpm');
         packageManager = 'dnf';
-        installCommand = 'sudo dnf install xdg-desktop-portal xdg-desktop-portal-gtk';
+        installCommand = 'sudo dnf install xdg-desktop-portal xdg-desktop-portal-gtk ffmpeg';
         
         const { stdout } = await execPromise('rpm -q xdg-desktop-portal');
         if (stdout.includes('xdg-desktop-portal')) {
@@ -56,7 +56,7 @@ async function checkLinuxDependencies() {
         try {
           await execPromise('which pacman');
           packageManager = 'pacman';
-          installCommand = 'sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk';
+          installCommand = 'sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk ffmpeg';
           
           const { stdout } = await execPromise('pacman -Q xdg-desktop-portal');
           if (stdout.includes('xdg-desktop-portal')) {
@@ -64,7 +64,7 @@ async function checkLinuxDependencies() {
           }
         } catch {
           packageManager = 'unknown';
-          installCommand = '请查阅文档安装 xdg-desktop-portal 和对应的后端包';
+          installCommand = '请查阅文档安装 xdg-desktop-portal、ffmpeg 和对应的后端包';
         }
       }
     }
@@ -79,12 +79,49 @@ async function checkLinuxDependencies() {
     return {
       hasDependencies: false,
       packageManager: 'unknown',
-      installCommand: '请查阅文档安装 xdg-desktop-portal 和对应的后端包'
+      installCommand: '请查阅文档安装 xdg-desktop-portal、ffmpeg 和对应的后端包'
+    };
+  }
+}
+
+// 检查 ffmpeg 是否可用
+async function checkFFmpeg() {
+  if (process.platform !== 'linux') {
+    return { available: false, reason: 'Not on Linux' };
+  }
+
+  const execPromise = util.promisify(exec);
+
+  try {
+    await execPromise('which ffmpeg');
+    const { stdout } = await execPromise('ffmpeg -version');
+    
+    // 检查是否支持 pulse 或 pipewire
+    const hasPulse = stdout.includes('--enable-libpulse');
+    const hasPipeWire = stdout.includes('--enable-libpipewire');
+    
+    if (hasPulse || hasPipeWire) {
+      return { 
+        available: true, 
+        audioInput: hasPulse ? 'pulse' : 'pipewire' 
+      };
+    } else {
+      return { 
+        available: false, 
+        reason: 'FFmpeg does not support pulseaudio or pipewire' 
+      };
+    }
+  } catch (error) {
+    return { 
+      available: false, 
+      reason: 'FFmpeg not found or not executable' 
     };
   }
 }
 
 let remapSourceModuleIndex = null;
+let ffmpegAudioProcess = null;
+let ffmpegAudioFilePath = null;
 
 async function setupPulseAudioRemapSource() {
   if (process.platform !== 'linux') {
@@ -232,6 +269,148 @@ async function cleanupPulseAudioRemapSource() {
     }
   } catch (error) {
     console.error('清理 remap-source 失败:', error);
+  }
+}
+
+// 使用 ffmpeg 录制系统音频
+async function startFFmpegAudioCapture(audioFilePath) {
+  if (process.platform !== 'linux') {
+    return { success: false, error: 'Not on Linux' };
+  }
+
+  const ffmpegCheck = await checkFFmpeg();
+  if (!ffmpegCheck.available) {
+    return { success: false, error: ffmpegCheck.reason };
+  }
+
+  const audioInput = ffmpegCheck.audioInput;
+  
+  try {
+    // 确保目录存在
+    const dir = path.dirname(audioFilePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // 构建 ffmpeg 命令
+    const args = [
+      '-f', audioInput,
+      '-i', 'default',
+      '-c:a', 'libopus',
+      '-b:a', '128k',
+      '-f', 'webm',
+      '-y',
+      audioFilePath
+    ];
+
+    console.log('启动 ffmpeg 音频录制:', args.join(' '));
+
+    // 启动 ffmpeg 进程
+    ffmpegAudioProcess = spawn('ffmpeg', args);
+
+    ffmpegAudioFilePath = audioFilePath;
+
+    // 监听错误输出
+    ffmpegAudioProcess.stderr.on('data', (data) => {
+      console.log('FFmpeg stderr:', data.toString());
+    });
+
+    // 监听进程退出
+    ffmpegAudioProcess.on('close', (code) => {
+      console.log(`FFmpeg 进程退出，代码: ${code}`);
+      ffmpegAudioProcess = null;
+    });
+
+    // 等待一小段时间确保进程启动成功
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (ffmpegAudioProcess && !ffmpegAudioProcess.killed) {
+          resolve();
+        } else {
+          reject(new Error('FFmpeg 进程启动失败'));
+        }
+      }, 1000);
+
+      ffmpegAudioProcess.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+
+    return { success: true, filePath: audioFilePath };
+  } catch (error) {
+    console.error('启动 ffmpeg 音频录制失败:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// 停止 ffmpeg 音频录制
+async function stopFFmpegAudioCapture() {
+  if (!ffmpegAudioProcess) {
+    return { success: true, filePath: ffmpegAudioFilePath };
+  }
+
+  try {
+    // 发送 'q' 命令让 ffmpeg 优雅退出
+    ffmpegAudioProcess.stdin.write('q');
+    
+    // 等待进程退出
+    await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        if (ffmpegAudioProcess) {
+          ffmpegAudioProcess.kill('SIGKILL');
+        }
+        resolve();
+      }, 5000);
+
+      ffmpegAudioProcess.on('close', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+
+    const filePath = ffmpegAudioFilePath;
+    ffmpegAudioProcess = null;
+    ffmpegAudioFilePath = null;
+
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('停止 ffmpeg 音频录制失败:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// 合并音频文件（系统音频 + 麦克风音频）
+async function mergeAudioFiles(systemAudioPath, micAudioPath, outputPath) {
+  const execPromise = util.promisify(exec);
+
+  try {
+    // 确保目录存在
+    const dir = path.dirname(outputPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // 使用 ffmpeg 合并两个音频文件
+    const args = [
+      '-i', systemAudioPath,
+      '-i', micAudioPath,
+      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]',
+      '-map', '[aout]',
+      '-c:a', 'libopus',
+      '-b:a', '128k',
+      '-y',
+      outputPath
+    ];
+
+    console.log('合并音频文件:', args.join(' '));
+
+    await execPromise(`ffmpeg ${args.join(' ')}`);
+
+    return { success: true, filePath: outputPath };
+  } catch (error) {
+    console.error('合并音频文件失败:', error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -538,4 +717,27 @@ ipcMain.handle('get-pulseaudio-sources-detailed', async () => {
 // 应用退出时清理
 app.on('before-quit', async () => {
   await cleanupPulseAudioRemapSource();
+  if (ffmpegAudioProcess) {
+    ffmpegAudioProcess.kill('SIGKILL');
+  }
+});
+
+// IPC 处理器：检查 ffmpeg 可用性
+ipcMain.handle('check-ffmpeg', async () => {
+  return await checkFFmpeg();
+});
+
+// IPC 处理器：启动 ffmpeg 音频录制
+ipcMain.handle('start-ffmpeg-audio-capture', async (event, audioFilePath) => {
+  return await startFFmpegAudioCapture(audioFilePath);
+});
+
+// IPC 处理器：停止 ffmpeg 音频录制
+ipcMain.handle('stop-ffmpeg-audio-capture', async () => {
+  return await stopFFmpegAudioCapture();
+});
+
+// IPC 处理器：合并音频文件
+ipcMain.handle('merge-audio-files', async (event, systemAudioPath, micAudioPath, outputPath) => {
+  return await mergeAudioFiles(systemAudioPath, micAudioPath, outputPath);
 });
