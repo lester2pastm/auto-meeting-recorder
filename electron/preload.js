@@ -16,22 +16,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 屏幕分享源获取（用于系统音频录制）
   getDesktopCapturerSources: () => ipcRenderer.invoke('get-desktop-capturer-sources'),
-
-  // PulseAudio remap-source 相关
-  setupPulseAudioRemapSource: () => ipcRenderer.invoke('setup-pulseaudio-remap-source'),
-  getSystemAudioDevices: () => ipcRenderer.invoke('get-system-audio-devices'),
-  getPulseAudioSourcesDetailed: () => ipcRenderer.invoke('get-pulseaudio-sources-detailed'),
-  onPulseAudioRemapSourceReady: (callback) => 
-    ipcRenderer.on('pulseaudio-remap-source-ready', (event, data) => callback(data)),
-
-  // ffmpeg 相关
+  
+  // 平台检测
+  getPlatform: () => ipcRenderer.invoke('get-platform'),
+  
+  // FFmpeg 相关接口（Linux 系统音频录制）
   checkFFmpeg: () => ipcRenderer.invoke('check-ffmpeg'),
-  startFFmpegAudioCapture: (audioFilePath) => ipcRenderer.invoke('start-ffmpeg-audio-capture', audioFilePath),
-  stopFFmpegAudioCapture: () => ipcRenderer.invoke('stop-ffmpeg-audio-capture'),
-  mergeAudioFiles: (systemAudioPath, micAudioPath, outputPath) => 
-    ipcRenderer.invoke('merge-audio-files', systemAudioPath, micAudioPath, outputPath),
-
-  // Linux 依赖警告相关
-  dismissLinuxDependencyWarning: () => ipcRenderer.invoke('dismiss-linux-dependency-warning'),
-  onLinuxDependencyMissing: (callback) => ipcRenderer.on('linux-dependency-missing', (event, data) => callback(data)),
+  startFFmpegSystemAudio: (outputPath, device) => ipcRenderer.invoke('start-ffmpeg-system-audio', { outputPath, device }),
+  startFFmpegMicrophone: (outputPath, device) => ipcRenderer.invoke('start-ffmpeg-microphone', { outputPath, device }),
+  stopFFmpegRecording: () => ipcRenderer.invoke('stop-ffmpeg-recording'),
+  mergeAudioFiles: (microphonePath, systemAudioPath, outputPath) => ipcRenderer.invoke('merge-audio-files', { microphonePath, systemAudioPath, outputPath }),
+  getPulseAudioSources: () => ipcRenderer.invoke('get-pulseaudio-sources'),
 });

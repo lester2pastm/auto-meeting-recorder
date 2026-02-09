@@ -1,12 +1,23 @@
 const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { exec, spawn } = require('child_process');
-const util = require('util');
 const Store = require('electron-store');
+const { spawn, exec } = require('child_process');
+const { promisify } = require('util');
 
 // 初始化配置存储
 const store = new Store();
+
+// 平台检测
+const isLinux = process.platform === 'linux';
+const isWindows = process.platform === 'win32';
+const isMac = process.platform === 'darwin';
+
+// 音频录制进程（Linux 下使用 ffmpeg）
+let ffmpegSystemAudioProcess = null;
+let ffmpegMicrophoneProcess = null;
+let recordingStartTime = null;
+const execAsync = promisify(exec);
 
 // 音频文件保存目录
 const AUDIO_DIR = path.join(app.getPath('userData'), 'audio_files');
@@ -14,540 +25,6 @@ const AUDIO_DIR = path.join(app.getPath('userData'), 'audio_files');
 // 确保音频目录存在
 if (!fs.existsSync(AUDIO_DIR)) {
   fs.mkdirSync(AUDIO_DIR, { recursive: true });
-}
-
-// 检测 Linux 系统依赖
-async function checkLinuxDependencies() {
-  if (process.platform !== 'linux') {
-    return { hasDependencies: true };
-  }
-
-  const hasPrompted = store.get('linuxDependencyPrompted', false);
-  if (hasPrompted) {
-    return { hasDependencies: true };
-  }
-
-  const execPromise = util.promisify(exec);
-
-  try {
-    let packageManager = '';
-    let installCommand = '';
-
-    try {
-      await execPromise('which dpkg');
-      packageManager = 'apt';
-      installCommand = 'sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk ffmpeg';
-      
-      const { stdout } = await execPromise('dpkg -l | grep xdg-desktop-portal');
-      if (stdout.includes('xdg-desktop-portal')) {
-        return { hasDependencies: true };
-      }
-    } catch {
-      try {
-        await execPromise('which rpm');
-        packageManager = 'dnf';
-        installCommand = 'sudo dnf install xdg-desktop-portal xdg-desktop-portal-gtk ffmpeg';
-        
-        const { stdout } = await execPromise('rpm -q xdg-desktop-portal');
-        if (stdout.includes('xdg-desktop-portal')) {
-          return { hasDependencies: true };
-        }
-      } catch {
-        try {
-          await execPromise('which pacman');
-          packageManager = 'pacman';
-          installCommand = 'sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk ffmpeg';
-          
-          const { stdout } = await execPromise('pacman -Q xdg-desktop-portal');
-          if (stdout.includes('xdg-desktop-portal')) {
-            return { hasDependencies: true };
-          }
-        } catch {
-          packageManager = 'unknown';
-          installCommand = '请查阅文档安装 xdg-desktop-portal、ffmpeg 和对应的后端包';
-        }
-      }
-    }
-
-    return {
-      hasDependencies: false,
-      packageManager,
-      installCommand
-    };
-  } catch (error) {
-    console.error('检测 Linux 依赖失败:', error);
-    return {
-      hasDependencies: false,
-      packageManager: 'unknown',
-      installCommand: '请查阅文档安装 xdg-desktop-portal、ffmpeg 和对应的后端包'
-    };
-  }
-}
-
-// 检查 ffmpeg 是否可用并获取音频设备
-async function checkFFmpeg() {
-  if (process.platform === 'win32') {
-    return { 
-      available: true, 
-      platform: 'windows',
-      audioInput: 'dshow',
-      reason: 'Windows uses WebRTC, ffmpeg not needed'
-    };
-  }
-
-  if (process.platform !== 'linux' && process.platform !== 'darwin') {
-    return { available: false, reason: 'Unsupported platform' };
-  }
-
-  const execPromise = util.promisify(exec);
-
-  try {
-    await execPromise('which ffmpeg');
-    const { stdout } = await execPromise('ffmpeg -version');
-    
-    // 检查平台支持
-    if (process.platform === 'linux') {
-      const hasPulse = stdout.includes('--enable-libpulse');
-      const hasPipeWire = stdout.includes('--enable-libpipewire');
-      
-      if (hasPulse || hasPipeWire) {
-        // 尝试列出可用的音频设备
-        let audioInput = 'pulse';
-        let availableDevices = [];
-        
-        try {
-          if (hasPulse) {
-            const { stdout: pulseDevices } = await execPromise('ffmpeg -f pulse -list_devices true -i dummy 2>&1');
-            console.log('PulseAudio 设备列表:', pulseDevices);
-            availableDevices = parseFFmpegDevices(pulseDevices, 'PulseAudio');
-          }
-          
-          if (hasPipeWire && availableDevices.length === 0) {
-            const { stdout: pwDevices } = await execPromise('ffmpeg -f pipewire -list_devices true -i dummy 2>&1');
-            console.log('PipeWire 设备列表:', pwDevices);
-            availableDevices = parseFFmpegDevices(pwDevices, 'PipeWire');
-            audioInput = 'pipewire';
-          }
-        } catch (deviceError) {
-          console.warn('获取音频设备列表失败:', deviceError.message);
-        }
-        
-        return { 
-          available: true, 
-          platform: 'linux',
-          audioInput,
-          availableDevices
-        };
-      } else {
-        return { 
-          available: false, 
-          reason: 'FFmpeg does not support pulseaudio or pipewire' 
-        };
-      }
-    } else if (process.platform === 'darwin') {
-      // macOS
-      const hasAvFoundation = stdout.includes('--enable-avfoundation');
-      
-      if (hasAvFoundation) {
-        let availableDevices = [];
-        
-        try {
-          const { stdout: avDevices } = await execPromise('ffmpeg -f avfoundation -list_devices true -i "" 2>&1');
-          console.log('AVFoundation 设备列表:', avDevices);
-          availableDevices = parseFFmpegDevices(avDevices, 'AVFoundation');
-        } catch (deviceError) {
-          console.warn('获取音频设备列表失败:', deviceError.message);
-        }
-        
-        return { 
-          available: true, 
-          platform: 'darwin',
-          audioInput: 'avfoundation',
-          availableDevices
-        };
-      } else {
-        return { 
-          available: false, 
-          reason: 'FFmpeg does not support avfoundation' 
-        };
-      }
-    }
-  } catch (error) {
-    return { 
-      available: false, 
-      reason: 'FFmpeg not found or not executable' 
-    };
-  }
-}
-
-// 解析 ffmpeg 设备列表输出
-function parseFFmpegDevices(output, inputType) {
-  const devices = [];
-  const lines = output.split('\n');
-  
-  let currentType = null;
-  
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-    
-    if (trimmedLine.includes('[AVFoundation input device')) {
-      currentType = 'audio';
-      continue;
-    }
-    
-    if (trimmedLine.includes('PulseAudio') || trimmedLine.includes('PipeWire')) {
-      currentType = 'audio';
-      continue;
-    }
-    
-    if (currentType === 'audio' && trimmedLine.startsWith('[')) {
-      const match = trimmedLine.match(/\[(\d+)\]\s+(.+)/);
-      if (match) {
-        devices.push({
-          index: match[1],
-          name: match[2].trim(),
-          inputType
-        });
-      }
-    }
-  }
-  
-  return devices;
-}
-
-let remapSourceModuleIndex = null;
-let ffmpegAudioProcess = null;
-let ffmpegAudioFilePath = null;
-
-async function setupPulseAudioRemapSource() {
-  if (process.platform !== 'linux') {
-    return { success: true, needsSetup: false };
-  }
-
-  const execPromise = util.promisify(exec);
-
-  try {
-    await execPromise('which pactl');
-    await execPromise('pactl info');
-  } catch {
-    return { success: false, error: 'PulseAudio 不可用' };
-  }
-
-  try {
-    // 首先检查是否已存在 Computer-sound 源
-    const { stdout: sourcesOutput } = await execPromise('pactl list sources short');
-    
-    if (sourcesOutput.includes('Computer-sound')) {
-      console.log('Computer-sound 源已存在');
-      // 获取已存在源的 module index
-      const { stdout: modulesOutput } = await execPromise('pactl list modules short');
-      const lines = modulesOutput.split('\n');
-      for (const line of lines) {
-        if (line.includes('module-remap-source') && line.includes('Computer-sound')) {
-          remapSourceModuleIndex = line.split('\t')[0];
-          console.log('找到已存在的 remap-source module index:', remapSourceModuleIndex);
-          break;
-        }
-      }
-      return { success: true, needsSetup: false, deviceName: 'Computer-sound' };
-    }
-
-    let monitorName = null;
-
-    try {
-      const { stdout: monitorOutput } = await execPromise('pacmd list-sources | grep -B 1 analog-stereo.monitor | grep name:');
-      
-      const lines = monitorOutput.split('\n');
-      
-      if (lines.length <= 2) {
-        const regex = /name:\s*<(.+)>/i;
-        const match = monitorOutput.match(regex);
-        
-        if (match && match.length > 1) {
-          monitorName = match[1];
-          console.log('找到 monitor 源:', monitorName);
-        }
-      }
-    } catch (error) {
-      console.log('查找 analog-stereo.monitor 失败，尝试查找其他 monitor 源');
-    }
-
-    if (!monitorName) {
-      const { stdout: allSources } = await execPromise('pactl list sources short');
-      const monitorSources = allSources
-        .split('\n')
-        .filter(line => line.includes('.monitor'))
-        .map(line => line.split('\t')[1]);
-      
-      if (monitorSources.length > 0) {
-        monitorName = monitorSources[0];
-        console.log('使用替代 monitor 源:', monitorName);
-      } else {
-        return { success: false, error: '未找到可用的 monitor 源' };
-      }
-    }
-
-    console.log('创建 remap-source...');
-    
-    // 使用 exec 代替 spawn 以捕获 module index 输出
-    const { stdout: moduleOutput } = await execPromise(
-      `pactl load-module module-remap-source master=${monitorName} source_properties=device.description=Computer-sound`
-    );
-    
-    remapSourceModuleIndex = moduleOutput.trim();
-    console.log('remap-source 创建成功，module index:', remapSourceModuleIndex);
-    
-    // 验证源是否真正创建成功并可用了
-    let retryCount = 0;
-    const maxRetries = 10;
-    const checkInterval = 500; // 500ms
-    
-    while (retryCount < maxRetries) {
-      await new Promise(resolve => setTimeout(resolve, checkInterval));
-      
-      try {
-        const { stdout: checkOutput } = await execPromise('pactl list sources short');
-        if (checkOutput.includes('Computer-sound')) {
-          console.log(`Computer-sound 源在第 ${retryCount + 1} 次检查时已可用`);
-          
-          // 额外等待确保 Chromium 能识别
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          return { 
-            success: true, 
-            needsSetup: true, 
-            deviceName: 'Computer-sound',
-            monitorName,
-            moduleIndex: remapSourceModuleIndex
-          };
-        }
-      } catch (checkError) {
-        console.log(`第 ${retryCount + 1} 次检查失败:`, checkError.message);
-      }
-      
-      retryCount++;
-    }
-    
-    console.warn('警告: Computer-sound 源创建后未在预期时间内检测到');
-    // 即使检测失败，也返回成功，因为模块已加载
-    return { 
-      success: true, 
-      needsSetup: true, 
-      deviceName: 'Computer-sound',
-      monitorName,
-      moduleIndex: remapSourceModuleIndex,
-      warning: '源创建成功但验证超时'
-    };
-    
-  } catch (error) {
-    console.error('设置 PulseAudio remap-source 失败:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-async function cleanupPulseAudioRemapSource() {
-  if (process.platform !== 'linux') {
-    return;
-  }
-
-  const execPromise = util.promisify(exec);
-
-  try {
-    const { stdout } = await execPromise('pactl list modules short');
-    const lines = stdout.split('\n');
-    
-    for (const line of lines) {
-      if (line.includes('module-remap-source') && line.includes('Computer-sound')) {
-        const moduleIndex = line.split('\t')[0];
-        await execPromise(`pactl unload-module ${moduleIndex}`);
-        console.log('已清理 remap-source 模块');
-      }
-    }
-  } catch (error) {
-    console.error('清理 remap-source 失败:', error);
-  }
-}
-
-// 使用 ffmpeg 录制系统音频
-async function startFFmpegAudioCapture(audioFilePath) {
-  if (process.platform === 'win32') {
-    return { success: false, error: 'Windows uses WebRTC, ffmpeg not needed' };
-  }
-
-  if (process.platform !== 'linux' && process.platform !== 'darwin') {
-    return { success: false, error: 'Unsupported platform' };
-  }
-
-  const ffmpegCheck = await checkFFmpeg();
-  if (!ffmpegCheck.available) {
-    return { success: false, error: ffmpegCheck.reason };
-  }
-
-  const { audioInput, availableDevices } = ffmpegCheck;
-  
-  try {
-    // 确保目录存在
-    const dir = path.dirname(audioFilePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    let inputDevice = 'default';
-    
-    // 根据平台选择合适的输入设备
-    if (process.platform === 'linux') {
-      // Linux: 使用 default 或指定的音频设备
-      if (availableDevices && availableDevices.length > 0) {
-        // 尝试找到系统音频设备（包含 monitor 或 output 的设备）
-        const systemDevice = availableDevices.find(d => 
-          d.name.toLowerCase().includes('monitor') || 
-          d.name.toLowerCase().includes('output') ||
-          d.name.toLowerCase().includes('default')
-        );
-        
-        if (systemDevice) {
-          inputDevice = systemDevice.name;
-          console.log('使用系统音频设备:', inputDevice);
-        }
-      }
-    } else if (process.platform === 'darwin') {
-      // macOS: 需要使用设备索引
-      if (availableDevices && availableDevices.length > 0) {
-        // 查找系统音频设备（通常是第一个音频设备）
-        const audioDevice = availableDevices[0];
-        inputDevice = `:${audioDevice.index}`;
-        console.log('使用 macOS 音频设备:', audioDevice.name, `索引:${audioDevice.index}`);
-      } else {
-        // 如果没有找到设备，使用默认方式
-        inputDevice = ':0';
-        console.log('使用默认 macOS 音频设备');
-      }
-    }
-
-    // 构建 ffmpeg 命令
-    const args = [
-      '-f', audioInput,
-      '-i', inputDevice,
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-f', 'webm',
-      '-y',
-      audioFilePath
-    ];
-
-    console.log('启动 ffmpeg 音频录制:', args.join(' '));
-
-    // 启动 ffmpeg 进程
-    ffmpegAudioProcess = spawn('ffmpeg', args);
-
-    ffmpegAudioFilePath = audioFilePath;
-
-    // 监听错误输出
-    ffmpegAudioProcess.stderr.on('data', (data) => {
-      const output = data.toString();
-      // 只记录重要信息，避免过多日志
-      if (output.includes('Error') || output.includes('error') || output.includes('Input/output error')) {
-        console.log('FFmpeg stderr:', output);
-      }
-    });
-
-    // 监听进程退出
-    ffmpegAudioProcess.on('close', (code) => {
-      console.log(`FFmpeg 进程退出，代码: ${code}`);
-      ffmpegAudioProcess = null;
-    });
-
-    // 等待一小段时间确保进程启动成功
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        if (ffmpegAudioProcess && !ffmpegAudioProcess.killed) {
-          resolve();
-        } else {
-          reject(new Error('FFmpeg 进程启动失败'));
-        }
-      }, 2000);
-
-      ffmpegAudioProcess.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-    });
-
-    return { success: true, filePath: audioFilePath };
-  } catch (error) {
-    console.error('启动 ffmpeg 音频录制失败:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// 停止 ffmpeg 音频录制
-async function stopFFmpegAudioCapture() {
-  if (!ffmpegAudioProcess) {
-    return { success: true, filePath: ffmpegAudioFilePath };
-  }
-
-  try {
-    // 发送 'q' 命令让 ffmpeg 优雅退出
-    ffmpegAudioProcess.stdin.write('q');
-    
-    // 等待进程退出
-    await new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        if (ffmpegAudioProcess) {
-          ffmpegAudioProcess.kill('SIGKILL');
-        }
-        resolve();
-      }, 5000);
-
-      ffmpegAudioProcess.on('close', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
-
-    const filePath = ffmpegAudioFilePath;
-    ffmpegAudioProcess = null;
-    ffmpegAudioFilePath = null;
-
-    return { success: true, filePath };
-  } catch (error) {
-    console.error('停止 ffmpeg 音频录制失败:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// 合并音频文件（系统音频 + 麦克风音频）
-async function mergeAudioFiles(systemAudioPath, micAudioPath, outputPath) {
-  const execPromise = util.promisify(exec);
-
-  try {
-    // 确保目录存在
-    const dir = path.dirname(outputPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    // 使用 ffmpeg 合并两个音频文件
-    const args = [
-      '-i', systemAudioPath,
-      '-i', micAudioPath,
-      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]',
-      '-map', '[aout]',
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-y',
-      outputPath
-    ];
-
-    console.log('合并音频文件:', args.join(' '));
-
-    await execPromise(`ffmpeg ${args.join(' ')}`);
-
-    return { success: true, filePath: outputPath };
-  } catch (error) {
-    console.error('合并音频文件失败:', error);
-    return { success: false, error: error.message };
-  }
 }
 
 let mainWindow;
@@ -596,33 +73,8 @@ function createWindow() {
 }
 
 // 应用就绪
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   createWindow();
-
-  // Linux 系统依赖检测
-  const depCheck = await checkLinuxDependencies();
-  if (!depCheck.hasDependencies && mainWindow) {
-    setTimeout(() => {
-      mainWindow.webContents.send('linux-dependency-missing', {
-        installCommand: depCheck.installCommand,
-        packageManager: depCheck.packageManager
-      });
-    }, 2000);
-  }
-
-  // Linux PulseAudio remap-source 设置
-  if (process.platform === 'linux') {
-    const remapSetup = await setupPulseAudioRemapSource();
-    
-    if (remapSetup.success && remapSetup.needsSetup) {
-      setTimeout(() => {
-        mainWindow.webContents.send('pulseaudio-remap-source-ready', {
-          deviceName: remapSetup.deviceName,
-          monitorName: remapSetup.monitorName
-        });
-      }, 1500);
-    }
-  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -708,16 +160,6 @@ ipcMain.handle('save-config', async (event, config) => {
   }
 });
 
-// IPC 处理器：标记 Linux 依赖提示已显示
-ipcMain.handle('dismiss-linux-dependency-warning', async () => {
-  try {
-    store.set('linuxDependencyPrompted', true);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
 // IPC 处理器：加载配置
 ipcMain.handle('load-config', async () => {
   try {
@@ -779,101 +221,400 @@ ipcMain.handle('get-desktop-capturer-sources', async () => {
   }
 });
 
-// IPC 处理器：设置 PulseAudio remap-source
-ipcMain.handle('setup-pulseaudio-remap-source', async () => {
-  return await setupPulseAudioRemapSource();
+// 检测平台
+ipcMain.handle('get-platform', async () => {
+  return { 
+    success: true, 
+    platform: process.platform,
+    isLinux: isLinux,
+    isWindows: isWindows,
+    isMac: isMac
+  };
 });
 
-// IPC 处理器：获取系统音频设备
-ipcMain.handle('get-system-audio-devices', async () => {
-  if (process.platform !== 'linux') {
-    return { success: true, devices: [] };
+// 检查 ffmpeg 是否可用
+ipcMain.handle('check-ffmpeg', async () => {
+  try {
+    const { stdout } = await execAsync('ffmpeg -version');
+    const version = stdout.split('\n')[0];
+    return { success: true, available: true, version };
+  } catch (error) {
+    return { success: true, available: false, error: error.message };
+  }
+});
+
+// 辅助函数：获取默认的 PulseAudio 设备
+async function getDefaultPulseAudioDevice(type = 'output') {
+  try {
+    const { stdout } = await execAsync('pacmd list-sources');
+    const lines = stdout.split('\n');
+    let currentSource = null;
+    let defaultSource = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // 查找源名称
+      if (line.includes('name:')) {
+        const nameMatch = line.match(/name:\s*<([^>]+)>/);
+        if (nameMatch) {
+          currentSource = nameMatch[1];
+        }
+      }
+      
+      // 查找默认标记
+      if (line.includes('* index:') && currentSource) {
+        defaultSource = currentSource;
+      }
+    }
+    
+    // 查找第一个 monitor 设备作为系统音频源
+    if (type === 'output') {
+      for (const line of lines) {
+        if (line.includes('name:')) {
+          const nameMatch = line.match(/name:\s*<([^>]+)>/);
+          if (nameMatch && nameMatch[1].includes('.monitor')) {
+            return nameMatch[1].replace('.monitor', '');
+          }
+        }
+      }
+    }
+    
+    // 查找第一个输入设备作为麦克风源
+    if (type === 'input') {
+      for (const line of lines) {
+        if (line.includes('name:')) {
+          const nameMatch = line.match(/name:\s*<([^>]+)>/);
+          if (nameMatch) {
+            const name = nameMatch[1];
+            // 排除 monitor 设备
+            if (!name.includes('.monitor') && name.includes('input')) {
+              return name;
+            }
+          }
+        }
+      }
+    }
+    
+    return defaultSource || 'default';
+  } catch (error) {
+    console.warn('Failed to get default PulseAudio device:', error.message);
+    return 'default';
+  }
+}
+
+// 在 Linux 下使用 ffmpeg 开始录制系统音频
+ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device = null }) => {
+  if (!isLinux) {
+    return { success: false, error: 'FFmpeg system audio recording is only supported on Linux' };
   }
 
   try {
-    const { stdout } = await execPromise('pactl list sources short');
-    const lines = stdout.split('\n');
-    const devices = [];
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      
-      const [index, name, description] = line.split('\t');
-      
-      if (name.includes('Computer-sound') || name.includes('.monitor')) {
-        devices.push({
-          index,
-          name,
-          description: description || name
-        });
-      }
+    // 如果已有录制进程，先停止
+    if (ffmpegSystemAudioProcess) {
+      ffmpegSystemAudioProcess.kill('SIGTERM');
+      ffmpegSystemAudioProcess = null;
     }
 
-    return { success: true, devices };
+    // 如果没有指定设备，自动检测
+    if (!device) {
+      device = await getDefaultPulseAudioDevice('output');
+      console.log('Auto-detected system audio device:', device);
+    }
+
+    // 构建 ffmpeg 命令录制系统音频
+    // 使用 pulse 音频输入，录制系统输出（monitor）
+    const args = [
+      '-f', 'pulse',
+      '-i', `${device}.monitor`,  // 系统音频 monitor 设备
+      '-acodec', 'libopus',        // 使用 opus 编码
+      '-b:a', '128k',              // 比特率
+      '-ar', '48000',              // 采样率
+      '-ac', '2',                  // 双声道
+      '-y',                        // 覆盖已存在文件
+      outputPath
+    ];
+
+    console.log('Starting ffmpeg system audio recording:', args.join(' '));
+
+    ffmpegSystemAudioProcess = spawn('ffmpeg', args);
+    
+    let errorOutput = '';
+    
+    ffmpegSystemAudioProcess.stderr.on('data', (data) => {
+      const message = data.toString();
+      errorOutput += message;
+      // 只记录关键信息
+      if (message.includes('Error') || message.includes('error')) {
+        console.error('FFmpeg system audio error:', message);
+      }
+    });
+
+    ffmpegSystemAudioProcess.on('error', (error) => {
+      console.error('FFmpeg system audio process error:', error);
+    });
+
+    ffmpegSystemAudioProcess.on('exit', (code) => {
+      console.log(`FFmpeg system audio process exited with code ${code}`);
+      ffmpegSystemAudioProcess = null;
+    });
+
+    // 等待 ffmpeg 启动
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('FFmpeg failed to start within 5 seconds'));
+      }, 5000);
+
+      const checkStarted = () => {
+        if (ffmpegSystemAudioProcess && ffmpegSystemAudioProcess.pid) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+      
+      setTimeout(checkStarted, 500);
+    });
+
+    return { success: true, pid: ffmpegSystemAudioProcess.pid };
   } catch (error) {
-    console.error('获取系统音频设备失败:', error);
+    console.error('Failed to start ffmpeg system audio recording:', error);
     return { success: false, error: error.message };
   }
 });
 
-// IPC 处理器：获取所有 PulseAudio 源的详细信息（用于诊断）
-ipcMain.handle('get-pulseaudio-sources-detailed', async () => {
-  if (process.platform !== 'linux') {
+// 在 Linux 下使用 ffmpeg 开始录制麦克风音频
+ipcMain.handle('start-ffmpeg-microphone', async (event, { outputPath, device = null }) => {
+  if (!isLinux) {
+    return { success: false, error: 'FFmpeg microphone recording is only supported on Linux' };
+  }
+
+  try {
+    // 如果已有录制进程，先停止
+    if (ffmpegMicrophoneProcess) {
+      ffmpegMicrophoneProcess.kill('SIGTERM');
+      ffmpegMicrophoneProcess = null;
+    }
+
+    // 如果没有指定设备，自动检测
+    if (!device) {
+      device = await getDefaultPulseAudioDevice('input');
+      console.log('Auto-detected microphone device:', device);
+    }
+
+    // 构建 ffmpeg 命令录制麦克风
+    const args = [
+      '-f', 'pulse',
+      '-i', device,                // 麦克风设备
+      '-acodec', 'libopus',        // 使用 opus 编码
+      '-b:a', '128k',              // 比特率
+      '-ar', '48000',              // 采样率
+      '-ac', '1',                  // 单声道（麦克风通常单声道）
+      '-y',                        // 覆盖已存在文件
+      outputPath
+    ];
+
+    console.log('Starting ffmpeg microphone recording:', args.join(' '));
+
+    ffmpegMicrophoneProcess = spawn('ffmpeg', args);
+    
+    ffmpegMicrophoneProcess.stderr.on('data', (data) => {
+      const message = data.toString();
+      if (message.includes('Error') || message.includes('error')) {
+        console.error('FFmpeg microphone error:', message);
+      }
+    });
+
+    ffmpegMicrophoneProcess.on('error', (error) => {
+      console.error('FFmpeg microphone process error:', error);
+    });
+
+    ffmpegMicrophoneProcess.on('exit', (code) => {
+      console.log(`FFmpeg microphone process exited with code ${code}`);
+      ffmpegMicrophoneProcess = null;
+    });
+
+    // 等待 ffmpeg 启动
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('FFmpeg failed to start within 5 seconds'));
+      }, 5000);
+
+      const checkStarted = () => {
+        if (ffmpegMicrophoneProcess && ffmpegMicrophoneProcess.pid) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+      
+      setTimeout(checkStarted, 500);
+    });
+
+    return { success: true, pid: ffmpegMicrophoneProcess.pid };
+  } catch (error) {
+    console.error('Failed to start ffmpeg microphone recording:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 停止 ffmpeg 音频录制
+ipcMain.handle('stop-ffmpeg-recording', async () => {
+  try {
+    const results = {
+      systemAudio: false,
+      microphone: false
+    };
+
+    // 停止系统音频录制
+    if (ffmpegSystemAudioProcess) {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          // 超时后强制终止
+          try {
+            ffmpegSystemAudioProcess.kill('SIGKILL');
+          } catch (e) {}
+          results.systemAudio = true;
+          resolve(results);
+        }, 3000);
+
+        ffmpegSystemAudioProcess.on('exit', () => {
+          clearTimeout(timeout);
+          results.systemAudio = true;
+          ffmpegSystemAudioProcess = null;
+          resolve(results);
+        });
+
+        // 发送 'q' 命令优雅地停止 ffmpeg
+        try {
+          ffmpegSystemAudioProcess.stdin.write('q');
+        } catch (e) {
+          // 如果 stdin 已关闭，直接 kill
+          ffmpegSystemAudioProcess.kill('SIGTERM');
+        }
+      });
+    }
+
+    // 停止麦克风录制
+    if (ffmpegMicrophoneProcess) {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          try {
+            ffmpegMicrophoneProcess.kill('SIGKILL');
+          } catch (e) {}
+          results.microphone = true;
+          resolve(results);
+        }, 3000);
+
+        ffmpegMicrophoneProcess.on('exit', () => {
+          clearTimeout(timeout);
+          results.microphone = true;
+          ffmpegMicrophoneProcess = null;
+          resolve(results);
+        });
+
+        try {
+          ffmpegMicrophoneProcess.stdin.write('q');
+        } catch (e) {
+          ffmpegMicrophoneProcess.kill('SIGTERM');
+        }
+      });
+    }
+
+    return { success: true, results };
+  } catch (error) {
+    console.error('Error stopping ffmpeg recording:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 合并音频文件（使用 ffmpeg）
+ipcMain.handle('merge-audio-files', async (event, { microphonePath, systemAudioPath, outputPath }) => {
+  try {
+    // 检查输入文件是否存在
+    if (!fs.existsSync(microphonePath)) {
+      return { success: false, error: 'Microphone audio file not found' };
+    }
+    if (!fs.existsSync(systemAudioPath)) {
+      return { success: false, error: 'System audio file not found' };
+    }
+
+    // 使用 ffmpeg 合并音频
+    // 使用 amix 滤镜将两个音频混合
+    const args = [
+      '-i', microphonePath,
+      '-i', systemAudioPath,
+      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=3[aout]',
+      '-map', '[aout]',
+      '-c:a', 'libopus',
+      '-b:a', '128k',
+      '-ar', '48000',
+      '-y',
+      outputPath
+    ];
+
+    console.log('Merging audio files:', args.join(' '));
+
+    return new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', args);
+      let stderr = '';
+
+      ffmpeg.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          // 清理临时文件
+          try {
+            fs.unlinkSync(microphonePath);
+            fs.unlinkSync(systemAudioPath);
+          } catch (e) {
+            console.warn('Failed to clean up temp files:', e.message);
+          }
+          resolve({ success: true, outputPath });
+        } else {
+          reject(new Error(`FFmpeg merge failed with code ${code}: ${stderr}`));
+        }
+      });
+
+      ffmpeg.on('error', (error) => {
+        reject(new Error(`Failed to start FFmpeg: ${error.message}`));
+      });
+    });
+  } catch (error) {
+    console.error('Error merging audio files:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 获取 PulseAudio 音频源列表（Linux）
+ipcMain.handle('get-pulseaudio-sources', async () => {
+  if (!isLinux) {
     return { success: true, sources: [] };
   }
 
   try {
-    const { stdout } = await execPromise('pactl list sources');
+    const { stdout } = await execAsync('pacmd list-sources | grep -E "name:|device.description:"');
+    const lines = stdout.split('\n');
     const sources = [];
     
-    // 解析 PulseAudio 输出
-    const sourceBlocks = stdout.split(/Source #\d+/).filter(block => block.trim());
-    
-    for (const block of sourceBlocks) {
-      const nameMatch = block.match(/Name:\s*(.+)/);
-      const descMatch = block.match(/Description:\s*(.+)/);
-      const deviceMatch = block.match(/device\.string = "(.+)"/);
-      
-      if (nameMatch) {
-        sources.push({
-          name: nameMatch[1].trim(),
-          description: descMatch ? descMatch[1].trim() : '',
-          device: deviceMatch ? deviceMatch[1].trim() : ''
-        });
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.includes('name:')) {
+        const nameMatch = line.match(/name:\s*<([^>]+)>/);
+        const descMatch = lines[i + 1] && lines[i + 1].match(/device\.description\s*=\s*"([^"]+)"/);
+        
+        if (nameMatch) {
+          sources.push({
+            name: nameMatch[1],
+            description: descMatch ? descMatch[1] : nameMatch[1]
+          });
+        }
       }
     }
-    
+
     return { success: true, sources };
   } catch (error) {
-    console.error('获取 PulseAudio 源详细信息失败:', error);
-    return { success: false, error: error.message };
+    console.warn('Failed to get PulseAudio sources:', error.message);
+    return { success: true, sources: [], error: error.message };
   }
-});
-
-// 应用退出时清理
-app.on('before-quit', async () => {
-  await cleanupPulseAudioRemapSource();
-  if (ffmpegAudioProcess) {
-    ffmpegAudioProcess.kill('SIGKILL');
-  }
-});
-
-// IPC 处理器：检查 ffmpeg 可用性
-ipcMain.handle('check-ffmpeg', async () => {
-  return await checkFFmpeg();
-});
-
-// IPC 处理器：启动 ffmpeg 音频录制
-ipcMain.handle('start-ffmpeg-audio-capture', async (event, audioFilePath) => {
-  return await startFFmpegAudioCapture(audioFilePath);
-});
-
-// IPC 处理器：停止 ffmpeg 音频录制
-ipcMain.handle('stop-ffmpeg-audio-capture', async () => {
-  return await stopFFmpegAudioCapture();
-});
-
-// IPC 处理器：合并音频文件
-ipcMain.handle('merge-audio-files', async (event, systemAudioPath, micAudioPath, outputPath) => {
-  return await mergeAudioFiles(systemAudioPath, micAudioPath, outputPath);
 });

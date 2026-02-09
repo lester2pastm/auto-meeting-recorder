@@ -1,7 +1,7 @@
 # 自动会议纪要
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.3-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-1.2.0-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -135,29 +135,9 @@
 
 | 平台 | 下载链接 |
 |------|----------|
-| Windows | [AutoMeetingRecorder-1.2.3-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-1.2.3-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-1.2.3-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-
-**Linux 系统依赖**
-
-在 Linux 上使用系统音频录制功能，需要安装以下依赖包：
-
-```bash
-# Ubuntu/Debian (X11 桌面环境)
-sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk
-
-# Ubuntu/Debian (Wayland 桌面环境)
-sudo apt install xdg-desktop-portal xdg-desktop-portal-wlr
-
-# Fedora
-sudo dnf install xdg-desktop-portal xdg-desktop-portal-gtk
-
-# Arch Linux
-sudo pacman -S xdg-desktop-portal xdg-desktop-portal-gtk
-```
-
-> **注意**：如果未安装上述依赖，应用仍可以录制麦克风音频，但无法录制系统音频。
+| Windows | [AutoMeetingRecorder-1.2.0-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| macOS | [AutoMeetingRecorder-1.2.0-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Linux | [AutoMeetingRecorder-1.2.0-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
 
 **从源码构建**
 

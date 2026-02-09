@@ -20,458 +20,60 @@ let microphoneStream = null;
 let systemAudioStream = null;
 let destinationStream = null;
 
-// ffmpeg 相关变量
-let usingFFmpeg = false;
-let ffmpegSystemAudioPath = null;
-let ffmpegMicAudioPath = null;
+// 平台检测
+let currentPlatform = null;
+let isLinuxPlatform = false;
+let isFFmpegRecording = false;
 
-// 辅助函数：查找系统音频设备
-function findSystemAudioDevice(devices) {
-    // 首先尝试精确匹配 Computer-sound
-    let device = devices.find(d => 
-        d.kind === 'audioinput' && d.label === 'Computer-sound'
-    );
-    
-    if (device) {
-        console.log('找到精确匹配的 Computer-sound 设备');
-        return device;
-    }
-    
-    // 尝试包含匹配
-    device = devices.find(d => 
-        d.kind === 'audioinput' && (
-            d.label.includes('Computer-sound') || 
-            d.label.includes('computer') ||
-            d.label.includes('Computer')
-        )
-    );
-    
-    if (device) {
-        console.log('找到包含匹配的 Computer-sound 设备:', device.label);
-        return device;
-    }
-    
-    // 尝试匹配 remap 或 monitor 源
-    device = devices.find(d => 
-        d.kind === 'audioinput' && (
-            d.label.toLowerCase().includes('remap') ||
-            d.label.toLowerCase().includes('monitor')
-        )
-    );
-    
-    if (device) {
-        console.log('找到 remap/monitor 设备:', device.label);
-        return device;
-    }
-    
-    return null;
-}
+// FFmpeg 录制相关变量（Linux）
+let linuxRecordingPaths = null;
 
-// 辅助函数：带重试机制的系统音频流获取
-async function getSystemAudioStreamWithRetry(device, maxRetries = 3) {
-    let lastError = null;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        console.log(`尝试获取系统音频流 (${attempt}/${maxRetries})...`);
-        
+// 初始化平台检测
+async function detectPlatform() {
+    if (window.electronAPI && window.electronAPI.getPlatform) {
         try {
-            // 尝试使用 exact deviceId
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    deviceId: { exact: device.deviceId },
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false
-                }
-            });
-            
-            console.log(`第 ${attempt} 次尝试成功获取系统音频流`);
-            return stream;
-        } catch (error) {
-            lastError = error;
-            console.warn(`第 ${attempt} 次尝试失败:`, {
-                name: error.name,
-                message: error.message,
-                constraint: error.constraint
-            });
-            
-            // 如果是 NotReadableError，等待后重试
-            if (error.name === 'NotReadableError' && attempt < maxRetries) {
-                const waitTime = attempt * 2000; // 递增等待时间: 2s, 4s
-                console.log(`等待 ${waitTime}ms 后重试...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                
-                // 重新枚举设备，deviceId 可能已改变
-                console.log('重新枚举设备...');
-                const newDevices = await navigator.mediaDevices.enumerateDevices();
-                const newDevice = findSystemAudioDevice(newDevices);
-                
-                if (newDevice && newDevice.deviceId !== device.deviceId) {
-                    console.log('设备ID已更新:', {
-                        oldId: device.deviceId,
-                        newId: newDevice.deviceId
-                    });
-                    device = newDevice;
-                }
-            } else if (attempt === maxRetries) {
-                // 最后一次尝试：使用 ideal 而不是 exact
-                console.log('使用 ideal constraint 进行最后一次尝试...');
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            deviceId: { ideal: device.deviceId },
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false
-                        }
-                    });
-                    console.log('使用 ideal constraint 成功获取系统音频流');
-                    return stream;
-                } catch (finalError) {
-                    console.error('最后一次尝试也失败:', finalError);
-                    throw finalError;
-                }
+            const result = await window.electronAPI.getPlatform();
+            if (result.success) {
+                currentPlatform = result.platform;
+                isLinuxPlatform = result.isLinux;
+                console.log('平台检测:', currentPlatform, 'isLinux:', isLinuxPlatform);
+                return result;
             }
+        } catch (e) {
+            console.warn('平台检测失败:', e);
         }
     }
-    
-    throw lastError || new Error('无法获取系统音频流');
+    // 回退检测
+    currentPlatform = navigator.platform.toLowerCase().includes('linux') ? 'linux' : 
+                     navigator.platform.toLowerCase().includes('win') ? 'win32' : 
+                     navigator.platform.toLowerCase().includes('mac') ? 'darwin' : 'unknown';
+    isLinuxPlatform = currentPlatform === 'linux';
+    return { platform: currentPlatform, isLinux: isLinuxPlatform };
 }
 
 async function startRecording() {
     try {
         console.log('=== 开始录音调试 ===');
         
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        console.log('AudioContext 创建成功, sampleRate:', audioContext.sampleRate);
-
-        // 获取麦克风音频
-        console.log('正在获取麦克风音频...');
-        microphoneStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            }
-        });
-        console.log('麦克风音频获取成功');
-        console.log('麦克风轨道数:', microphoneStream.getAudioTracks().length);
-        microphoneStream.getAudioTracks().forEach((track, i) => {
-            console.log(`  麦克风轨道[${i}]:`, {
-                label: track.label,
-                enabled: track.enabled,
-                muted: track.muted,
-                readyState: track.readyState
-            });
-        });
-
-        // 关键步骤：触发一次设备权限请求，确保设备标签完全加载
-        // 这是 WebRTC 的已知特性 - 只有在用户授权后，设备标签才会显示
-        console.log('触发设备权限请求以加载设备标签...');
-        await navigator.mediaDevices.enumerateDevices();
-        console.log('设备标签加载完成');
-
-        // 获取系统音频
-        console.log('正在获取系统音频...');
+        // 检测平台
+        await detectPlatform();
         
-        // 诊断：对比 PulseAudio 设备和 Chromium 设备
-        if (typeof process !== 'undefined' && process.platform === 'linux' && window.electronAPI) {
-            console.log('=== 开始诊断：对比 PulseAudio 和 Chromium 设备 ===');
-            
-            try {
-                // 获取 PulseAudio 设备列表
-                const pulseAudioResult = await window.electronAPI.getPulseAudioSourcesDetailed();
-                if (pulseAudioResult.success) {
-                    console.log('PulseAudio 源列表:');
-                    pulseAudioResult.sources.forEach((source, i) => {
-                        console.log(`  PulseAudio[${i}]:`, {
-                            name: source.name,
-                            description: source.description,
-                            device: source.device
-                        });
-                    });
-                }
-                
-                // 获取 Chromium 设备列表
-                const chromiumDevices = await navigator.mediaDevices.enumerateDevices();
-                console.log('Chromium 音频输入设备列表:');
-                chromiumDevices.forEach((device, i) => {
-                    if (device.kind === 'audioinput') {
-                        console.log(`  Chromium[${i}]:`, {
-                            label: device.label,
-                            deviceId: device.deviceId,
-                            groupId: device.groupId
-                        });
-                    }
-                });
-                
-                console.log('=== 诊断完成 ===');
-            } catch (error) {
-                console.error('诊断失败:', error);
-            }
-        }
-        
-        systemAudioStream = null;
-        let systemAudioFailed = false;
-        try {
-            // 检测平台
-            if (typeof process !== 'undefined' && (process.platform === 'linux' || process.platform === 'darwin') && window.electronAPI) {
-                // Linux/macOS 平台：先尝试 WebRTC 方式，失败则回退到 ffmpeg
-                console.log(`检测到 ${process.platform} 平台，尝试 WebRTC 获取系统音频`);
-                
-                // 枚举所有音频设备
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                console.log('=== 音频设备详细列表 ===');
-                devices.forEach((d, i) => {
-                    console.log(`设备[${i}]:`, {
-                        kind: d.kind,
-                        label: d.label,
-                        deviceId: d.deviceId,
-                        groupId: d.groupId
-                    });
-                });
-                console.log('=== 音频设备列表结束 ===');
-                
-                // Linux 平台：尝试 PulseAudio remap-source
-                if (process.platform === 'linux') {
-                    let systemAudioDevice = findSystemAudioDevice(devices);
-                    
-                    console.log('查找结果 - systemAudioDevice:', systemAudioDevice ? {
-                        label: systemAudioDevice.label,
-                        deviceId: systemAudioDevice.deviceId
-                    } : '未找到');
-                    
-                    if (!systemAudioDevice) {
-                        console.warn('未找到 Computer-sound 设备，尝试重新设置...');
-                        
-                        const setupResult = await window.electronAPI.setupPulseAudioRemapSource();
-                        
-                        if (!setupResult.success) {
-                            console.error('设置系统音频失败:', setupResult.error);
-                            throw new Error('设置系统音频失败: ' + setupResult.error);
-                        }
-                        
-                        console.log('remap-source 设置成功，等待设备注册...');
-                        await new Promise(resolve => setTimeout(resolve, 5000));
-                        
-                        const newDevices = await navigator.mediaDevices.enumerateDevices();
-                        console.log('=== 重新枚举设备列表 ===');
-                        newDevices.forEach((d, i) => {
-                            console.log(`设备[${i}]:`, {
-                                kind: d.kind,
-                                label: d.label,
-                                deviceId: d.deviceId
-                            });
-                        });
-                        console.log('=== 重新枚举设备列表结束 ===');
-                        
-                        systemAudioDevice = findSystemAudioDevice(newDevices);
-                        
-                        if (!systemAudioDevice) {
-                            console.error('=== 设备查找失败 ===');
-                            throw new Error('无法找到系统音频设备');
-                        }
-                    }
-                    
-                    console.log('=== 准备获取系统音频流 ===');
-                    console.log('使用设备:', {
-                        label: systemAudioDevice.label,
-                        deviceId: systemAudioDevice.deviceId
-                    });
-                    
-                    systemAudioStream = await getSystemAudioStreamWithRetry(systemAudioDevice);
-                    console.log('系统音频流获取成功（Linux PulseAudio 方式）');
-                } else {
-                    // macOS 平台：直接使用 getDisplayMedia
-                    console.log('macOS 平台，使用 getDisplayMedia 获取系统音频');
-                    console.log('提示: 请在弹出的对话框中选择"整个屏幕"，并勾选"分享音频"选项');
-                    
-                    const displayStream = await navigator.mediaDevices.getDisplayMedia({
-                        video: true,
-                        audio: {
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false
-                        }
-                    });
-                    
-                    console.log('屏幕分享获取成功');
-                    
-                    const systemAudioTrack = displayStream.getAudioTracks()[0];
-                    if (!systemAudioTrack) {
-                        console.error('错误: 未获取到系统音频轨道');
-                        displayStream.getTracks().forEach(track => track.stop());
-                        throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
-                    }
-                    
-                    const systemAudioVideoTrack = displayStream.getVideoTracks()[0];
-                    if (systemAudioVideoTrack) {
-                        systemAudioVideoTrack.stop();
-                    }
-                    
-                    systemAudioStream = new MediaStream([systemAudioTrack]);
-                    console.log('系统音频流创建成功（macOS getDisplayMedia 方式）');
-                }
-            } else if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
-                console.log('检测到 Electron 环境，使用 getDisplayMedia 获取系统音频');
-                console.log('提示: 请在弹出的对话框中选择"整个屏幕"，并勾选"分享音频"选项');
-                
-                const displayStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
-                    audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false
-                    }
-                });
-                
-                console.log('屏幕分享获取成功');
-                
-                const systemAudioTrack = displayStream.getAudioTracks()[0];
-                if (!systemAudioTrack) {
-                    console.error('错误: 未获取到系统音频轨道');
-                    displayStream.getTracks().forEach(track => track.stop());
-                    throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
-                }
-                
-                const systemAudioVideoTrack = displayStream.getVideoTracks()[0];
-                if (systemAudioVideoTrack) {
-                    systemAudioVideoTrack.stop();
-                }
-                
-                systemAudioStream = new MediaStream([systemAudioTrack]);
-                console.log('系统音频流创建成功（Electron getDisplayMedia 方式）');
+        // Linux 平台使用 FFmpeg 录制
+        if (isLinuxPlatform && window.electronAPI && window.electronAPI.checkFFmpeg) {
+            const ffmpegCheck = await window.electronAPI.checkFFmpeg();
+            if (ffmpegCheck.success && ffmpegCheck.available) {
+                console.log('Linux 平台检测到 ffmpeg，使用 FFmpeg 录制方式');
+                console.log('FFmpeg 版本:', ffmpegCheck.version);
+                return await startLinuxRecording();
             } else {
-                // 浏览器环境：使用 getDisplayMedia
-                console.log('检测到浏览器环境，使用 getDisplayMedia');
-                console.log('提示: 请在弹出的对话框中选择"整个屏幕"或"标签页"，并勾选"分享音频"选项');
-                
-                const displayStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
-                    audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false
-                    }
-                });
-                
-                console.log('屏幕分享获取成功');
-                
-                const systemAudioTrack = displayStream.getAudioTracks()[0];
-                if (!systemAudioTrack) {
-                    console.error('错误: 未获取到系统音频轨道');
-                    displayStream.getTracks().forEach(track => track.stop());
-                    throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
-                }
-                
-                // 停止视频轨道，只保留音频
-                displayStream.getVideoTracks().forEach(track => track.stop());
-                
-                // 创建系统音频流（只包含音频轨道）
-                systemAudioStream = new MediaStream([systemAudioTrack]);
-                console.log('系统音频流创建成功（浏览器方式）');
+                console.warn('Linux 平台未检测到 ffmpeg，将使用标准方式录制');
+                console.warn('提示: 请安装 ffmpeg 以获得更好的系统音频录制效果');
+                console.warn('安装命令: sudo apt install ffmpeg 或 sudo pacman -S ffmpeg');
             }
-        } catch (err) {
-            console.warn('获取系统音频失败:', err.name, err.message);
-            
-            // Linux/macOS 平台：尝试回退到 ffmpeg 方案
-            if (typeof process !== 'undefined' && (process.platform === 'linux' || process.platform === 'darwin') && window.electronAPI) {
-                console.log('=== 尝试回退到 ffmpeg 方案 ===');
-                
-                try {
-                    // 检查 ffmpeg 是否可用
-                    const ffmpegCheck = await window.electronAPI.checkFFmpeg();
-                    
-                    if (ffmpegCheck.available) {
-                        console.log(`ffmpeg 可用，使用 ffmpeg 录制系统音频 (${ffmpegCheck.platform})`);
-                        usingFFmpeg = true;
-                        
-                        // 生成临时文件路径
-                        const timestamp = Date.now();
-                        ffmpegSystemAudioPath = `ffmpeg_system_${timestamp}.webm`;
-                        ffmpegMicAudioPath = `ffmpeg_mic_${timestamp}.webm`;
-                        
-                        // 启动 ffmpeg 录制系统音频
-                        const startResult = await window.electronAPI.startFFmpegAudioCapture(ffmpegSystemAudioPath);
-                        
-                        if (startResult.success) {
-                            console.log('ffmpeg 系统音频录制已启动');
-                            systemAudioFailed = false;
-                        } else {
-                            console.error('ffmpeg 系统音频录制启动失败:', startResult.error);
-                            systemAudioFailed = true;
-                            usingFFmpeg = false;
-                        }
-                    } else {
-                        console.warn('ffmpeg 不可用:', ffmpegCheck.reason);
-                        systemAudioFailed = true;
-                        
-                        // 显示 ffmpeg 安装提示
-                        if (typeof showFFmpegErrorDialog === 'function') {
-                            showFFmpegErrorDialog(ffmpegCheck.reason);
-                        }
-                    }
-                } catch (ffmpegError) {
-                    console.error('ffmpeg 回退方案失败:', ffmpegError);
-                    systemAudioFailed = true;
-                    usingFFmpeg = false;
-                }
-            } else {
-                systemAudioFailed = true;
-            }
-            
-            console.log('将仅录制麦克风音频');
         }
         
-        if (systemAudioStream) {
-            console.log('系统音频流状态:', {
-                active: systemAudioStream.active,
-                audioTracks: systemAudioStream.getAudioTracks().length
-            });
-        }
-
-        const combinedStream = await combineAudioStreams(microphoneStream, systemAudioStream, audioContext, systemAudioFailed);
-        console.log('音频流合并成功');
-
-        mediaRecorder = new MediaRecorder(combinedStream, {
-            mimeType: 'audio/webm'
-        });
-        console.log('MediaRecorder 创建成功, mimeType:', mediaRecorder.mimeType);
-
-        audioChunks = [];
-
-        mediaRecorder.ondataavailable = (event) => {
-            console.log('MediaRecorder ondataavailable, 数据大小:', event.data.size);
-            if (event.data.size > 0) {
-                audioChunks.push(event.data);
-            }
-        };
-
-        mediaRecorder.onstop = () => {
-            console.log('MediaRecorder onstop, 总数据块数:', audioChunks.length);
-            audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            console.log('音频 Blob 创建成功, 大小:', audioBlob.size);
-            stopAllStreams();
-            stopWaveform();
-        };
-        
-        mediaRecorder.onerror = (event) => {
-            console.error('MediaRecorder 错误:', event);
-        };
-
-        mediaRecorder.start(1000);
-        console.log('MediaRecorder 已开始录制');
-        
-        isRecording = true;
-        isPaused = false;
-        recordingStartTime = Date.now();
-        recordingPausedTime = 0;
-        startTimer();
-
-        initWaveform(combinedStream);
-        console.log('=== 录音启动完成 ===');
-
-        return true;
+        // 标准录制方式（Windows/Mac）
+        return await startStandardRecording();
     } catch (error) {
         console.error('Error starting recording:', error);
         stopAllStreams();
@@ -479,24 +81,284 @@ async function startRecording() {
     }
 }
 
-async function combineAudioStreams(micStream, sysStream, ctx, systemAudioFailed) {
+// Linux 平台使用 FFmpeg 录制
+async function startLinuxRecording() {
+    try {
+        console.log('=== 开始 Linux FFmpeg 录音 ===');
+        
+        // 获取音频目录
+        const audioDirResult = await window.electronAPI.getAudioDirectory();
+        if (!audioDirResult.success) {
+            throw new Error('无法获取音频目录');
+        }
+        
+        const timestamp = Date.now();
+        const audioDir = audioDirResult.path;
+        linuxRecordingPaths = {
+            microphone: `${audioDir}/mic_${timestamp}.webm`,
+            systemAudio: `${audioDir}/sys_${timestamp}.webm`,
+            output: `${audioDir}/combined_${timestamp}.webm`
+        };
+        
+        // 获取 PulseAudio 源列表
+        const sourcesResult = await window.electronAPI.getPulseAudioSources();
+        console.log('PulseAudio 音频源:', sourcesResult.sources);
+        
+        // 查找合适的音频设备
+        let systemDevice = 'default';
+        let micDevice = 'default';
+        
+        if (sourcesResult.success && sourcesResult.sources.length > 0) {
+            // 查找系统音频 monitor（通常是输出设备的 monitor）
+            const monitorSource = sourcesResult.sources.find(s => 
+                s.name.includes('.monitor') || s.description.toLowerCase().includes('monitor')
+            );
+            if (monitorSource) {
+                systemDevice = monitorSource.name.replace('.monitor', '');
+                console.log('找到系统音频设备:', systemDevice);
+            }
+            
+            // 查找麦克风设备
+            const micSource = sourcesResult.sources.find(s => 
+                !s.name.includes('.monitor') && 
+                (s.description.toLowerCase().includes('microphone') || 
+                 s.description.toLowerCase().includes('mic') ||
+                 s.name.includes('alsa_input'))
+            );
+            if (micSource) {
+                micDevice = micSource.name;
+                console.log('找到麦克风设备:', micDevice);
+            }
+        }
+        
+        // 启动系统音频录制
+        console.log('启动 ffmpeg 系统音频录制...');
+        const sysResult = await window.electronAPI.startFFmpegSystemAudio(
+            linuxRecordingPaths.systemAudio, 
+            systemDevice
+        );
+        if (!sysResult.success) {
+            throw new Error('启动系统音频录制失败: ' + sysResult.error);
+        }
+        console.log('系统音频录制已启动, PID:', sysResult.pid);
+        
+        // 启动麦克风录制
+        console.log('启动 ffmpeg 麦克风录制...');
+        const micResult = await window.electronAPI.startFFmpegMicrophone(
+            linuxRecordingPaths.microphone,
+            micDevice
+        );
+        if (!micResult.success) {
+            // 停止系统音频录制
+            await window.electronAPI.stopFFmpegRecording();
+            throw new Error('启动麦克风录制失败: ' + micResult.error);
+        }
+        console.log('麦克风录制已启动, PID:', micResult.pid);
+        
+        // 创建音频上下文用于可视化（使用麦克风流）
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // 尝试获取麦克风流用于可视化
+        try {
+            microphoneStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true }
+            });
+            initWaveform(microphoneStream);
+        } catch (e) {
+            console.warn('无法获取麦克风流用于可视化:', e);
+        }
+        
+        isRecording = true;
+        isPaused = false;
+        isFFmpegRecording = true;
+        recordingStartTime = Date.now();
+        recordingPausedTime = 0;
+        startTimer();
+        
+        console.log('=== Linux FFmpeg 录音启动完成 ===');
+        return true;
+        
+    } catch (error) {
+        console.error('Linux 录制启动失败:', error);
+        await stopLinuxRecording();
+        throw error;
+    }
+}
+
+// 标准录制方式（Windows/Mac）
+async function startStandardRecording() {
+    console.log('=== 开始标准录音（Windows/Mac）===');
+    
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    console.log('AudioContext 创建成功, sampleRate:', audioContext.sampleRate);
+
+    // 获取麦克风音频
+    console.log('正在获取麦克风音频...');
+    microphoneStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        }
+    });
+    console.log('麦克风音频获取成功');
+    console.log('麦克风轨道数:', microphoneStream.getAudioTracks().length);
+    microphoneStream.getAudioTracks().forEach((track, i) => {
+        console.log(`  麦克风轨道[${i}]:`, {
+            label: track.label,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState
+        });
+    });
+
+    // 获取系统音频（通过 Electron desktopCapturer）
+    console.log('正在通过 Electron 获取系统音频...');
+    
+    let systemAudioStream;
+    try {
+        // 检查是否在 Electron 环境中
+        if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
+            // Electron 环境：使用 desktopCapturer
+            console.log('检测到 Electron 环境，使用 desktopCapturer');
+            const result = await window.electronAPI.getDesktopCapturerSources();
+            
+            if (!result.success) {
+                throw new Error('获取屏幕分享源失败: ' + result.error);
+            }
+            
+            const sources = result.sources;
+            console.log('获取到屏幕分享源数量:', sources.length);
+            
+            if (sources.length === 0) {
+                throw new Error('没有可用的屏幕分享源');
+            }
+            
+            // 选择第一个屏幕源（通常是整个屏幕）
+            const screenSource = sources.find(s => s.name === 'Entire screen') || sources[0];
+            console.log('选择的屏幕源:', screenSource.name, 'ID:', screenSource.id);
+            
+            // 使用 getUserMedia 配合 chromeMediaSource 获取系统音频
+            systemAudioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    mandatory: {
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: screenSource.id
+                    }
+                },
+                video: {
+                    mandatory: {
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: screenSource.id
+                    }
+                }
+            });
+            
+            console.log('系统音频流获取成功（Electron 方式）');
+        } else {
+            // 浏览器环境：使用 getDisplayMedia
+            console.log('检测到浏览器环境，使用 getDisplayMedia');
+            console.log('提示: 请在弹出的对话框中选择"整个屏幕"或"标签页"，并勾选"分享音频"选项');
+            
+            const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            });
+            
+            console.log('屏幕分享获取成功');
+            
+            const systemAudioTrack = displayStream.getAudioTracks()[0];
+            if (!systemAudioTrack) {
+                console.error('错误: 未获取到系统音频轨道');
+                displayStream.getTracks().forEach(track => track.stop());
+                throw new Error('未获取到系统音频，请确保选择了"分享音频"选项');
+            }
+            
+            // 停止视频轨道，只保留音频
+            displayStream.getVideoTracks().forEach(track => track.stop());
+            
+            // 创建系统音频流（只包含音频轨道）
+            systemAudioStream = new MediaStream([systemAudioTrack]);
+            console.log('系统音频流创建成功（浏览器方式）');
+        }
+    } catch (err) {
+        console.error('获取系统音频失败:', err.name, err.message);
+        throw new Error('获取系统音频失败: ' + err.message);
+    }
+    
+    console.log('系统音频流状态:', {
+        active: systemAudioStream.active,
+        audioTracks: systemAudioStream.getAudioTracks().length
+    });
+
+    // 测试系统音频流是否活跃
+    console.log('系统音频流状态:', {
+        active: systemAudioStream.active,
+        audioTracks: systemAudioStream.getAudioTracks().length
+    });
+
+    const combinedStream = await combineAudioStreams(microphoneStream, systemAudioStream, audioContext);
+    console.log('音频流合并成功');
+
+    mediaRecorder = new MediaRecorder(combinedStream, {
+        mimeType: 'audio/webm'
+    });
+    console.log('MediaRecorder 创建成功, mimeType:', mediaRecorder.mimeType);
+
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = (event) => {
+        console.log('MediaRecorder ondataavailable, 数据大小:', event.data.size);
+        if (event.data.size > 0) {
+            audioChunks.push(event.data);
+        }
+    };
+
+    mediaRecorder.onstop = () => {
+        console.log('MediaRecorder onstop, 总数据块数:', audioChunks.length);
+        audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        console.log('音频 Blob 创建成功, 大小:', audioBlob.size);
+        stopAllStreams();
+        stopWaveform();
+    };
+    
+    mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder 错误:', event);
+    };
+
+    mediaRecorder.start(1000);
+    console.log('MediaRecorder 已开始录制');
+    
+    isRecording = true;
+    isPaused = false;
+    isFFmpegRecording = false;
+    recordingStartTime = Date.now();
+    recordingPausedTime = 0;
+    startTimer();
+
+    initWaveform(combinedStream);
+    console.log('=== 录音启动完成 ===');
+
+    return true;
+}
+
+async function combineAudioStreams(micStream, sysStream, ctx) {
     const micSource = ctx.createMediaStreamSource(micStream);
+    const sysSource = ctx.createMediaStreamSource(sysStream);
+
     const micGain = ctx.createGain();
+    const sysGain = ctx.createGain();
+
     micSource.connect(micGain);
+    sysSource.connect(sysGain);
 
     const destination = ctx.createMediaStreamDestination();
     micGain.connect(destination);
-
-    // 如果系统音频获取成功，则合并系统音频
-    if (!systemAudioFailed && sysStream) {
-        const sysSource = ctx.createMediaStreamSource(sysStream);
-        const sysGain = ctx.createGain();
-        sysSource.connect(sysGain);
-        sysGain.connect(destination);
-        console.log('已合并麦克风音频和系统音频');
-    } else {
-        console.log('仅录制麦克风音频（系统音频不可用）');
-    }
+    sysGain.connect(destination);
 
     return destination.stream;
 }
@@ -514,7 +376,7 @@ function stopAllStreams() {
     }
     
     if (systemAudioStream) {
-        console.log('停止系统音频流, 轨道数:', systemAudioStream.getTracks().length);
+        console.log('停止系统音频流, 轨道数:', systemAudioStream.getAudioTracks().length);
         systemAudioStream.getTracks().forEach((track, i) => {
             console.log(`  停止系统音频轨道[${i}]:`, track.label);
             track.stop();
@@ -535,6 +397,12 @@ function stopAllStreams() {
 }
 
 function pauseRecording() {
+    if (isFFmpegRecording) {
+        // Linux ffmpeg 录制不支持暂停
+        console.warn('Linux ffmpeg 录制不支持暂停功能');
+        return;
+    }
+    
     if (mediaRecorder && isRecording && !isPaused) {
         mediaRecorder.pause();
         isPaused = true;
@@ -544,6 +412,12 @@ function pauseRecording() {
 }
 
 function resumeRecording() {
+    if (isFFmpegRecording) {
+        // Linux ffmpeg 录制不支持恢复
+        console.warn('Linux ffmpeg 录制不支持恢复功能');
+        return;
+    }
+    
     if (mediaRecorder && isRecording && isPaused) {
         mediaRecorder.resume();
         isPaused = false;
@@ -556,102 +430,100 @@ function resumeRecording() {
 
 async function stopRecording() {
     return new Promise(async (resolve, reject) => {
-        if (mediaRecorder && isRecording) {
-            const originalOnStop = mediaRecorder.onstop;
-            
-            mediaRecorder.onstop = async (event) => {
-                if (originalOnStop) {
-                    originalOnStop(event);
-                }
-                
-                // 如果使用 ffmpeg，需要合并音频
-                if (usingFFmpeg && window.electronAPI) {
-                    console.log('=== 使用 ffmpeg，开始合并音频 ===');
+        if (!isRecording) {
+            resolve(null);
+            return;
+        }
+        
+        try {
+            if (isFFmpegRecording) {
+                // Linux ffmpeg 录制停止
+                const result = await stopLinuxRecording();
+                resolve(result);
+            } else {
+                // 标准录制停止
+                if (mediaRecorder) {
+                    const originalOnStop = mediaRecorder.onstop;
                     
-                    try {
-                        // 停止 ffmpeg 录制
-                        const stopResult = await window.electronAPI.stopFFmpegAudioCapture();
-                        
-                        if (stopResult.success && stopResult.filePath) {
-                            console.log('ffmpeg 系统音频录制已停止:', stopResult.filePath);
-                            
-                            // 保存麦克风音频到临时文件
-                            const micAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                            const micAudioBuffer = await micAudioBlob.arrayBuffer();
-                            const micAudioData = Array.from(new Uint8Array(micAudioBuffer));
-                            
-                            const saveResult = await window.electronAPI.saveAudio({
-                                blob: micAudioData,
-                                filename: ffmpegMicAudioPath
-                            });
-                            
-                            if (saveResult.success) {
-                                console.log('麦克风音频已保存:', saveResult.filePath);
-                                
-                                // 合并音频文件
-                                const timestamp = Date.now();
-                                const mergedFilename = `merged_${timestamp}.webm`;
-                                const mergeResult = await window.electronAPI.mergeAudioFiles(
-                                    stopResult.filePath,
-                                    saveResult.filePath,
-                                    mergedFilename
-                                );
-                                
-                                if (mergeResult.success) {
-                                    console.log('音频合并成功:', mergeResult.filePath);
-                                    
-                                    // 读取合并后的音频文件
-                                    const getAudioResult = await window.electronAPI.getAudio(mergedFilename);
-                                    
-                                    if (getAudioResult.success) {
-                                        const mergedBuffer = new Uint8Array(getAudioResult.data);
-                                        audioBlob = new Blob([mergedBuffer], { type: 'audio/webm' });
-                                        console.log('合并后的音频 Blob 创建成功, 大小:', audioBlob.size);
-                                        
-                                        // 清理临时文件
-                                        await window.electronAPI.deleteAudio(ffmpegSystemAudioPath);
-                                        await window.electronAPI.deleteAudio(ffmpegMicAudioPath);
-                                        await window.electronAPI.deleteAudio(mergedFilename);
-                                        
-                                        console.log('临时文件已清理');
-                                    } else {
-                                        console.error('读取合并后的音频失败:', getAudioResult.error);
-                                        // 回退到仅使用麦克风音频
-                                    }
-                                } else {
-                                    console.error('合并音频失败:', mergeResult.error);
-                                    // 回退到仅使用麦克风音频
-                                }
-                            } else {
-                                console.error('保存麦克风音频失败:', saveResult.error);
-                                // 回退到仅使用麦克风音频
-                            }
-                        } else {
-                            console.error('停止 ffmpeg 录制失败:', stopResult.error);
-                            // 回退到仅使用麦克风音频
+                    mediaRecorder.onstop = (event) => {
+                        if (originalOnStop) {
+                            originalOnStop(event);
                         }
-                    } catch (ffmpegError) {
-                        console.error('ffmpeg 音频处理失败:', ffmpegError);
-                        // 回退到仅使用麦克风音频
-                    }
+                        resolve(audioBlob);
+                    };
                     
-                    // 重置 ffmpeg 标志
-                    usingFFmpeg = false;
-                    ffmpegSystemAudioPath = null;
-                    ffmpegMicAudioPath = null;
+                    mediaRecorder.stop();
+                } else {
+                    resolve(null);
                 }
-                
-                resolve(audioBlob);
-            };
+            }
             
-            mediaRecorder.stop();
             isRecording = false;
             isPaused = false;
             stopTimer();
-        } else {
-            resolve(null);
+            
+        } catch (error) {
+            reject(error);
         }
     });
+}
+
+// 停止 Linux ffmpeg 录制并合并音频
+async function stopLinuxRecording() {
+    console.log('=== 停止 Linux FFmpeg 录制 ===');
+    
+    try {
+        // 停止 ffmpeg 录制
+        console.log('停止 ffmpeg 录制...');
+        const stopResult = await window.electronAPI.stopFFmpegRecording();
+        console.log('ffmpeg 录制停止结果:', stopResult);
+        
+        // 等待文件写入完成
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (!linuxRecordingPaths) {
+            throw new Error('录音路径未设置');
+        }
+        
+        // 合并音频文件
+        console.log('合并音频文件...');
+        console.log('麦克风文件:', linuxRecordingPaths.microphone);
+        console.log('系统音频文件:', linuxRecordingPaths.systemAudio);
+        console.log('输出文件:', linuxRecordingPaths.output);
+        
+        const mergeResult = await window.electronAPI.mergeAudioFiles(
+            linuxRecordingPaths.microphone,
+            linuxRecordingPaths.systemAudio,
+            linuxRecordingPaths.output
+        );
+        
+        if (!mergeResult.success) {
+            throw new Error('合并音频失败: ' + mergeResult.error);
+        }
+        
+        console.log('音频合并成功:', mergeResult.outputPath);
+        
+        // 读取合并后的文件为 Blob
+        const fs = require('fs');
+        const buffer = fs.readFileSync(mergeResult.outputPath);
+        audioBlob = new Blob([buffer], { type: 'audio/webm' });
+        
+        console.log('音频 Blob 创建成功, 大小:', audioBlob.size);
+        
+        // 清理
+        stopAllStreams();
+        stopWaveform();
+        isFFmpegRecording = false;
+        linuxRecordingPaths = null;
+        
+        return audioBlob;
+        
+    } catch (error) {
+        console.error('停止 Linux 录制失败:', error);
+        isFFmpegRecording = false;
+        linuxRecordingPaths = null;
+        throw error;
+    }
 }
 
 function getRecordingState() {
@@ -712,7 +584,9 @@ function getAudioBlob() {
 // 初始化音频波形可视化
 function initWaveform(stream) {
     try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
 
@@ -807,4 +681,16 @@ function stopWaveform() {
             bar.style.opacity = '0.4';
         });
     }
+}
+
+// 导出函数供其他模块使用
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        startRecording,
+        stopRecording,
+        pauseRecording,
+        resumeRecording,
+        getRecordingState,
+        getAudioBlob
+    };
 }
