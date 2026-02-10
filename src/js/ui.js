@@ -470,3 +470,46 @@ function loadDefaultTemplate() {
         summaryTemplate.value = DEFAULT_TEMPLATE;
     }
 }
+
+// ============================================
+// 标签页切换功能
+// ============================================
+
+function initContentTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.dataset.tab;
+            
+            // 移除所有活动状态
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+            
+            // 添加当前活动状态
+            btn.classList.add('active');
+            const targetContent = document.getElementById(tabName + 'Tab');
+            if (targetContent) {
+                targetContent.classList.add('active');
+            }
+        });
+    });
+}
+
+// 切换到指定标签页
+function switchToTab(tabName) {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    // 移除所有活动状态
+    tabBtns.forEach(b => b.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+    
+    // 添加目标标签页活动状态
+    const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+    const targetContent = document.getElementById(tabName + 'Tab');
+    
+    if (targetBtn) targetBtn.classList.add('active');
+    if (targetContent) targetContent.classList.add('active');
+}

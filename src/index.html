@@ -132,19 +132,37 @@
 
                 <!-- 内容展示区 -->
                 <section class="content-section">
-                    <div class="content-grid">
-                        <!-- 会议全文 -->
-                        <div class="content-card">
-                            <div class="card-header">
-                                <div class="card-title">
-                                    <div class="card-icon icon-subtitle">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                                        </svg>
-                                    </div>
-                                    <h2 data-i18n="fullText">会议全文</h2>
+                    <div class="content-tabs">
+                        <!-- 标签页头部 -->
+                        <div class="tabs-header">
+                            <button class="tab-btn active" data-tab="subtitle">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                </svg>
+                                <span data-i18n="fullText">会议全文</span>
+                            </button>
+                            <button class="tab-btn" data-tab="summary">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                    <polyline points="10 9 9 9 8 9"/>
+                                </svg>
+                                <span data-i18n="meetingSummary">会议纪要</span>
+                            </button>
+                        </div>
+
+                        <!-- 会议全文标签页 -->
+                        <div id="subtitleTab" class="tab-content active">
+                            <div class="tab-content-header">
+                                <div class="tab-content-title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                    </svg>
+                                    <span data-i18n="fullText">会议全文</span>
                                 </div>
-                                <div class="card-actions">
+                                <div class="tab-content-actions">
                                     <button id="btnUploadAudio" class="btn btn-icon" title="上传音频文件">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -161,7 +179,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div id="subtitleContent" class="card-body">
+                            <div id="subtitleContent" class="tab-content-body">
                                 <div class="empty-state">
                                     <div class="empty-icon">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -175,22 +193,20 @@
                             </div>
                         </div>
 
-                        <!-- 会议纪要 -->
-                        <div class="content-card">
-                            <div class="card-header">
-                                <div class="card-title">
-                                    <div class="card-icon icon-summary">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                            <polyline points="14 2 14 8 20 8"/>
-                                            <line x1="16" y1="13" x2="8" y2="13"/>
-                                            <line x1="16" y1="17" x2="8" y2="17"/>
-                                            <polyline points="10 9 9 9 8 9"/>
-                                        </svg>
-                                    </div>
-                                    <h2 data-i18n="meetingSummary">会议纪要</h2>
+                        <!-- 会议纪要标签页 -->
+                        <div id="summaryTab" class="tab-content">
+                            <div class="tab-content-header">
+                                <div class="tab-content-title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                        <line x1="16" y1="13" x2="8" y2="13"/>
+                                        <line x1="16" y1="17" x2="8" y2="17"/>
+                                        <polyline points="10 9 9 9 8 9"/>
+                                    </svg>
+                                    <span data-i18n="meetingSummary">会议纪要</span>
                                 </div>
-                                <div class="card-actions">
+                                <div class="tab-content-actions">
                                     <button id="btnRefreshSummary" class="btn btn-icon" title="重新生成纪要">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <polyline points="23 4 23 10 17 10"/>
@@ -206,7 +222,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div id="summaryContent" class="card-body">
+                            <div id="summaryContent" class="tab-content-body">
                                 <div class="empty-state">
                                     <div class="empty-icon">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
