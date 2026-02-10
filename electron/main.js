@@ -41,11 +41,22 @@ function createWindow() {
   const x = Math.round((screenWidth - targetWidth) / 2);
   const y = Math.round((screenHeight - targetHeight) / 2);
   
+  // 根据平台选择图标
+  let iconPath;
+  if (isWindows) {
+    iconPath = path.join(__dirname, '..', 'assets', 'icons', 'icon.ico');
+  } else if (isMac) {
+    iconPath = path.join(__dirname, '..', 'assets', 'icons', 'icon.icns');
+  } else {
+    iconPath = path.join(__dirname, '..', 'assets', 'icons', 'icon.png');
+  }
+  
   mainWindow = new BrowserWindow({
     width: targetWidth,
     height: targetHeight,
     x: x,
     y: y,
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
