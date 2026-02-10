@@ -1,7 +1,7 @@
 # 自动会议纪要
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.0-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.0.0-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -39,18 +39,20 @@
 
 ### 🎙️ **音频录制**
 - 支持麦克风和系统音频录制
-- 实时音频可视化效果
+- 实时音频可视化效果，动态波形展示
 - 暂停和继续录制功能
-- 高质量音频采集
+- WebM 格式高质量音频采集
+- 支持上传现有音频文件进行转写
 
 </td>
 <td width="50%">
 
 ### 📝 **语音转文字**
-- 基于 OpenAI Whisper API 的语音转录
-- 支持多家服务商（OpenAI、阿里云、SiliconFlow）
+- 基于 OpenAI 兼容 API 的语音转录
+- 支持多家服务商（SiliconFlow、OpenAI、阿里云）
 - 实时转录文本显示
 - 多语言支持
+- 录音前可测试 API 连通性
 
 </td>
 </tr>
@@ -60,17 +62,19 @@
 ### 🤖 **AI 智能总结**
 - 使用大语言模型 API 自动生成会议纪要
 - 支持 Markdown 自定义模板
-- 结构化输出（议题、决策、待办事项）
-- 支持 GPT-4、Claude 等主流模型
+- 结构化输出（会议概述、议题、决策、待办事项）
+- 支持 DeepSeek、GPT-4、Claude 等主流模型
+- 一键重新生成会议纪要
 
 </td>
 <td width="50%">
 
 ### 🔒 **隐私优先**
 - 所有数据本地存储
-- 无需依赖云服务
+- 核心功能无需依赖云服务
 - 无分析统计和遥测
-- API 密钥仅保存在本地
+- API 密钥仅保存在本地设备
+- 敏感设置加密存储
 
 </td>
 </tr>
@@ -79,18 +83,41 @@
 
 ### 📚 **历史记录管理**
 - 保存和管理所有会议记录
-- 搜索和筛选历史会议
-- 支持多种格式导出
-- 本地数据持久化存储
+- 查看详细的会议信息
+- 复制转录文本和纪要到剪贴板
+- 从历史记录导出音频文件
+- 删除旧记录释放存储空间
 
 </td>
 <td width="50%">
 
 ### 💻 **跨平台支持**
 - 支持 Windows、macOS 和 Linux
-- 桌面应用（Electron）
-- 网页版本（浏览器运行）
+- 基于 Electron 的桌面应用
+- 浏览器网页版本
 - 各平台体验一致
+- 自动检测运行平台
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🎨 **现代化界面**
+- 简洁直观的界面设计
+- 标签页式内容切换导航
+- 响应式布局，自适应窗口大小
+- 实时录音计时器和可视化效果
+- Toast 通知提示用户操作反馈
+
+</td>
+<td width="50%">
+
+### 🌐 **国际化支持**
+- 多语言支持（中文、英文）
+- 易于添加更多语言
+- 自动检测系统语言
+- 界面元素和消息本地化
 
 </td>
 </tr>
@@ -135,9 +162,9 @@
 
 | 平台 | 下载链接 |
 |------|----------|
-| Windows | [AutoMeetingRecorder-1.2.0-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-1.2.0-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-1.2.0-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Windows | [AutoMeetingRecorder-2.0.0-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| macOS | [AutoMeetingRecorder-2.0.0-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Linux | [AutoMeetingRecorder-2.0.0-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
 
 **从源码构建**
 
@@ -175,21 +202,22 @@ npx serve src
 
 应用需要配置 API 密钥用于语音识别和会议纪要生成。
 
-#### 语音识别 API（Whisper）
+#### 推荐：语音识别 API
 
 | 服务商 | API 地址 | 模型 |
 |--------|----------|------|
-| **OpenAI** | `https://api.openai.com/v1/audio/transcriptions` | `whisper-1` |
-| **阿里云** | `https://dashscope.aliyuncs.com/api/v1/audio/transcriptions` | `whisper-v3` |
-| **SiliconFlow** | `https://api.siliconflow.cn/v1/audio/transcriptions` | `whisper-large-v3` |
+| **SiliconFlow** | `https://api.siliconflow.cn/v1/audio/transcriptions` | `TeleAI/TeleSpeechASR` |
+| OpenAI | `https://api.openai.com/v1/audio/transcriptions` | `whisper-1` |
+| 阿里云 | `https://dashscope.aliyuncs.com/api/v1/audio/transcriptions` | `whisper-v3` |
 
-#### 纪要生成 API（大语言模型）
+#### 推荐：纪要生成 API
 
 | 服务商 | API 地址 | 模型 |
 |--------|----------|------|
-| **OpenAI** | `https://api.openai.com/v1/chat/completions` | `gpt-4`, `gpt-3.5-turbo` |
-| **Anthropic** | `https://api.anthropic.com/v1/messages` | `claude-3-opus`, `claude-3-sonnet` |
-| **阿里云** | `https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation` | `qwen-max`, `qwen-plus` |
+| **DeepSeek** | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` |
+| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4`, `gpt-3.5-turbo` |
+| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-3-opus`, `claude-3-sonnet` |
+| 阿里云 | `https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation` | `qwen-max`, `qwen-plus` |
 
 ### 会议纪要模板
 
@@ -226,10 +254,10 @@ npx serve src
 ### 首次设置
 
 1. 打开应用，进入**设置**页面
-2. 配置语音识别 API 凭证
-3. 配置纪要生成 API 凭证
+2. 配置语音识别 API 凭证（推荐使用 SiliconFlow）
+3. 配置纪要生成 API 凭证（推荐使用 DeepSeek）
 4. 自定义会议纪要模板（可选）
-5. 测试配置是否成功
+5. 测试两个 API 配置是否正常工作
 
 ### 录制会议
 
@@ -237,15 +265,24 @@ npx serve src
 2. 休息时可使用**暂停**按钮
 3. 会议结束后点击**"停止录音"**
 4. 等待转录和纪要生成完成
-5. 查看并编辑生成的会议纪要
-6. 保存或导出会议纪要
+5. 在**会议全文**和**会议纪要**标签页之间切换查看
+6. 复制内容到剪贴板或按需导出
 
 ### 管理历史记录
 
 - 在**历史**页面查看所有会议记录
-- 按日期、主题或关键词搜索
-- 支持单个或批量导出
+- 查看详细的会议信息，包括音频回放
+- 从任何历史会议复制转录文本或纪要
+- 从之前的录音导出音频文件
 - 删除旧记录释放存储空间
+
+### 上传音频文件
+
+你也可以上传现有音频文件代替实时录音：
+
+1. 在转写标签页点击**上传**按钮
+2. 选择音频文件（支持常见格式）
+3. 等待转录和纪要生成完成
 
 ---
 
@@ -262,10 +299,10 @@ auto-meeting-recorder/
 │   │   └── style.css        # 主样式文件
 │   ├── 📁 js/               # JavaScript 模块
 │   │   ├── app.js           # 主应用逻辑
-│   │   ├── api.js           # API 集成
+│   │   ├── api.js           # API 集成（语音识别和大语言模型）
 │   │   ├── recorder.js      # 音频录制功能
-│   │   ├── storage.js       # 数据持久化层
-│   │   ├── ui.js            # UI 交互
+│   │   ├── storage.js       # 数据持久化（IndexedDB/文件系统）
+│   │   ├── ui.js            # UI 交互和渲染
 │   │   └── i18n.js          # 国际化
 │   └── index.html           # 主 HTML 文件
 │
