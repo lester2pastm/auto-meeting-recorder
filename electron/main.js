@@ -64,7 +64,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      // 开发模式下禁用 webSecurity 以允许 IndexedDB 在 file:// 协议下工作
+      webSecurity: !isDev
     }
   });
 
