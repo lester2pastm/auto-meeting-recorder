@@ -15,7 +15,6 @@ const isMac = process.platform === 'darwin';
 
 // 音频录制进程（Linux 下使用 ffmpeg）
 let ffmpegSystemAudioProcess = null;
-let ffmpegMicrophoneProcess = null;
 let recordingStartTime = null;
 const execAsync = promisify(exec);
 
@@ -124,27 +123,6 @@ ipcMain.handle('delete-audio', async (event, filename) => {
       fs.unlinkSync(filePath);
     }
     return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// IPC 处理器：获取所有音频文件列表
-ipcMain.handle('list-audio-files', async () => {
-  try {
-    const files = fs.readdirSync(AUDIO_DIR);
-    const audioFiles = files
-      .filter(f => f.endsWith('.webm') || f.endsWith('.wav') || f.endsWith('.mp3'))
-      .map(filename => {
-        const filePath = path.join(AUDIO_DIR, filename);
-        const stats = fs.statSync(filePath);
-        return {
-          filename,
-          size: stats.size,
-          createdAt: stats.birthtime
-        };
-      });
-    return { success: true, files: audioFiles };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -405,86 +383,11 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
   }
 });
 
-// 在 Linux 下使用 ffmpeg 开始录制麦克风音频
-ipcMain.handle('start-ffmpeg-microphone', async (event, { outputPath, device = null }) => {
-  if (!isLinux) {
-    return { success: false, error: 'FFmpeg microphone recording is only supported on Linux' };
-  }
-
-  try {
-    // 如果已有录制进程，先停止
-    if (ffmpegMicrophoneProcess) {
-      ffmpegMicrophoneProcess.kill('SIGTERM');
-      ffmpegMicrophoneProcess = null;
-    }
-
-    // 如果没有指定设备，自动检测
-    if (!device) {
-      device = await getDefaultPulseAudioDevice('input');
-      console.log('Auto-detected microphone device:', device);
-    }
-
-    // 构建 ffmpeg 命令录制麦克风
-    const args = [
-      '-f', 'pulse',
-      '-i', device,                // 麦克风设备
-      '-acodec', 'libopus',        // 使用 opus 编码
-      '-b:a', '128k',              // 比特率
-      '-ar', '48000',              // 采样率
-      '-ac', '1',                  // 单声道（麦克风通常单声道）
-      '-y',                        // 覆盖已存在文件
-      outputPath
-    ];
-
-    console.log('Starting ffmpeg microphone recording:', args.join(' '));
-
-    ffmpegMicrophoneProcess = spawn('ffmpeg', args);
-    
-    ffmpegMicrophoneProcess.stderr.on('data', (data) => {
-      const message = data.toString();
-      if (message.includes('Error') || message.includes('error')) {
-        console.error('FFmpeg microphone error:', message);
-      }
-    });
-
-    ffmpegMicrophoneProcess.on('error', (error) => {
-      console.error('FFmpeg microphone process error:', error);
-    });
-
-    ffmpegMicrophoneProcess.on('exit', (code) => {
-      console.log(`FFmpeg microphone process exited with code ${code}`);
-      ffmpegMicrophoneProcess = null;
-    });
-
-    // 等待 ffmpeg 启动
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('FFmpeg failed to start within 5 seconds'));
-      }, 5000);
-
-      const checkStarted = () => {
-        if (ffmpegMicrophoneProcess && ffmpegMicrophoneProcess.pid) {
-          clearTimeout(timeout);
-          resolve();
-        }
-      };
-      
-      setTimeout(checkStarted, 500);
-    });
-
-    return { success: true, pid: ffmpegMicrophoneProcess.pid };
-  } catch (error) {
-    console.error('Failed to start ffmpeg microphone recording:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 // 停止 ffmpeg 音频录制
 ipcMain.handle('stop-ffmpeg-recording', async () => {
   try {
     const results = {
-      systemAudio: false,
-      microphone: false
+      systemAudio: false
     };
 
     const stopPromises = [];
@@ -518,34 +421,6 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
         }
       });
       stopPromises.push(systemAudioPromise);
-    }
-
-    // 停止麦克风录制
-    if (ffmpegMicrophoneProcess) {
-      const microphonePromise = new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          try {
-            ffmpegMicrophoneProcess.kill('SIGKILL');
-          } catch (e) {}
-          results.microphone = true;
-          ffmpegMicrophoneProcess = null;
-          resolve();
-        }, 3000);
-
-        ffmpegMicrophoneProcess.on('exit', () => {
-          clearTimeout(timeout);
-          results.microphone = true;
-          ffmpegMicrophoneProcess = null;
-          resolve();
-        });
-
-        try {
-          ffmpegMicrophoneProcess.stdin.write('q');
-        } catch (e) {
-          ffmpegMicrophoneProcess.kill('SIGTERM');
-        }
-      });
-      stopPromises.push(microphonePromise);
     }
 
     // 等待所有录制进程停止

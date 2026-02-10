@@ -12,7 +12,6 @@ let audioBlob = null;
 let audioContext = null;
 let analyser = null;
 let dataArray = null;
-let timeDomainArray = null;
 let source = null;
 let animationId = null;
 let scriptProcessor = null;  // ScriptProcessorNode for direct audio processing
@@ -25,7 +24,6 @@ const SYSTEM_AUDIO_SILENCE_THRESHOLD = 0.15; // 静音阈值，低于此值认�
 // 音频流相关变量
 let microphoneStream = null;
 let systemAudioStream = null;
-let destinationStream = null;
 
 // 平台检测
 let currentPlatform = null;
@@ -476,15 +474,6 @@ function stopAllStreams() {
             track.stop();
         });
         systemAudioStream = null;
-    }
-    
-    if (destinationStream) {
-        console.log('停止目标流, 轨道数:', destinationStream.getTracks().length);
-        destinationStream.getTracks().forEach((track, i) => {
-            console.log(`  停止目标轨道[${i}]:`, track.label);
-            track.stop();
-        });
-        destinationStream = null;
     }
     
     console.log('=== 所有音频流已停止 ===');

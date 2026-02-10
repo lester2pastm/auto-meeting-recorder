@@ -74,25 +74,6 @@ function setupEventListeners() {
     document.getElementById('btnSaveTemplate').addEventListener('click', handleSaveTemplate);
 }
 
-// 兼容旧代码 - 导航函数现在使用新的视图系统
-function showMain() {
-    switchView('recorder');
-}
-
-function showSettings() {
-    switchView('settings');
-}
-
-function showHistory() {
-    switchView('history');
-    loadHistoryList();
-}
-
-// 加载会议列表（用于历史视图）
-async function loadMeetings() {
-    await loadHistoryList();
-}
-
 async function loadHistoryList() {
     try {
         const meetings = await getAllMeetings();
@@ -396,28 +377,6 @@ async function copySummary(id) {
     } catch (error) {
         console.error('Failed to copy summary:', error);
         showToast('复制失败', 'error');
-    }
-}
-
-async function downloadAudio(id) {
-    try {
-        const meeting = await getMeeting(id);
-        if (meeting && meeting.audioFile) {
-            const url = URL.createObjectURL(meeting.audioFile);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `meeting_${meeting.date}_${meeting.duration}.webm`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast('下载已开始', 'success');
-        } else {
-            showToast('暂无录音文件', 'info');
-        }
-    } catch (error) {
-        console.error('Failed to download audio:', error);
-        showToast('下载失败', 'error');
     }
 }
 
