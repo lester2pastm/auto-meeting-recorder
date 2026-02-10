@@ -1,6 +1,6 @@
 {
   "name": "meeting-minutes-app",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
   "scripts": {
@@ -26,6 +26,7 @@
     "jest": "^24.9.0",
     "jest-environment-jsdom": "^24.9.0",
     "playwright": "^1.58.1",
+    "png2icons": "^2.0.1",
     "serve": "^14.2.5"
   },
   "dependencies": {
@@ -40,8 +41,10 @@
     "files": [
       "src/**/*",
       "electron/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "assets/**/*"
     ],
+    "icon": "assets/icons/icon.png",
     "extraResources": [
       {
         "from": "audio_files",
