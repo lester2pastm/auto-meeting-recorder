@@ -773,11 +773,12 @@ async function initWaveform(stream) {
             window.latestAudioAmplitude = Math.min(rms * 4, 1); // 放大4倍使波形更明显
         };
         
-        // 连接节点：source -> scriptProcessor -> destination (防止内存泄漏需要连接到 destination)
+        // 连接节点：source -> scriptProcessor（仅用于处理音频数据，不输出到 destination）
         source.connect(scriptProcessor);
-        scriptProcessor.connect(audioContext.destination);
+        // 注意：在 Electron 中不要连接到 destination，会导致渲染进程卡死
+        // scriptProcessor.connect(audioContext.destination);
         
-        // 也连接到 analyser（用于兼容性）
+        // 也连接到 analyser（用于波形可视化）
         source.connect(analyser);
         
         console.log('音频处理节点连接成功');
