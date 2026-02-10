@@ -1,3 +1,29 @@
+# Release v1.5.4 - Bug 修复与稳定性改进
+
+**发布日期**: 2026-02-10  
+**版本号**: v1.5.4  
+**提交**: [03bf2a5](https://github.com/lester2pastm/auto-meeting-recorder/commit/03bf2a5)
+
+---
+
+## 🐛 Bug 修复
+
+### 1. 修复开始录音后黑屏问题
+**问题**: Windows 平台开始录音后界面卡死/黑屏  
+**原因**: `ScriptProcessorNode.connect(destination)` 在 Electron 中导致音频设备冲突  
+**修复**: 移除到 destination 的连接，该节点无需输出即可工作
+
+### 2. 修复开发模式下 IndexedDB 无法访问
+**问题**: `npm run dev` 时出现 `Failed to open database` 错误  
+**原因**: Electron 开发模式使用 `file://` 协议，Chromium 禁用 file:// 下的 IndexedDB  
+**修复**: 开发模式下临时禁用 `webSecurity`，生产模式保持安全设置
+
+### 3. 修复 Windows 开发模式下图标兼容性问题
+**问题**: Windows 开发模式下使用 `.ico` 图标导致渲染进程崩溃  
+**修复**: 开发模式统一使用 PNG 格式，打包时使用平台特定格式
+
+---
+
 # Release v1.5.3 - 添加应用图标系统
 
 **发布日期**: 2026-02-10  
