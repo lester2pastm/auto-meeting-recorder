@@ -51,7 +51,13 @@ const i18n = {
             testFailed: '连接失败',
             noRecording: '暂无录音数据',
             generatingSummary: '正在生成会议纪要...',
-            summaryGenerated: '会议纪要已生成'
+            summaryGenerated: '会议纪要已生成',
+            uploadAudio: '上传音频',
+            refreshSummary: '重新生成纪要',
+            audioTranscribing: '正在转写音频文件...',
+            audioTranscribed: '音频转写完成',
+            summaryRefreshed: '会议纪要已更新',
+            noTranscriptForRefresh: '请先进行录音或上传音频文件'
         },
         en: {
             appTitle: 'Auto Meeting Minutes',
@@ -99,7 +105,13 @@ const i18n = {
             testFailed: 'Connection failed',
             noRecording: 'No recording data available',
             generatingSummary: 'Generating meeting summary...',
-            summaryGenerated: 'Meeting summary generated'
+            summaryGenerated: 'Meeting summary generated',
+            uploadAudio: 'Upload Audio',
+            refreshSummary: 'Refresh Summary',
+            audioTranscribing: 'Transcribing audio file...',
+            audioTranscribed: 'Audio transcribed',
+            summaryRefreshed: 'Meeting summary refreshed',
+            noTranscriptForRefresh: 'Please record or upload audio first'
         }
     },
     

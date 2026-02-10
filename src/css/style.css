@@ -469,6 +469,15 @@ body {
     height: 16px;
 }
 
+.btn-icon.spinning svg {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* ============================================
    Content Section
    ============================================ */
@@ -535,6 +544,12 @@ body {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
+}
+
+.card-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
 }
 
 .card-body {

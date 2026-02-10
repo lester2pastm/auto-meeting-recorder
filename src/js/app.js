@@ -68,6 +68,13 @@ function setupEventListeners() {
     document.getElementById('btnCopySubtitle').addEventListener('click', handleCopySubtitle);
     document.getElementById('btnCopySummary').addEventListener('click', handleCopySummary);
     
+    // 音频上传按钮
+    document.getElementById('btnUploadAudio').addEventListener('click', handleUploadAudioClick);
+    document.getElementById('audioFileInput').addEventListener('change', handleAudioFileSelect);
+    
+    // 刷新纪要按钮
+    document.getElementById('btnRefreshSummary').addEventListener('click', handleRefreshSummary);
+    
     // 设置页面按钮
     document.getElementById('btnTestSttApi').addEventListener('click', handleTestSttApi);
     document.getElementById('btnTestSummaryApi').addEventListener('click', handleTestSummaryApi);
@@ -162,6 +169,9 @@ async function processRecording(audioBlob) {
         updateSubtitleContent(result.text);
         showToast('转写完成，正在生成纪要...', 'info');
 
+        // 保存当前转写文本，用于刷新纪要
+        currentTranscript = result.text;
+
         await generateMeetingSummary(result.text, audioBlob);
     } catch (error) {
         console.error('Failed to process recording:', error);
@@ -170,26 +180,38 @@ async function processRecording(audioBlob) {
 }
 
 async function generateMeetingSummary(transcript, audioBlob) {
+    console.log('[App] generateMeetingSummary called');
+    let summary = '';
+    
     try {
         if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
-            showToast('请先配置纪要生成API', 'error');
-            return;
+            console.log('[App] Summary API not configured, skipping summary generation');
+            showToast('未配置纪要生成API，仅保存转写内容', 'info');
+        } else {
+            const result = await generateSummary(transcript, currentSettings.summaryTemplate, currentSettings.summaryApiUrl, currentSettings.summaryApiKey, currentSettings.summaryModel);
+            
+            if (!result.success) {
+                console.log('[App] Summary generation failed:', result.message);
+                showToast('生成纪要失败: ' + result.message, 'error');
+            } else {
+                summary = result.summary;
+                updateSummaryContent(summary);
+                showToast('纪要生成成功', 'success');
+            }
         }
-
-        const result = await generateSummary(transcript, currentSettings.summaryTemplate, currentSettings.summaryApiUrl, currentSettings.summaryApiKey, currentSettings.summaryModel);
         
-        if (!result.success) {
-            showToast('生成纪要失败: ' + result.message, 'error');
-            return;
-        }
-
-        updateSummaryContent(result.summary);
-        showToast('纪要生成成功', 'success');
-        
-        await saveMeetingRecord(transcript, result.summary, audioBlob);
+        // 无论纪要生成成功与否，都保存会议记录
+        console.log('[App] Saving meeting record, hasSummary:', !!summary);
+        await saveMeetingRecord(transcript, summary, audioBlob);
     } catch (error) {
-        console.error('Failed to generate summary:', error);
+        console.error('[App] Failed to generate summary:', error);
         showToast('生成纪要失败', 'error');
+        // 即使出错也尝试保存转写内容
+        try {
+            await saveMeetingRecord(transcript, '', audioBlob);
+        } catch (saveError) {
+            console.error('[App] Failed to save meeting after summary error:', saveError);
+        }
     }
 }
 
@@ -201,6 +223,7 @@ function setLastRecordingDuration(duration) {
 }
 
 async function saveMeetingRecord(transcript, summary, audioBlob) {
+    console.log('[App] saveMeetingRecord called, audioBlob:', audioBlob ? { size: audioBlob.size, type: audioBlob.type } : 'null');
     try {
         const meeting = {
             id: Date.now().toString(),
@@ -210,12 +233,14 @@ async function saveMeetingRecord(transcript, summary, audioBlob) {
             transcript: transcript,
             summary: summary
         };
+        console.log('[App] Created meeting object, has audioFile:', !!meeting.audioFile);
 
         await saveMeeting(meeting);
+        console.log('[App] saveMeeting completed successfully');
         showToast('会议记录已保存', 'success');
     } catch (error) {
-        console.error('Failed to save meeting:', error);
-        showToast('保存会议记录失败', 'error');
+        console.error('[App] Failed to save meeting:', error);
+        showToast('保存会议记录失败: ' + error.message, 'error');
     }
 }
 
@@ -377,6 +402,149 @@ async function copySummary(id) {
     } catch (error) {
         console.error('Failed to copy summary:', error);
         showToast('复制失败', 'error');
+    }
+}
+
+// ============================================
+// 音频文件上传转写功能
+// ============================================
+
+function handleUploadAudioClick() {
+    document.getElementById('audioFileInput').click();
+}
+
+async function handleAudioFileSelect(event) {
+    console.log('[App] handleAudioFileSelect called');
+    const file = event.target.files[0];
+    console.log('[App] Selected file:', file ? { name: file.name, type: file.type, size: file.size } : 'null');
+    
+    if (!file) {
+        console.log('[App] No file selected');
+        return;
+    }
+
+    // 验证文件类型（支持 audio/* 和 video/webm）
+    if (!file.type.startsWith('audio/') && file.type !== 'video/webm') {
+        console.log('[App] Invalid file type:', file.type);
+        showToast(i18n ? i18n.get('saveFailed') : '请选择有效的音频文件', 'error');
+        return;
+    }
+
+    // 验证文件大小（最大 500MB）
+    const maxSize = 500 * 1024 * 1024;
+    if (file.size > maxSize) {
+        console.log('[App] File too large:', file.size);
+        showToast(i18n ? i18n.get('saveFailed') : '音频文件大小不能超过 500MB', 'error');
+        return;
+    }
+
+    try {
+        showToast(`${i18n ? i18n.get('audioTranscribing') : '正在处理音频文件'}: ${file.name}`, 'info');
+        await processAudioFile(file);
+    } catch (error) {
+        console.error('[App] Failed to process audio file:', error);
+        showToast((i18n ? i18n.get('saveFailed') : '处理音频文件失败') + ': ' + error.message, 'error');
+    } finally {
+        // 清空文件输入，允许重复选择同一文件
+        event.target.value = '';
+    }
+}
+
+async function processAudioFile(file) {
+    console.log('[App] processAudioFile called, currentSettings:', currentSettings ? { 
+        hasSttUrl: !!currentSettings.sttApiUrl, 
+        hasSttKey: !!currentSettings.sttApiKey 
+    } : 'null');
+    
+    if (!currentSettings || !currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
+        console.log('[App] API not configured, showing error');
+        showToast(i18n ? i18n.get('testFailed') : '请先配置语音识别API', 'error');
+        return;
+    }
+
+    showLoading(i18n ? i18n.get('audioTranscribing') : '正在转写音频文件...');
+
+    try {
+        // 将 File 对象转换为 Blob
+        const audioBlob = new Blob([await file.arrayBuffer()], { type: file.type });
+        
+        // 为上传的文件设置一个标识性的 duration
+        setLastRecordingDuration('上传音频');
+
+        console.log('开始转写音频文件:', { 
+            name: file.name, 
+            type: file.type, 
+            size: file.size,
+            apiUrl: currentSettings.sttApiUrl 
+        });
+
+        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel);
+
+        console.log('转写结果:', result);
+
+        if (!result.success) {
+            showToast((i18n ? i18n.get('testFailed') : '转写失败') + ': ' + result.message, 'error');
+            hideLoading();
+            return;
+        }
+
+        updateSubtitleContent(result.text);
+        showToast(i18n ? i18n.get('generatingSummary') : '转写完成，正在生成纪要...', 'info');
+
+        // 保存当前转写文本，用于刷新纪要
+        currentTranscript = result.text;
+
+        await generateMeetingSummary(result.text, audioBlob);
+    } catch (error) {
+        console.error('Failed to process audio file:', error);
+        showToast((i18n ? i18n.get('saveFailed') : '处理音频文件失败') + ': ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// ============================================
+// 会议纪要刷新功能
+// ============================================
+
+let currentTranscript = '';
+
+async function handleRefreshSummary() {
+    // 获取当前显示的转写文本
+    const subtitleContent = document.getElementById('subtitleContent');
+    const transcript = subtitleContent ? subtitleContent.textContent.trim() : '';
+
+    if (!transcript || transcript === (i18n ? i18n.get('emptySubtitleHint') : '开始录音后将显示转写内容')) {
+        showToast(i18n ? i18n.get('noTranscriptForRefresh') : '请先进行录音或上传音频文件', 'error');
+        return;
+    }
+
+    if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
+        showToast('请先配置纪要生成API', 'error');
+        return;
+    }
+
+    // 添加旋转动画
+    const refreshBtn = document.getElementById('btnRefreshSummary');
+    refreshBtn.classList.add('spinning');
+
+    try {
+        showToast(i18n ? i18n.get('generatingSummary') : '正在重新生成会议纪要...', 'info');
+
+        const result = await generateSummary(transcript, currentSettings.summaryTemplate, currentSettings.summaryApiUrl, currentSettings.summaryApiKey, currentSettings.summaryModel);
+
+        if (!result.success) {
+            showToast((i18n ? i18n.get('saveFailed') : '生成纪要失败') + ': ' + result.message, 'error');
+            return;
+        }
+
+        updateSummaryContent(result.summary);
+        showToast(i18n ? i18n.get('summaryRefreshed') : '会议纪要已更新', 'success');
+    } catch (error) {
+        console.error('Failed to refresh summary:', error);
+        showToast((i18n ? i18n.get('saveFailed') : '重新生成纪要失败') + ': ' + error.message, 'error');
+    } finally {
+        refreshBtn.classList.remove('spinning');
     }
 }
 

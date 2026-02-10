@@ -20,18 +20,37 @@ function generateAudioFilename() {
 
 // 保存音频文件（Electron 环境）
 async function saveAudioFile(audioBlob) {
+  console.log('[Storage] saveAudioFile called, isElectron:', isElectron());
+  
   if (!isElectron()) {
+    console.log('[Storage] Not in Electron environment');
     return { success: false, error: 'Not in Electron environment' };
   }
 
   const filename = generateAudioFilename();
+  console.log('[Storage] Generated filename:', filename);
+  console.log('[Storage] Audio blob size:', audioBlob.size, 'type:', audioBlob.type);
   
-  // 将 Blob 转换为 ArrayBuffer，然后转换为普通数组
-  const arrayBuffer = await audioBlob.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-  const array = Array.from(uint8Array);
-  
-  return await window.electronAPI.saveAudio(array, filename);
+  try {
+    // 将 Blob 转换为 ArrayBuffer，然后转换为普通数组
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    console.log('[Storage] ArrayBuffer created, size:', arrayBuffer.byteLength);
+    
+    const uint8Array = new Uint8Array(arrayBuffer);
+    console.log('[Storage] Uint8Array created, length:', uint8Array.length);
+    
+    const array = Array.from(uint8Array);
+    console.log('[Storage] Array created, length:', array.length);
+    
+    console.log('[Storage] Calling electronAPI.saveAudio...');
+    const result = await window.electronAPI.saveAudio(array, filename);
+    console.log('[Storage] saveAudio result:', result);
+    
+    return result;
+  } catch (error) {
+    console.error('[Storage] saveAudioFile error:', error);
+    return { success: false, error: error.message };
+  }
 }
 
 // 获取音频文件（Electron 环境）
@@ -121,32 +140,49 @@ function initDB() {
 }
 
 async function saveMeeting(meeting) {
+    console.log('[Storage] saveMeeting called, meeting id:', meeting.id);
     return new Promise(async (resolve, reject) => {
         try {
             // 如果有音频文件且是 Blob，保存到文件系统
             if (meeting.audioFile && meeting.audioFile instanceof Blob && isElectron()) {
+                console.log('[Storage] Meeting has audioFile Blob, saving to filesystem...');
                 const audioResult = await saveAudioFile(meeting.audioFile);
+                console.log('[Storage] Audio save result:', audioResult);
                 if (audioResult.success) {
                     // 保存文件名而不是 Blob
                     meeting.audioFilename = audioResult.filePath.split('\\').pop();
-                    delete meeting.audioFile; // 删除 Blob 以节省内存
+                    console.log('[Storage] Audio saved, filename:', meeting.audioFilename);
                 } else {
-                    console.error('Failed to save audio file:', audioResult.error);
+                    console.error('[Storage] Failed to save audio file:', audioResult.error);
                 }
+                // 无论成功与否，都删除 Blob 以避免 IndexedDB 存储问题
+                delete meeting.audioFile;
+            } else if (meeting.audioFile && meeting.audioFile instanceof Blob) {
+                console.log('[Storage] Non-electron environment, removing audioFile Blob');
+                // 非 Electron 环境，删除 Blob 以避免 IndexedDB 存储问题
+                delete meeting.audioFile;
             }
 
+            console.log('[Storage] Saving meeting to IndexedDB...');
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const objectStore = transaction.objectStore(STORE_NAME);
             const request = objectStore.put(meeting);
 
             request.onsuccess = () => {
+                console.log('[Storage] Meeting saved to IndexedDB successfully');
                 resolve(meeting);
             };
 
-            request.onerror = () => {
-                reject(new Error('Failed to save meeting'));
+            request.onerror = (event) => {
+                console.error('[Storage] IndexedDB save error:', event.target.error);
+                reject(new Error('Failed to save meeting: ' + (event.target.error ? event.target.error.message : 'Unknown error')));
+            };
+            
+            transaction.onerror = (event) => {
+                console.error('[Storage] IndexedDB transaction error:', event.target.error);
             };
         } catch (error) {
+            console.error('[Storage] saveMeeting catch error:', error);
             reject(error);
         }
     });
