@@ -41,9 +41,13 @@ function createWindow() {
   const x = Math.round((screenWidth - targetWidth) / 2);
   const y = Math.round((screenHeight - targetHeight) / 2);
   
-  // 根据平台选择图标
+  // 根据平台选择图标（开发模式下统一使用 PNG，打包时使用平台特定格式）
   let iconPath;
-  if (isWindows) {
+  const isDev = process.argv.includes('--dev');
+  if (isDev) {
+    // 开发模式下统一使用 PNG，避免 ICO 兼容性问题
+    iconPath = path.join(__dirname, '..', 'assets', 'icons', 'icon.png');
+  } else if (isWindows) {
     iconPath = path.join(__dirname, '..', 'assets', 'icons', 'icon.ico');
   } else if (isMac) {
     iconPath = path.join(__dirname, '..', 'assets', 'icons', 'icon.icns');
