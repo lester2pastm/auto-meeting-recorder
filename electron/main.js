@@ -134,9 +134,10 @@ ipcMain.handle('save-audio', async (event, { blob, filename }) => {
 });
 
 // IPC 处理器：获取音频文件
-ipcMain.handle('get-audio', async (event, filename) => {
+ipcMain.handle('get-audio', async (event, filePathOrName) => {
   try {
-    const filePath = path.join(AUDIO_DIR, filename);
+    // 支持完整路径或文件名
+    const filePath = path.isAbsolute(filePathOrName) ? filePathOrName : path.join(AUDIO_DIR, filePathOrName);
     if (fs.existsSync(filePath)) {
       const buffer = fs.readFileSync(filePath);
       return { success: true, data: Array.from(buffer) };
@@ -148,9 +149,10 @@ ipcMain.handle('get-audio', async (event, filename) => {
 });
 
 // IPC 处理器：删除音频文件
-ipcMain.handle('delete-audio', async (event, filename) => {
+ipcMain.handle('delete-audio', async (event, filePathOrName) => {
   try {
-    const filePath = path.join(AUDIO_DIR, filename);
+    // 支持完整路径或文件名
+    const filePath = path.isAbsolute(filePathOrName) ? filePathOrName : path.join(AUDIO_DIR, filePathOrName);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
