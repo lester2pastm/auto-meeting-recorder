@@ -268,6 +268,14 @@ async function renderMeetingDetail(meeting) {
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                 </svg>
                 录音文件
+                ${meeting.audioFilename ? `
+                <span class="path-info-icon" data-path="${escapeHtml(meeting.audioFilename)}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="path-tooltip">${escapeHtml(meeting.audioFilename)}</span>
+                </span>
+                ` : ''}
             </h3>
             ${hasAudioFile ? `
             <audio controls class="audio-player">

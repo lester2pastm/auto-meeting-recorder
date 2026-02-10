@@ -940,6 +940,64 @@ body {
     margin-bottom: var(--space-4);
 }
 
+.path-info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-left: var(--space-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border-radius: var(--radius-sm);
+    position: relative;
+}
+
+.path-info-icon:hover {
+    color: var(--accent);
+    background: var(--bg-hover);
+}
+
+.path-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    transform: translateY(-4px);
+    padding: var(--space-2) var(--space-3);
+    background: var(--accent);
+    color: var(--text-inverse);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border-radius: var(--radius-md);
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--transition-fast);
+    z-index: 100;
+    margin-bottom: var(--space-1);
+    max-width: 500px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: rtl;
+    text-align: left;
+}
+
+.path-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-top-color: var(--accent);
+}
+
+.path-info-icon:hover .path-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
 .detail-info {
     display: grid;
     grid-template-columns: repeat(2, 1fr);

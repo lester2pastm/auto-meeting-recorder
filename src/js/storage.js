@@ -149,9 +149,9 @@ async function saveMeeting(meeting) {
                 const audioResult = await saveAudioFile(meeting.audioFile);
                 console.log('[Storage] Audio save result:', audioResult);
                 if (audioResult.success) {
-                    // 保存文件名而不是 Blob
-                    meeting.audioFilename = audioResult.filePath.split('\\').pop();
-                    console.log('[Storage] Audio saved, filename:', meeting.audioFilename);
+                    // 保存完整文件路径
+                    meeting.audioFilename = audioResult.filePath;
+                    console.log('[Storage] Audio saved, filepath:', meeting.audioFilename);
                 } else {
                     console.error('[Storage] Failed to save audio file:', audioResult.error);
                 }
