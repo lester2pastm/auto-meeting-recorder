@@ -14,6 +14,12 @@
 ### 2026-02-10 - PowerShell命令执行
 **教训**：PowerShell不支持 `&&` 操作符，需要分步执行命令；Git commit message使用英文避免编码问题
 
+### 2026-02-10 - 代码清理与PowerShell参数陷阱
+**教训**：
+1. **代码清理必须深度验证** - 使用 `grep` 搜索所有引用，确认变量/函数确实未被使用
+2. **PowerShell Git commit message 陷阱** - 避免使用 `remove`、`clean`、`cleanup`、`delete` 等关键词，会被误认为是 PowerShell 命令
+3. **解决方案** - 使用中文描述或安全的英文词（`update`、`fix`、`refactor`），或使用 `--message="..."` 格式
+
 ## 如何更新本文件
 
 - 说"总结本次经验"或"更新项目规则"
