@@ -1,7 +1,7 @@
 # Auto Meeting Recorder
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.0.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -39,18 +39,20 @@
 
 ### 🎙️ **Audio Recording**
 - Record meeting audio with microphone and system audio support
-- Real-time audio visualization
-- Pause and resume recording
-- High-quality audio capture
+- Real-time audio visualization with animated waveform
+- Pause and resume recording at any time
+- High-quality audio capture in WebM format
+- Upload and process existing audio files
 
 </td>
 <td width="50%">
 
 ### 📝 **Speech-to-Text**
-- Transcribe audio using OpenAI Whisper API
-- Support for multiple providers (OpenAI, Alibaba Cloud, SiliconFlow)
+- Transcribe audio using OpenAI-compatible APIs
+- Support for multiple providers (SiliconFlow, OpenAI, Alibaba Cloud)
 - Real-time transcription display
 - Multi-language support
+- Test API connectivity before recording
 
 </td>
 </tr>
@@ -59,18 +61,20 @@
 
 ### 🤖 **AI Summary Generation**
 - Automatically generate meeting minutes using LLM APIs
-- Customizable templates with Markdown
-- Structured output (topics, decisions, action items)
-- Support for GPT-4, Claude, and other models
+- Customizable templates with Markdown support
+- Structured output (overview, topics, decisions, action items)
+- Support for DeepSeek, GPT-4, Claude, and other models
+- Regenerate summary with one click
 
 </td>
 <td width="50%">
 
 ### 🔒 **Privacy-First**
-- All data stored locally
-- No cloud dependency
+- All data stored locally on your device
+- No cloud dependency for core functionality
 - No analytics or telemetry
 - Your API keys stay on your device
+- Encrypted storage for sensitive settings
 
 </td>
 </tr>
@@ -79,18 +83,41 @@
 
 ### 📚 **History Management**
 - Save and manage all meeting records
-- Search and filter past meetings
-- Export minutes in multiple formats
-- Local data persistence
+- View detailed meeting information
+- Copy transcript and summary to clipboard
+- Export audio files from past meetings
+- Delete old records to free up space
 
 </td>
 <td width="50%">
 
 ### 💻 **Cross-Platform**
 - Windows, macOS, and Linux support
-- Desktop app (Electron)
-- Web version (Browser-based)
+- Desktop app built with Electron
+- Web version for browser use
 - Consistent experience across platforms
+- Automatic platform detection
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🎨 **Modern UI**
+- Clean and intuitive interface design
+- Tab-based navigation for content switching
+- Responsive layout adapts to window size
+- Real-time recording timer and visualizer
+- Toast notifications for user feedback
+
+</td>
+<td width="50%">
+
+### 🌐 **Internationalization**
+- Multi-language support (English, Chinese)
+- Easy to add more languages
+- Language auto-detection
+- Localized UI elements and messages
 
 </td>
 </tr>
@@ -135,9 +162,9 @@
 
 | Platform | Download |
 |----------|----------|
-| Windows | [AutoMeetingRecorder-1.2.0-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-1.2.0-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-1.2.0-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Windows | [AutoMeetingRecorder-2.0.0-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| macOS | [AutoMeetingRecorder-2.0.0-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Linux | [AutoMeetingRecorder-2.0.0-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
 
 **Build from Source**
 
@@ -175,21 +202,22 @@ npx serve src
 
 The app requires API keys for speech recognition and meeting summary generation.
 
-#### Speech-to-Text API (Whisper)
+#### Recommended: Speech-to-Text API
 
 | Provider | API URL | Model |
 |----------|---------|-------|
-| **OpenAI** | `https://api.openai.com/v1/audio/transcriptions` | `whisper-1` |
-| **Alibaba Cloud** | `https://dashscope.aliyuncs.com/api/v1/audio/transcriptions` | `whisper-v3` |
-| **SiliconFlow** | `https://api.siliconflow.cn/v1/audio/transcriptions` | `whisper-large-v3` |
+| **SiliconFlow** | `https://api.siliconflow.cn/v1/audio/transcriptions` | `TeleAI/TeleSpeechASR` |
+| OpenAI | `https://api.openai.com/v1/audio/transcriptions` | `whisper-1` |
+| Alibaba Cloud | `https://dashscope.aliyuncs.com/api/v1/audio/transcriptions` | `whisper-v3` |
 
-#### Summary Generation API (LLM)
+#### Recommended: Summary Generation API
 
-| Provider | API URL | Models |
-|----------|---------|--------|
-| **OpenAI** | `https://api.openai.com/v1/chat/completions` | `gpt-4`, `gpt-3.5-turbo` |
-| **Anthropic** | `https://api.anthropic.com/v1/messages` | `claude-3-opus`, `claude-3-sonnet` |
-| **Alibaba Cloud** | `https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation` | `qwen-max`, `qwen-plus` |
+| Provider | API URL | Model |
+|----------|---------|-------|
+| **DeepSeek** | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` |
+| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4`, `gpt-3.5-turbo` |
+| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-3-opus`, `claude-3-sonnet` |
+| Alibaba Cloud | `https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation` | `qwen-max`, `qwen-plus` |
 
 ### Meeting Minutes Template
 
@@ -226,10 +254,10 @@ Customize your meeting minutes template using Markdown:
 ### First Time Setup
 
 1. Open the app and navigate to **Settings**
-2. Configure your Speech-to-Text API credentials
-3. Configure your Summary Generation API credentials
+2. Configure your Speech-to-Text API credentials (SiliconFlow recommended)
+3. Configure your Summary Generation API credentials (DeepSeek recommended)
 4. Customize your meeting template (optional)
-5. Test the configuration
+5. Test both API configurations
 
 ### Recording a Meeting
 
@@ -237,15 +265,24 @@ Customize your meeting minutes template using Markdown:
 2. Use the **Pause** button during breaks
 3. Click **"Stop Recording"** when the meeting ends
 4. Wait for transcription and summary generation
-5. Review and edit the generated minutes
-6. Save or export your meeting minutes
+5. Switch between **Meeting Transcript** and **Meeting Minutes** tabs
+6. Copy content to clipboard or export as needed
 
 ### Managing History
 
 - Access all past meetings in the **History** page
-- Search by date, topic, or keywords
-- Export individual meetings or bulk export
+- View detailed meeting information including audio playback
+- Copy transcript or summary from any past meeting
+- Export audio files from previous recordings
 - Delete old records to free up space
+
+### Uploading Audio Files
+
+You can also upload existing audio files instead of recording:
+
+1. Click the **Upload** button in the transcript tab
+2. Select an audio file (supports common formats)
+3. Wait for transcription and summary generation
 
 ---
 
@@ -262,10 +299,10 @@ auto-meeting-recorder/
 │   │   └── style.css        # Main stylesheet
 │   ├── 📁 js/               # JavaScript modules
 │   │   ├── app.js           # Main application logic
-│   │   ├── api.js           # API integrations
+│   │   ├── api.js           # API integrations (STT & LLM)
 │   │   ├── recorder.js      # Audio recording functionality
-│   │   ├── storage.js       # Data persistence layer
-│   │   ├── ui.js            # UI interactions
+│   │   ├── storage.js       # Data persistence (IndexedDB/FileSystem)
+│   │   ├── ui.js            # UI interactions and rendering
 │   │   └── i18n.js          # Internationalization
 │   └── index.html           # Main HTML file
 │
