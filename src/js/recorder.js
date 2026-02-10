@@ -129,6 +129,7 @@ async function startLinuxRecording() {
         isPaused = false;
         recordingStartTime = Date.now();
         recordingPausedTime = 0;
+        startTimer();
         
         // 3. 获取系统音频用于可视化（通过 Web Audio API 捕获 monitor 设备）
         console.log('正在获取系统音频用于可视化...');
