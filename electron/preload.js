@@ -27,4 +27,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopFFmpegRecording: () => ipcRenderer.invoke('stop-ffmpeg-recording'),
   mergeAudioFiles: (microphonePath, systemAudioPath, outputPath) => ipcRenderer.invoke('merge-audio-files', { microphonePath, systemAudioPath, outputPath }),
   getPulseAudioSources: () => ipcRenderer.invoke('get-pulseaudio-sources'),
+  readAudioFile: (filePath) => ipcRenderer.invoke('read-audio-file', filePath),
+  saveAudioToPath: (data, filePath) => ipcRenderer.invoke('save-audio-to-path', { data, filePath }),
+  
+  // 监听音频级别变化（用于波形可视化）
+  onAudioLevel: (callback) => {
+    ipcRenderer.on('audio-level', (event, data) => callback(data));
+  },
+  removeAudioLevelListener: () => {
+    ipcRenderer.removeAllListeners('audio-level');
+  }
 });
