@@ -1,3 +1,25 @@
+# Release v1.5.5 - 修复波形可视化
+
+**发布日期**: 2026-02-10  
+**版本号**: v1.5.5  
+**提交**: [6321150](https://github.com/lester2pastm/auto-meeting-recorder/commit/6321150)
+
+---
+
+## 🐛 Bug 修复
+
+### 修复波形可视化不波动问题
+**问题**: 开始录音后波形条不随音频波动  
+**原因**: 之前修复黑屏问题时移除了 `ScriptProcessorNode.connect(destination)`，导致 `onaudioprocess` 回调不被触发  
+**解决**: 改用 `AnalyserNode.getByteTimeDomainData()` 实时获取音频振幅，完全移除 `ScriptProcessorNode`
+
+**技术改进**:
+- 使用标准的 Web Audio API
+- 避免额外的音频处理节点
+- 同时解决黑屏和波形可视化问题
+
+---
+
 # Release v1.5.4 - Bug 修复与稳定性改进
 
 **发布日期**: 2026-02-10  
