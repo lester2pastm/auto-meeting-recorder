@@ -324,9 +324,13 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
 
     // 构建 ffmpeg 命令录制系统音频
     // 使用 pulse 音频输入，录制系统输出（monitor）
+    // 使用 astats 滤镜获取实时音量信息
+    const monitorDevice = device.endsWith('.monitor') ? device : `${device}.monitor`;
     const args = [
       '-f', 'pulse',
-      '-i', `${device}.monitor`,  // 系统音频 monitor 设备
+      '-i', monitorDevice,         // 系统音频 monitor 设备
+      '-filter_complex', '[0:a]astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]', // 使用 astats 获取实时 RMS 音量
+      '-map', '[aout]',
       '-acodec', 'libopus',        // 使用 opus 编码
       '-b:a', '128k',              // 比特率
       '-ar', '48000',              // 采样率
@@ -340,10 +344,29 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
     ffmpegSystemAudioProcess = spawn('ffmpeg', args);
     
     let errorOutput = '';
+    let lastRMSLevel = -70;  // 记录上一次的 RMS 音量
     
     ffmpegSystemAudioProcess.stderr.on('data', (data) => {
       const message = data.toString();
       errorOutput += message;
+      
+      // 解析 astats 音量信息 - RMS 电平
+      const rmsMatch = message.match(/lavfi\.astats\.Overall\.RMS_level=([\-\d\.]+)/);
+      
+      if (rmsMatch) {
+        const rmsLevel = parseFloat(rmsMatch[1]);
+        lastRMSLevel = rmsLevel;
+        
+        // 发送音量信息到渲染进程
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('audio-level', {
+            type: 'system',
+            rms: rmsLevel,
+            timestamp: Date.now()
+          });
+        }
+      }
+      
       // 只记录关键信息
       if (message.includes('Error') || message.includes('error')) {
         console.error('FFmpeg system audio error:', message);
@@ -464,23 +487,26 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
       microphone: false
     };
 
+    const stopPromises = [];
+
     // 停止系统音频录制
     if (ffmpegSystemAudioProcess) {
-      return new Promise((resolve) => {
+      const systemAudioPromise = new Promise((resolve) => {
         const timeout = setTimeout(() => {
           // 超时后强制终止
           try {
             ffmpegSystemAudioProcess.kill('SIGKILL');
           } catch (e) {}
           results.systemAudio = true;
-          resolve(results);
+          ffmpegSystemAudioProcess = null;
+          resolve();
         }, 3000);
 
         ffmpegSystemAudioProcess.on('exit', () => {
           clearTimeout(timeout);
           results.systemAudio = true;
           ffmpegSystemAudioProcess = null;
-          resolve(results);
+          resolve();
         });
 
         // 发送 'q' 命令优雅地停止 ffmpeg
@@ -491,24 +517,26 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
           ffmpegSystemAudioProcess.kill('SIGTERM');
         }
       });
+      stopPromises.push(systemAudioPromise);
     }
 
     // 停止麦克风录制
     if (ffmpegMicrophoneProcess) {
-      return new Promise((resolve) => {
+      const microphonePromise = new Promise((resolve) => {
         const timeout = setTimeout(() => {
           try {
             ffmpegMicrophoneProcess.kill('SIGKILL');
           } catch (e) {}
           results.microphone = true;
-          resolve(results);
+          ffmpegMicrophoneProcess = null;
+          resolve();
         }, 3000);
 
         ffmpegMicrophoneProcess.on('exit', () => {
           clearTimeout(timeout);
           results.microphone = true;
           ffmpegMicrophoneProcess = null;
-          resolve(results);
+          resolve();
         });
 
         try {
@@ -517,6 +545,12 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
           ffmpegMicrophoneProcess.kill('SIGTERM');
         }
       });
+      stopPromises.push(microphonePromise);
+    }
+
+    // 等待所有录制进程停止
+    if (stopPromises.length > 0) {
+      await Promise.all(stopPromises);
     }
 
     return { success: true, results };
@@ -616,5 +650,39 @@ ipcMain.handle('get-pulseaudio-sources', async () => {
   } catch (error) {
     console.warn('Failed to get PulseAudio sources:', error.message);
     return { success: true, sources: [], error: error.message };
+  }
+});
+
+// 读取音频文件（用于渲染进程获取录制完成的音频）
+ipcMain.handle('read-audio-file', async (event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found: ' + filePath };
+    }
+    
+    const buffer = fs.readFileSync(filePath);
+    // 返回 Array 以便序列化通过 IPC
+    return { success: true, data: Array.from(buffer) };
+  } catch (error) {
+    console.error('Error reading audio file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 保存音频数据到指定路径（Linux 混合录制使用）
+ipcMain.handle('save-audio-to-path', async (event, { data, filePath }) => {
+  try {
+    // 确保目录存在
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(filePath, buffer);
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('Error saving audio to path:', error);
+    return { success: false, error: error.message };
   }
 });
