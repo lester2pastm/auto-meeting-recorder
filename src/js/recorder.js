@@ -14,7 +14,6 @@ let analyser = null;
 let dataArray = null;
 let source = null;
 let animationId = null;
-let scriptProcessor = null;  // ScriptProcessorNode for direct audio processing
 let systemAudioLevel = 0;    // FFmpeg 系统音频音量级别 (Linux)
 let systemAudioLastUpdateTime = 0;  // FFmpeg 音量最后更新时间
 const SYSTEM_AUDIO_TIMEOUT = 300;   // 超时阈值（毫秒），超过此时间开始衰减
@@ -736,6 +735,9 @@ async function initWaveform(stream) {
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
         analyser.smoothingTimeConstant = 0.8;
+        
+        // 创建数据数组用于存储时域数据
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
 
         // 连接音频源
         if (source) {
@@ -743,43 +745,14 @@ async function initWaveform(stream) {
                 source.disconnect();
             } catch (e) {}
         }
-        if (scriptProcessor) {
-            try {
-                scriptProcessor.disconnect();
-            } catch (e) {}
-        }
         
         source = audioContext.createMediaStreamSource(stream);
         
-        // 创建 ScriptProcessorNode 用于直接处理音频数据
-        const bufferSize = 2048;
-        scriptProcessor = audioContext.createScriptProcessor(bufferSize, 1, 1);
-        
-        // 存储最新的音频振幅
-        window.latestAudioAmplitude = 0;
-        
-        scriptProcessor.onaudioprocess = function(audioProcessingEvent) {
-            const inputBuffer = audioProcessingEvent.inputBuffer;
-            const inputData = inputBuffer.getChannelData(0);
-            
-            // 计算 RMS (均方根) 振幅
-            let sum = 0;
-            for (let i = 0; i < inputData.length; i++) {
-                sum += inputData[i] * inputData[i];
-            }
-            const rms = Math.sqrt(sum / inputData.length);
-            
-            // 将 -1 到 1 的范围映射到 0 到 1
-            window.latestAudioAmplitude = Math.min(rms * 4, 1); // 放大4倍使波形更明显
-        };
-        
-        // 连接节点：source -> scriptProcessor（仅用于处理音频数据，不输出到 destination）
-        source.connect(scriptProcessor);
-        // 注意：在 Electron 中不要连接到 destination，会导致渲染进程卡死
-        // scriptProcessor.connect(audioContext.destination);
-        
-        // 也连接到 analyser（用于波形可视化）
+        // 连接到 analyser（用于波形可视化）
         source.connect(analyser);
+        
+        // 注意：不使用 ScriptProcessorNode，因为它在 Electron 中会导致渲染进程卡死
+        // 改为使用 AnalyserNode.getByteTimeDomainData() 实时获取音频振幅
         
         console.log('音频处理节点连接成功');
 
@@ -860,8 +833,21 @@ function drawWaveform() {
 
         animationId = requestAnimationFrame(update);
 
-        // 从 ScriptProcessorNode 获取麦克风振幅
-        const micAmplitude = window.latestAudioAmplitude || 0;
+        // 从 AnalyserNode 获取麦克风振幅（替代 ScriptProcessorNode，避免 Electron 黑屏）
+        let micAmplitude = 0;
+        if (analyser && dataArray) {
+            analyser.getByteTimeDomainData(dataArray);
+            
+            // 计算 RMS (均方根) 振幅
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                // 将 0-255 映射到 -1 到 1
+                const value = (dataArray[i] - 128) / 128;
+                sum += value * value;
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            micAmplitude = Math.min(rms * 4, 1); // 放大4倍使波形更明显
+        }
         
         // 在 Linux 平台，也获取 FFmpeg 系统音频音量
         let sysAmplitude = 0;
@@ -953,21 +939,12 @@ function stopWaveform() {
         animationId = null;
     }
 
-    // 清理 scriptProcessor
-    if (scriptProcessor) {
-        try {
-            scriptProcessor.disconnect();
-        } catch (e) {}
-        scriptProcessor = null;
-    }
-
     if (audioContext) {
         audioContext.close();
         audioContext = null;
     }
 
-    // 重置全局振幅变量
-    window.latestAudioAmplitude = 0;
+    // 重置音频级别变量
     systemAudioLevel = 0;
     systemAudioLastUpdateTime = 0;
 
