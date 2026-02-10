@@ -48,6 +48,9 @@ async function initApp() {
         // 初始化侧边栏导航
         initNavigation();
         
+        // 初始化内容标签页
+        initContentTabs();
+        
         setupEventListeners();
         
         showToast(i18n ? i18n.get('initSuccess') : '应用初始化成功', 'success');
