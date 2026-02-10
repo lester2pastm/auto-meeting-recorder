@@ -144,12 +144,22 @@
                                     </div>
                                     <h2 data-i18n="fullText">会议全文</h2>
                                 </div>
-                                <button id="btnCopySubtitle" class="btn btn-icon" title="复制全文">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                    </svg>
-                                </button>
+                                <div class="card-actions">
+                                    <button id="btnUploadAudio" class="btn btn-icon" title="上传音频文件">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                            <polyline points="17 8 12 3 7 8"/>
+                                            <line x1="12" y1="3" x2="12" y2="15"/>
+                                        </svg>
+                                    </button>
+                                    <input type="file" id="audioFileInput" accept="audio/*" style="display: none;">
+                                    <button id="btnCopySubtitle" class="btn btn-icon" title="复制全文">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                             <div id="subtitleContent" class="card-body">
                                 <div class="empty-state">
@@ -180,12 +190,21 @@
                                     </div>
                                     <h2 data-i18n="meetingSummary">会议纪要</h2>
                                 </div>
-                                <button id="btnCopySummary" class="btn btn-icon" title="复制纪要">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                    </svg>
-                                </button>
+                                <div class="card-actions">
+                                    <button id="btnRefreshSummary" class="btn btn-icon" title="重新生成纪要">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="23 4 23 10 17 10"/>
+                                            <polyline points="1 20 1 14 7 14"/>
+                                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                        </svg>
+                                    </button>
+                                    <button id="btnCopySummary" class="btn btn-icon" title="复制纪要">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                             <div id="summaryContent" class="card-body">
                                 <div class="empty-state">

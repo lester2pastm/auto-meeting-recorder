@@ -109,11 +109,26 @@ app.on('window-all-closed', () => {
 // IPC 处理器：保存音频文件
 ipcMain.handle('save-audio', async (event, { blob, filename }) => {
   try {
+    console.log('[Main] save-audio called:', { filename, blobType: typeof blob, blobLength: blob ? blob.length : 'null' });
+    
+    // 确保音频目录存在
+    if (!fs.existsSync(AUDIO_DIR)) {
+      console.log('[Main] Creating audio directory:', AUDIO_DIR);
+      fs.mkdirSync(AUDIO_DIR, { recursive: true });
+    }
+    
     const filePath = path.join(AUDIO_DIR, filename);
+    console.log('[Main] Saving to:', filePath);
+    
     const buffer = Buffer.from(blob);
+    console.log('[Main] Buffer created, size:', buffer.length);
+    
     fs.writeFileSync(filePath, buffer);
+    console.log('[Main] File saved successfully');
+    
     return { success: true, filePath };
   } catch (error) {
+    console.error('[Main] save-audio error:', error);
     return { success: false, error: error.message };
   }
 });
