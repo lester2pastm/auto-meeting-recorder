@@ -11,6 +11,9 @@
 ### 2026-02-02 - GitHub Actions
 **教训**：执行 CI/CD 前先检查 `.github/workflows/` 配置，不要假设工作流程
 
+### 2026-02-10 - PowerShell命令执行
+**教训**：PowerShell不支持 `&&` 操作符，需要分步执行命令；Git commit message使用英文避免编码问题
+
 ## 如何更新本文件
 
 - 说"总结本次经验"或"更新项目规则"

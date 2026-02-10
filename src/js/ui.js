@@ -52,8 +52,8 @@ function switchView(viewName) {
     }
     
     // 如果切换到历史视图，刷新历史列表
-    if (viewName === 'history' && typeof loadMeetings === 'function') {
-        loadMeetings();
+    if (viewName === 'history' && typeof loadHistoryList === 'function') {
+        loadHistoryList();
     }
 }
 
@@ -402,9 +402,6 @@ function showLoading(message) {
     if (summaryContent) {
         summaryContent.innerHTML = loadingHTML.replace(message, '生成中...');
     }
-}
-
-function hideLoading() {
 }
 
 function loadSettings(settings) {
