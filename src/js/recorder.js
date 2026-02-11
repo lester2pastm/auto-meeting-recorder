@@ -558,7 +558,6 @@ async function stopLinuxRecording() {
     } catch (error) {
         console.error('停止 Linux 录制失败:', error);
         linuxMicMediaRecorder = null;
-        linuxMicAudioChunks = [];
         isFFmpegRecording = false;
         linuxRecordingPaths = null;
         throw error;
