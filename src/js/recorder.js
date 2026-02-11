@@ -506,6 +506,10 @@ async function stopLinuxRecording() {
             throw new Error('录音路径未设置');
         }
         
+        // 获取恢复元数据中的正确麦克风文件路径
+        const recoveryMeta = typeof getRecoveryMeta === 'function' ? getRecoveryMeta() : null;
+        const microphonePath = recoveryMeta && recoveryMeta.tempFile ? recoveryMeta.tempFile : linuxRecordingPaths.microphone;
+        
         // 1. 停止麦克风录制（MediaRecorder）
         if (linuxMicMediaRecorder && linuxMicMediaRecorder.state !== 'inactive') {
             await new Promise((resolve) => {
@@ -527,9 +531,9 @@ async function stopLinuxRecording() {
         // 等待 FFmpeg 文件写入完成
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // 3. 合并音频文件
+        // 3. 合并音频文件 - 使用正确的麦克风路径
         const mergeResult = await window.electronAPI.mergeAudioFiles(
-            linuxRecordingPaths.microphone,
+            microphonePath,
             linuxRecordingPaths.systemAudio,
             linuxRecordingPaths.output
         );

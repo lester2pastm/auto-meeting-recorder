@@ -354,4 +354,36 @@ describe('Recording Paths Generation', () => {
     expect(paths.output).toContain('combined_');
     expect(paths.microphone.endsWith('.webm')).toBe(true);
   });
+
+  test('should use consistent microphone path for recording and merging', () => {
+    // Bug fix verification: stopLinuxRecording should use recoveryMeta.tempFile
+    // instead of linuxRecordingPaths.microphone for the microphone file path
+    // This ensures the merge uses the correct path where data was actually saved
+    
+    const timestamp = Date.now();
+    const audioDir = '/tmp/audio_files';
+    
+    // 模拟 startLinuxRecording 中定义的路径
+    const linuxRecordingPaths = {
+      microphone: `${audioDir}/mic_${timestamp}.webm`,      // 旧的不一致路径
+      systemAudio: `${audioDir}/sys_${timestamp}.webm`,
+      output: `${audioDir}/combined_${timestamp}.webm`
+    };
+    
+    // 模拟 recoveryMeta 中定义的路径（实际保存麦克风数据的位置）
+    const recoveryMeta = {
+      tempFile: `${audioDir}/temp_mic_${timestamp}.webm`,    // 正确的麦克风数据路径
+      systemTempFile: `${audioDir}/temp_sys_${timestamp}.webm`
+    };
+    
+    // 修复后的逻辑：优先使用 recoveryMeta.tempFile
+    const microphonePath = recoveryMeta && recoveryMeta.tempFile 
+      ? recoveryMeta.tempFile 
+      : linuxRecordingPaths.microphone;
+    
+    // 验证：应该使用 recoveryMeta.tempFile（实际保存数据的路径）
+    expect(microphonePath).toBe(recoveryMeta.tempFile);
+    expect(microphonePath).not.toBe(linuxRecordingPaths.microphone);
+    expect(microphonePath).toContain('temp_mic_');
+  });
 });

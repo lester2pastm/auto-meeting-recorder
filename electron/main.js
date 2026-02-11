@@ -101,6 +101,16 @@ app.whenReady().then(() => {
 
 // 所有窗口关闭
 app.on('window-all-closed', () => {
+  // 停止所有正在运行的 FFmpeg 进程
+  if (ffmpegSystemAudioProcess) {
+    try {
+      ffmpegSystemAudioProcess.kill('SIGTERM');
+    } catch (e) {
+      // 忽略错误
+    }
+    ffmpegSystemAudioProcess = null;
+  }
+  
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -370,7 +380,7 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
         lastRMSLevel = rmsLevel;
         
         // 发送音量信息到渲染进程
-        if (mainWindow && mainWindow.webContents) {
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
           mainWindow.webContents.send('audio-level', {
             type: 'system',
             rms: rmsLevel,
