@@ -10,6 +10,11 @@ async function initApp() {
             i18n.init();
         }
         
+        // 初始化恢复对话框
+        if (typeof initRecoveryUI === 'function') {
+            initRecoveryUI();
+        }
+        
         // 优先从文件系统加载配置（Electron 环境）
         if (typeof window !== 'undefined' && window.electronAPI) {
             const fileConfig = await loadConfigFromFile();
@@ -52,6 +57,17 @@ async function initApp() {
         initContentTabs();
         
         setupEventListeners();
+        
+        // 检查是否有未完成的录音
+        if (typeof initRecoveryManager === 'function') {
+            const recoveryMeta = await initRecoveryManager();
+            if (recoveryMeta && typeof showRecoveryDialog === 'function') {
+                // 延迟显示，等待其他初始化完成
+                setTimeout(() => {
+                    showRecoveryDialog(recoveryMeta);
+                }, 500);
+            }
+        }
         
         showToast(i18n ? i18n.get('initSuccess') : '应用初始化成功', 'success');
     } catch (error) {

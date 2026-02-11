@@ -120,6 +120,11 @@ function updateSummaryContent(summary) {
     if (summaryContent) {
         if (summary && summary.trim()) {
             summaryContent.innerHTML = `<div class="content-text">${escapeHtml(summary)}</div>`;
+            // 如果当前不在会议纪要标签页，显示小红点提示
+            const summaryTab = document.getElementById('summaryTab');
+            if (summaryTab && !summaryTab.classList.contains('active')) {
+                showSummaryBadge();
+            }
         } else {
             const emptyHint = i18n ? i18n.get('emptySummaryHint') : '录音结束后自动生成会议纪要';
             summaryContent.innerHTML = `
@@ -137,6 +142,22 @@ function updateSummaryContent(summary) {
                 </div>
             `;
         }
+    }
+}
+
+// 显示会议纪要标签页的小红点提示
+function showSummaryBadge() {
+    const badge = document.getElementById('summaryTabBadge');
+    if (badge) {
+        badge.classList.add('show');
+    }
+}
+
+// 隐藏会议纪要标签页的小红点提示
+function hideSummaryBadge() {
+    const badge = document.getElementById('summaryTabBadge');
+    if (badge) {
+        badge.classList.remove('show');
     }
 }
 
@@ -492,6 +513,11 @@ function initContentTabs() {
             const targetContent = document.getElementById(tabName + 'Tab');
             if (targetContent) {
                 targetContent.classList.add('active');
+            }
+            
+            // 切换到会议纪要标签页时，隐藏小红点提示
+            if (tabName === 'summary') {
+                hideSummaryBadge();
             }
         });
     });
