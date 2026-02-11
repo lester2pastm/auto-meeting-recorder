@@ -595,3 +595,86 @@ ipcMain.handle('save-audio-to-path', async (event, { data, filePath }) => {
     return { success: false, error: error.message };
   }
 });
+
+// 追加音频数据到指定路径（增量保存）
+ipcMain.handle('append-audio-to-path', async (event, { data, filePath }) => {
+  try {
+    // 确保目录存在
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    const buffer = Buffer.from(data);
+    // 使用追加模式写入文件
+    fs.appendFileSync(filePath, buffer);
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('Error appending audio to path:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 恢复管理相关 IPC
+const RECOVERY_META_FILE = 'recovery_meta.json';
+const RECOVERY_META_PATH = path.join(app.getPath('userData'), RECOVERY_META_FILE);
+
+// IPC: 读取恢复元数据
+ipcMain.handle('read-recovery-meta', async () => {
+  try {
+    if (fs.existsSync(RECOVERY_META_PATH)) {
+      const data = fs.readFileSync(RECOVERY_META_PATH, 'utf8');
+      return { success: true, meta: JSON.parse(data) };
+    }
+    return { success: true, meta: null };
+  } catch (error) {
+    console.error('Error reading recovery meta:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 写入恢复元数据
+ipcMain.handle('write-recovery-meta', async (event, meta) => {
+  try {
+    fs.writeFileSync(RECOVERY_META_PATH, JSON.stringify(meta, null, 2));
+    return { success: true };
+  } catch (error) {
+    console.error('Error writing recovery meta:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 删除恢复元数据
+ipcMain.handle('delete-recovery-meta', async () => {
+  try {
+    if (fs.existsSync(RECOVERY_META_PATH)) {
+      fs.unlinkSync(RECOVERY_META_PATH);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting recovery meta:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 检查文件是否存在
+ipcMain.handle('file-exists', async (event, filePath) => {
+  try {
+    const exists = fs.existsSync(filePath);
+    return { success: true, exists };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: 删除文件
+ipcMain.handle('delete-file', async (event, filePath) => {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
