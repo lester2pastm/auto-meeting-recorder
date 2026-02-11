@@ -33,7 +33,6 @@ let linuxRecordingPaths = null;
 
 // Linux 混合录制模式变量
 let linuxMicMediaRecorder = null;
-let linuxMicAudioChunks = [];
 
 // 初始化平台检测
 async function detectPlatform() {
@@ -187,34 +186,23 @@ async function startLinuxRecording() {
         await initWaveform(visualizerStream);
         
         // 4. 使用 MediaRecorder 录制麦克风
-        linuxMicAudioChunks = [];
         linuxMicMediaRecorder = new MediaRecorder(microphoneStream, {
             mimeType: 'audio/webm'
         });
         
         linuxMicMediaRecorder.ondataavailable = async (event) => {
             if (event.data.size > 0) {
-                linuxMicAudioChunks.push(event.data);
+                const arrayBuffer = await event.data.arrayBuffer();
+                const chunkData = Array.from(new Uint8Array(arrayBuffer));
                 
-                // 定期保存麦克风临时文件（Linux）
-                await saveLinuxMicTempFile();
+                if (typeof appendAudioChunk === 'function') {
+                    await appendAudioChunk(chunkData);
+                }
             }
         };
         
         linuxMicMediaRecorder.onstop = async () => {
-            // 保存麦克风录制的音频到文件
-            const micBlob = new Blob(linuxMicAudioChunks, { type: 'audio/webm' });
-            
-            // 通过 IPC 保存到文件
-            const arrayBuffer = await micBlob.arrayBuffer();
-            const result = await window.electronAPI.saveAudioToPath(
-                Array.from(new Uint8Array(arrayBuffer)),
-                linuxRecordingPaths.microphone
-            );
-            
-            if (!result.success) {
-                console.error('保存麦克风音频失败:', result.error);
-            }
+            console.log('[Recorder] Microphone recording stopped, file saved');
         };
         
         linuxMicMediaRecorder.start(1000);
@@ -422,27 +410,6 @@ function stopAllStreams() {
     }
 }
 
-/**
- * 保存 Linux 麦克风临时文件
- */
-async function saveLinuxMicTempFile() {
-    const meta = typeof getRecoveryMeta === 'function' ? getRecoveryMeta() : null;
-    if (!meta || !meta.isLinux) return;
-    
-    try {
-        const tempPath = meta.tempFiles[0]; // mic temp file
-        const tempBlob = new Blob(linuxMicAudioChunks, { type: 'audio/webm' });
-        
-        const arrayBuffer = await tempBlob.arrayBuffer();
-        await window.electronAPI.saveAudioToPath(
-            Array.from(new Uint8Array(arrayBuffer)),
-            tempPath
-        );
-    } catch (error) {
-        // 静默处理临时文件保存错误
-    }
-}
-
 function pauseRecording() {
     if (isFFmpegRecording) {
         // Linux ffmpeg 录制不支持暂停
@@ -549,9 +516,6 @@ async function stopLinuxRecording() {
             });
         }
         
-        // 等待麦克风文件保存完成
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
         // 2. 停止系统音频录制（FFmpeg）
         await window.electronAPI.stopFFmpegRecording();
         
@@ -575,7 +539,6 @@ async function stopLinuxRecording() {
             throw new Error('读取音频文件失败: ' + readResult.error);
         }
         
-        // 将 ArrayBuffer 转换为 Blob
         const buffer = new Uint8Array(readResult.data);
         audioBlob = new Blob([buffer], { type: 'audio/webm' });
         
@@ -583,11 +546,9 @@ async function stopLinuxRecording() {
         stopAllStreams();
         stopWaveform();
         linuxMicMediaRecorder = null;
-        linuxMicAudioChunks = [];
         isFFmpegRecording = false;
         linuxRecordingPaths = null;
         
-        // 正常停止后清除恢复数据
         if (typeof clearRecoveryData === 'function') {
             await clearRecoveryData();
         }
