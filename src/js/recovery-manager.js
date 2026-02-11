@@ -187,14 +187,16 @@ async function clearRecoveryData() {
 
 /**
  * 从临时文件恢复录音Blob
+ * @param {Object} meta - 恢复元数据（可选，默认使用全局 recoveryMeta）
  */
-async function recoverAudioBlob() {
-    if (!recoveryMeta) return null;
+async function recoverAudioBlob(meta) {
+    const targetMeta = meta || recoveryMeta;
+    if (!targetMeta) return null;
     
     try {
-        if (recoveryMeta.isLinux) {
-            const micPath = recoveryMeta.tempFile;
-            const sysPath = recoveryMeta.systemTempFile;
+        if (targetMeta.isLinux) {
+            const micPath = targetMeta.tempFile;
+            const sysPath = targetMeta.systemTempFile;
             const outputPath = micPath.replace('temp_mic_', 'recovered_');
             
             const mergeResult = await window.electronAPI.mergeAudioFiles(
@@ -213,7 +215,7 @@ async function recoverAudioBlob() {
             const buffer = new Uint8Array(readResult.data);
             return new Blob([buffer], { type: 'audio/webm' });
         } else {
-            const tempPath = recoveryMeta.tempFile;
+            const tempPath = targetMeta.tempFile;
             const readResult = await window.electronAPI.readAudioFile(tempPath);
             
             if (!readResult.success) {
