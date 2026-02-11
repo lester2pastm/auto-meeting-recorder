@@ -346,10 +346,14 @@ async function startStandardRecording() {
     mediaRecorder.onstop = async () => {
         const meta = typeof getRecoveryMeta === 'function' ? getRecoveryMeta() : null;
         if (meta && meta.tempFile) {
-            const readResult = await window.electronAPI.readAudioFile(meta.tempFile);
-            if (readResult.success) {
-                const buffer = new Uint8Array(readResult.data);
-                audioBlob = new Blob([buffer], { type: 'audio/webm' });
+            try {
+                const readResult = await window.electronAPI.readAudioFile(meta.tempFile);
+                if (readResult.success) {
+                    const buffer = new Uint8Array(readResult.data);
+                    audioBlob = new Blob([buffer], { type: 'audio/webm' });
+                }
+            } catch (error) {
+                console.error('[Recorder] Error reading audio file:', error);
             }
         }
         
@@ -463,9 +467,10 @@ async function stopRecording() {
                 if (mediaRecorder) {
                     const originalOnStop = mediaRecorder.onstop;
                     
-                    mediaRecorder.onstop = (event) => {
+                    mediaRecorder.onstop = async (event) => {
+                        // 等待原始 onstop 完成（包括文件读取）
                         if (originalOnStop) {
-                            originalOnStop(event);
+                            await originalOnStop(event);
                         }
                         resolve(audioBlob);
                     };
