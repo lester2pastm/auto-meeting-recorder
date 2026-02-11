@@ -104,19 +104,23 @@ async function startLinuxRecording() {
             console.log('=== 开始 Linux 混合录音 ===');
         }
         
-        // 获取音频目录
-        const audioDirResult = await window.electronAPI.getAudioDirectory();
-        if (!audioDirResult.success) {
-            throw new Error('无法获取音频目录');
+        // 检查 recoveryMeta 是否已初始化
+        if (typeof recoveryMeta === 'undefined' || !recoveryMeta) {
+            throw new Error('恢复元数据未初始化，请确保 startRecoveryTracking() 已被调用');
         }
         
-        const timestamp = Date.now();
-        const audioDir = audioDirResult.path;
+        if (!recoveryMeta.tempFile || !recoveryMeta.systemTempFile) {
+            throw new Error('恢复元数据缺少临时文件路径');
+        }
+        
+        // 使用 recoveryMeta 中定义的路径
         linuxRecordingPaths = {
-            microphone: `${audioDir}/mic_${timestamp}.webm`,
-            systemAudio: `${audioDir}/sys_${timestamp}.webm`,
-            output: `${audioDir}/combined_${timestamp}.webm`
+            microphone: recoveryMeta.tempFile,
+            systemAudio: recoveryMeta.systemTempFile,
+            output: recoveryMeta.tempFile.replace('temp_mic_', 'combined_')
         };
+        
+        console.log('[Recorder] Linux recording paths:', linuxRecordingPaths);
         
         // 创建音频上下文
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
