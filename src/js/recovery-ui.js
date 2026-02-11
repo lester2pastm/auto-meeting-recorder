@@ -74,8 +74,15 @@ async function handleTranscribeNow() {
     showToast('正在恢复录音文件...', 'info');
     
     try {
+        // 获取恢复元数据
+        const meta = getRecoveryMeta();
+        if (!meta) {
+            showToast('恢复元数据不存在', 'error');
+            return;
+        }
+        
         // 从临时文件恢复音频
-        const audioBlob = await recoverAudioBlob();
+        const audioBlob = await recoverAudioBlob(meta);
         
         if (!audioBlob) {
             showToast('恢复录音文件失败', 'error');
@@ -83,10 +90,7 @@ async function handleTranscribeNow() {
         }
         
         // 设置录音时长
-        const meta = getRecoveryMeta();
-        if (meta) {
-            setLastRecordingDuration(formatDuration(meta.duration));
-        }
+        setLastRecordingDuration(formatDuration(meta.duration));
         
         // 清除恢复数据
         await clearRecoveryData();
@@ -277,8 +281,8 @@ async function showContinueRecordingDialog(meta) {
  */
 async function saveRecoveryToHistory(meta) {
     try {
-        // 从临时文件恢复音频
-        const audioBlob = await recoverAudioBlob();
+        // 从临时文件恢复音频（传入 meta 参数，避免依赖全局 recoveryMeta）
+        const audioBlob = await recoverAudioBlob(meta);
         
         if (!audioBlob) {
             throw new Error('恢复录音文件失败');
@@ -289,10 +293,13 @@ async function saveRecoveryToHistory(meta) {
         const filename = `${date.toISOString().split('T')[0]}_${date.toTimeString().split(' ')[0].replace(/:/g, '-')}_recovered.webm`;
         
         // 保存到历史记录
+        // 将毫秒数转换为格式化时长字符串
+        const formattedDuration = formatDuration(meta.duration || 0);
+        
         const meetingData = {
             id: Date.now().toString(),
             date: date.toISOString(),
-            duration: meta.duration,
+            duration: formattedDuration,
             audioFilename: filename,
             status: 'completed', // 标记为已完成（录音完成但未转写）
             transcript: '',
