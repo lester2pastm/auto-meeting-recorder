@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPulseAudioSources: () => ipcRenderer.invoke('get-pulseaudio-sources'),
   readAudioFile: (filePath) => ipcRenderer.invoke('read-audio-file', filePath),
   saveAudioToPath: (data, filePath) => ipcRenderer.invoke('save-audio-to-path', { data, filePath }),
+  appendAudioToPath: (data, filePath) => ipcRenderer.invoke('append-audio-to-path', { data, filePath }),
   
   // 监听音频级别变化（用于波形可视化）
   onAudioLevel: (callback) => {
@@ -34,5 +35,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeAudioLevelListener: () => {
     ipcRenderer.removeAllListeners('audio-level');
-  }
+  },
+  
+  // 恢复管理相关接口
+  readRecoveryMeta: () => ipcRenderer.invoke('read-recovery-meta'),
+  writeRecoveryMeta: (meta) => ipcRenderer.invoke('write-recovery-meta', meta),
+  deleteRecoveryMeta: () => ipcRenderer.invoke('delete-recovery-meta'),
+  fileExists: (filePath) => ipcRenderer.invoke('file-exists', filePath),
+  deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath)
 });
