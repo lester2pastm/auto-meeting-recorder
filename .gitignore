@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+node_modules_linux/
+node_modules_win/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

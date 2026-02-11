@@ -1,11 +1,17 @@
 {
   "name": "meeting-minutes-app",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
-  "scripts": {
+"scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "dev:win": "echo 'Switch to Windows environment first: npm run use:win' && exit 1",
+    "dev:linux": "electron . --dev",
+    "use:win": "node scripts/use-win.js",
+    "use:linux": "node scripts/use-linux.js",
+    "install:win": "node scripts/use-win.js && npm install",
+    "install:linux": "node scripts/use-linux.js && npm install",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
