@@ -1,6 +1,6 @@
 {
   "name": "meeting-minutes-app",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
   "scripts": {
