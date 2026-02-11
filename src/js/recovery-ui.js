@@ -296,20 +296,11 @@ async function saveRecoveryToHistory(meta) {
         // 将毫秒数转换为格式化时长字符串
         const formattedDuration = formatDuration(meta.duration || 0);
         
-        const meetingData = {
-            id: Date.now().toString(),
-            date: date.toISOString(),
-            duration: formattedDuration,
-            audioFilename: filename,
-            status: 'completed', // 标记为已完成（录音完成但未转写）
-            transcript: '',
-            summary: ''
-        };
-        
-        // 保存音频文件
-        if (window.electronAPI && window.electronAPI.saveAudioFile) {
+        // 保存音频文件（使用 electronAPI.saveAudio 获取完整路径）
+        let audioFilePath = filename;
+        if (window.electronAPI && window.electronAPI.saveAudio) {
             const arrayBuffer = await audioBlob.arrayBuffer();
-            const saveResult = await window.electronAPI.saveAudioFile(
+            const saveResult = await window.electronAPI.saveAudio(
                 Array.from(new Uint8Array(arrayBuffer)),
                 filename
             );
@@ -317,7 +308,19 @@ async function saveRecoveryToHistory(meta) {
             if (!saveResult.success) {
                 throw new Error('保存音频文件失败: ' + saveResult.error);
             }
+            // 使用返回的完整路径
+            audioFilePath = saveResult.filePath;
         }
+        
+        const meetingData = {
+            id: Date.now().toString(),
+            date: date.toISOString(),
+            duration: formattedDuration,
+            audioFilename: audioFilePath, // 使用完整路径
+            status: 'completed', // 标记为已完成（录音完成但未转写）
+            transcript: '',
+            summary: ''
+        };
         
         // 保存会议记录到 IndexedDB
         await addMeetingRecord(meetingData);
