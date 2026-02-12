@@ -1,6 +1,13 @@
 let currentSettings = null;
 let currentMeetingId = null;
 
+const TRANSCRIPT_STATUS = {
+    PENDING: 'pending',
+    TRANSCRIBING: 'transcribing',
+    COMPLETED: 'completed',
+    FAILED: 'failed'
+};
+
 async function initApp() {
     try {
         await initDB();
@@ -154,8 +161,12 @@ async function handleStopRecording() {
         updateRecordingButtons(getRecordingState());
         
         if (audioBlob) {
+            // 先保存空记录（pending状态）
+            const meetingId = await saveEmptyMeetingRecord(audioBlob);
             showToast('录音已停止，正在转写...', 'info');
-            await processRecording(audioBlob);
+            
+            // 然后尝试转写，传入meetingId
+            await processRecording(audioBlob, meetingId);
         }
     } catch (error) {
         console.error('Failed to stop recording:', error);
@@ -163,9 +174,25 @@ async function handleStopRecording() {
     }
 }
 
-async function processRecording(audioBlob) {
+// 新增：保存空记录（pending状态）
+async function saveEmptyMeetingRecord(audioBlob) {
+    const meeting = {
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+        duration: lastRecordingDuration,
+        audioFile: audioBlob,
+        transcript: '',
+        summary: '',
+        transcriptStatus: TRANSCRIPT_STATUS.PENDING
+    };
+    
+    await saveMeeting(meeting);
+    return meeting.id;
+}
+
+async function processRecording(audioBlob, meetingId) {
     try {
-        console.log('处理录音, 当前设置:', currentSettings);
+        console.log('处理录音, meetingId:', meetingId, '当前设置:', currentSettings);
 
         if (!currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
             console.error('API 未配置:', { url: currentSettings.sttApiUrl, key: currentSettings.sttApiKey ? '已设置' : '未设置' });
@@ -176,11 +203,20 @@ async function processRecording(audioBlob) {
         showLoading('正在转写...');
         console.log('开始调用转写 API:', { url: currentSettings.sttApiUrl, model: currentSettings.sttModel });
 
+        // 更新为转写中状态
+        await updateMeeting(meetingId, { 
+            transcriptStatus: TRANSCRIPT_STATUS.TRANSCRIBING 
+        });
+
         const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel);
 
         console.log('转写结果:', result);
 
         if (!result.success) {
+            // 转写失败，更新状态为 failed
+            await updateMeeting(meetingId, { 
+                transcriptStatus: TRANSCRIPT_STATUS.FAILED 
+            });
             showToast('转写失败: ' + result.message, 'error');
             return;
         }
@@ -191,24 +227,36 @@ async function processRecording(audioBlob) {
         // 保存当前转写文本，用于刷新纪要
         currentTranscript = result.text;
 
-        await generateMeetingSummary(result.text, audioBlob);
+        // 更新转写成功状态和内容
+        await updateMeeting(meetingId, {
+            transcript: result.text,
+            transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
+        });
+
+        await generateMeetingSummary(result.text, audioBlob, meetingId);
     } catch (error) {
         console.error('Failed to process recording:', error);
+        // 异常时更新状态为 failed
+        await updateMeeting(meetingId, { 
+            transcriptStatus: TRANSCRIPT_STATUS.FAILED 
+        });
         showToast('处理录音失败', 'error');
+    } finally {
+        hideLoading();
     }
 }
 
-async function generateMeetingSummary(transcript, audioBlob) {
-    console.log('[App] generateMeetingSummary called');
+async function generateMeetingSummary(transcript, audioBlob, meetingId) {
+    console.log('[App] generateMeetingSummary called, meetingId:', meetingId);
     let summary = '';
-    
+
     try {
         if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
             console.log('[App] Summary API not configured, skipping summary generation');
             showToast('未配置纪要生成API，仅保存转写内容', 'info');
         } else {
             const result = await generateSummary(transcript, currentSettings.summaryTemplate, currentSettings.summaryApiUrl, currentSettings.summaryApiKey, currentSettings.summaryModel);
-            
+
             if (!result.success) {
                 console.log('[App] Summary generation failed:', result.message);
                 showToast('生成纪要失败: ' + result.message, 'error');
@@ -218,16 +266,16 @@ async function generateMeetingSummary(transcript, audioBlob) {
                 showToast('纪要生成成功', 'success');
             }
         }
-        
+
         // 无论纪要生成成功与否，都保存会议记录
-        console.log('[App] Saving meeting record, hasSummary:', !!summary);
-        await saveMeetingRecord(transcript, summary, audioBlob);
+        console.log('[App] Saving meeting record, meetingId:', meetingId, 'hasSummary:', !!summary);
+        await saveMeetingRecord(transcript, summary, audioBlob, meetingId);
     } catch (error) {
         console.error('[App] Failed to generate summary:', error);
         showToast('生成纪要失败', 'error');
         // 即使出错也尝试保存转写内容
         try {
-            await saveMeetingRecord(transcript, '', audioBlob);
+            await saveMeetingRecord(transcript, '', audioBlob, meetingId);
         } catch (saveError) {
             console.error('[App] Failed to save meeting after summary error:', saveError);
         }
@@ -241,21 +289,33 @@ function setLastRecordingDuration(duration) {
     lastRecordingDuration = duration;
 }
 
-async function saveMeetingRecord(transcript, summary, audioBlob) {
-    console.log('[App] saveMeetingRecord called, audioBlob:', audioBlob ? { size: audioBlob.size, type: audioBlob.type } : 'null');
+async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = null) {
+    console.log('[App] saveMeetingRecord called, meetingId:', meetingId, 'audioBlob:', audioBlob ? { size: audioBlob.size, type: audioBlob.type } : 'null');
     try {
-        const meeting = {
-            id: Date.now().toString(),
-            date: new Date().toISOString(),
-            duration: lastRecordingDuration,
-            audioFile: audioBlob,
-            transcript: transcript,
-            summary: summary
-        };
-        console.log('[App] Created meeting object, has audioFile:', !!meeting.audioFile);
-
-        await saveMeeting(meeting);
-        console.log('[App] saveMeeting completed successfully');
+        if (meetingId) {
+            // Update existing meeting record
+            const updates = {
+                transcript: transcript,
+                summary: summary,
+                transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
+            };
+            await updateMeeting(meetingId, updates);
+            console.log('[App] updateMeeting completed successfully for meetingId:', meetingId);
+        } else {
+            // Create new meeting record (backward compatible)
+            const meeting = {
+                id: Date.now().toString(),
+                date: new Date().toISOString(),
+                duration: lastRecordingDuration,
+                audioFile: audioBlob,
+                transcript: transcript,
+                summary: summary,
+                transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
+            };
+            console.log('[App] Created new meeting object, has audioFile:', !!meeting.audioFile);
+            await saveMeeting(meeting);
+            console.log('[App] saveMeeting completed successfully');
+        }
         showToast('会议记录已保存', 'success');
     } catch (error) {
         console.error('[App] Failed to save meeting:', error);
@@ -520,6 +580,42 @@ async function processAudioFile(file) {
     } finally {
         hideLoading();
     }
+}
+
+// ============================================
+// 转写管理器实例
+// ============================================
+
+const transcriptionManager = new TranscriptionManager();
+
+// ============================================
+// 重试转写功能
+// ============================================
+
+/**
+ * 重试转写会议录音
+ * @param {string} meetingId - 会议ID
+ * @param {Blob} audioBlob - 音频数据
+ * @returns {Promise<{allowed: boolean}>} - 是否允许转写
+ */
+async function retryTranscription(meetingId, audioBlob) {
+    if (!transcriptionManager.canTranscribe(meetingId)) {
+        showToast('请等待10秒后再试', 'warning');
+        return { allowed: false };
+    }
+    
+    transcriptionManager.recordTranscriptionTime(meetingId);
+    
+    // 重置状态为 pending
+    await updateMeeting(meetingId, { 
+        transcriptStatus: TRANSCRIPT_STATUS.PENDING,
+        transcript: ''
+    });
+    
+    // 重新转写
+    await processRecording(audioBlob, meetingId);
+    
+    return { allowed: true };
 }
 
 // ============================================

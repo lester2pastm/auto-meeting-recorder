@@ -3,6 +3,8 @@
  * 测试 IndexedDB 操作、音频文件管理和配置存储功能
  */
 
+const { saveMeeting, getMeeting, updateMeeting } = require('../../src/js/storage');
+
 // 模拟 storage.js 的依赖
 const mockDB = {
   transaction: jest.fn(),
@@ -178,6 +180,113 @@ describe('Storage 模块测试', () => {
         expect(mockOpenRequest.result).toBe(mockDB);
         done();
       }, 0);
+    });
+  });
+
+  describe('updateMeeting', () => {
+    test('应更新现有会议记录', async () => {
+      // 模拟 IndexedDB 环境
+      const mockExistingMeeting = {
+        id: 'test-1',
+        transcript: 'old text',
+        transcriptStatus: 'pending'
+      };
+      
+      const mockPutRequest = {
+        onsuccess: null,
+        onerror: null
+      };
+      
+      const mockGetRequest = {
+        onsuccess: null,
+        onerror: null,
+        result: mockExistingMeeting
+      };
+      
+      const mockObjectStore = {
+        get: jest.fn().mockReturnValue(mockGetRequest),
+        put: jest.fn().mockReturnValue(mockPutRequest)
+      };
+      
+      const mockTransaction = {
+        objectStore: jest.fn().mockReturnValue(mockObjectStore)
+      };
+      
+      const mockDb = {
+        transaction: jest.fn().mockReturnValue(mockTransaction)
+      };
+      
+      // 模拟数据库模块
+      const storage = require('../../src/js/storage');
+      
+      // 手动设置数据库连接
+      const initPromise = storage.initDB();
+      const mockOpenRequest = indexedDB.open.mock.results[0].value;
+      mockOpenRequest.onsuccess({ target: { result: mockDb } });
+      await initPromise;
+      
+      // 执行更新
+      const updatePromise = storage.updateMeeting('test-1', {
+        transcript: 'new text',
+        transcriptStatus: 'completed'
+      });
+      
+      // 模拟获取成功
+      mockGetRequest.onsuccess();
+      
+      // 模拟更新成功
+      const updatedResult = { ...mockExistingMeeting, transcript: 'new text', transcriptStatus: 'completed' };
+      mockPutRequest.onsuccess();
+      
+      const result = await updatePromise;
+      
+      expect(result.transcript).toBe('new text');
+      expect(result.transcriptStatus).toBe('completed');
+      expect(result.id).toBe('test-1');
+      expect(mockObjectStore.get).toHaveBeenCalledWith('test-1');
+      expect(mockObjectStore.put).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'test-1',
+        transcript: 'new text',
+        transcriptStatus: 'completed'
+      }));
+    });
+
+    test('当会议不存在时应抛出错误', async () => {
+      const mockGetRequest = {
+        onsuccess: null,
+        onerror: null,
+        result: null // 会议不存在
+      };
+      
+      const mockObjectStore = {
+        get: jest.fn().mockReturnValue(mockGetRequest)
+      };
+      
+      const mockTransaction = {
+        objectStore: jest.fn().mockReturnValue(mockObjectStore)
+      };
+      
+      const mockDb = {
+        transaction: jest.fn().mockReturnValue(mockTransaction)
+      };
+      
+      const storage = require('../../src/js/storage');
+      
+      // 手动设置数据库连接
+      const initPromise = storage.initDB();
+      const mockOpenRequest = indexedDB.open.mock.results[0].value;
+      mockOpenRequest.onsuccess({ target: { result: mockDb } });
+      await initPromise;
+      
+      // 执行更新
+      const updatePromise = storage.updateMeeting('non-existent-id', {
+        transcript: 'new text'
+      });
+      
+      // 模拟获取成功但记录不存在
+      mockGetRequest.onsuccess();
+      
+      await expect(updatePromise).rejects.toThrow('Meeting not found');
     });
   });
 });

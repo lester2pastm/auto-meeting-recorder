@@ -272,3 +272,56 @@ function getSettings() {
         };
     });
 }
+
+function updateMeeting(id, updates) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const objectStore = transaction.objectStore(STORE_NAME);
+        
+        const getRequest = objectStore.get(id);
+        
+        getRequest.onsuccess = () => {
+            const existing = getRequest.result;
+            if (!existing) {
+                reject(new Error('Meeting not found'));
+                return;
+            }
+            
+            const updated = { ...existing, ...updates };
+            const putRequest = objectStore.put(updated);
+            
+            putRequest.onsuccess = () => {
+                resolve(updated);
+            };
+            
+            putRequest.onerror = (event) => {
+                reject(new Error('Failed to update meeting'));
+            };
+        };
+        
+        getRequest.onerror = () => {
+            reject(new Error('Failed to get meeting'));
+        };
+    });
+}
+
+// 导出
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        initDB,
+        saveMeeting,
+        getMeeting,
+        getAllMeetings,
+        deleteMeeting,
+        saveSettings,
+        getSettings,
+        updateMeeting,
+        saveAudioFile,
+        getAudioFile,
+        deleteAudioFile,
+        exportAudioFile,
+        getAudioDirectory,
+        saveConfigToFile,
+        loadConfigFromFile
+    };
+}
