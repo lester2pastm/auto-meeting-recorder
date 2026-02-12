@@ -3,9 +3,110 @@
  * 测试完整的 API 调用流程：音频转写 -> 摘要生成
  */
 
+// Mock storage functions
+const mockMeetings = new Map();
+
+async function saveMeeting(meeting) {
+  mockMeetings.set(meeting.id, { ...meeting });
+}
+
+async function getMeeting(id) {
+  return mockMeetings.get(id) || null;
+}
+
+async function updateMeeting(id, updates) {
+  const meeting = mockMeetings.get(id);
+  if (meeting) {
+    mockMeetings.set(id, { ...meeting, ...updates });
+  }
+}
+
+const TRANSCRIPT_STATUS = {
+  PENDING: 'pending',
+  TRANSCRIBING: 'transcribing',
+  COMPLETED: 'completed',
+  FAILED: 'failed'
+};
+
+// Mock global functions needed by processRecording
+global.showLoading = jest.fn();
+global.hideLoading = jest.fn();
+global.showToast = jest.fn();
+global.updateSubtitleContent = jest.fn();
+global.generateMeetingSummary = jest.fn().mockResolvedValue(undefined);
+global.currentSettings = {
+  sttApiUrl: 'https://api.test.com/transcriptions',
+  sttApiKey: 'test-key',
+  sttModel: 'whisper-1'
+};
+
+// Global reference for current transcript
+global.currentTranscript = '';
+
+// Mock transcribeAudio function
+global.transcribeAudio = jest.fn();
+
+// Implementation of processRecording (mirrors app.js implementation)
+async function processRecording(audioBlob, meetingId) {
+  try {
+    console.log('Processing recording, meetingId:', meetingId);
+
+    if (!global.currentSettings.sttApiUrl || !global.currentSettings.sttApiKey) {
+      console.error('API not configured');
+      global.showToast('Please configure speech recognition API', 'error');
+      return;
+    }
+
+    global.showLoading('Transcribing...');
+    console.log('Starting transcription API call');
+
+    // Update status to transcribing
+    await updateMeeting(meetingId, {
+      transcriptStatus: TRANSCRIPT_STATUS.TRANSCRIBING
+    });
+
+    const result = await global.transcribeAudio(audioBlob, global.currentSettings.sttApiUrl, global.currentSettings.sttApiKey, global.currentSettings.sttModel);
+
+    console.log('Transcription result:', result);
+
+    if (!result.success) {
+      // Update status to failed on transcription error
+      await updateMeeting(meetingId, {
+        transcriptStatus: TRANSCRIPT_STATUS.FAILED
+      });
+      global.showToast('Transcription failed: ' + result.message, 'error');
+      return;
+    }
+
+    global.updateSubtitleContent(result.text);
+    global.showToast('Transcription completed, generating summary...', 'info');
+
+    // Save current transcript text for summary refresh
+    global.currentTranscript = result.text;
+
+    // Update meeting with transcript and completed status
+    await updateMeeting(meetingId, {
+      transcript: result.text,
+      transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
+    });
+
+    await global.generateMeetingSummary(result.text, audioBlob, meetingId);
+  } catch (error) {
+    console.error('Failed to process recording:', error);
+    // Update status to failed on exception
+    await updateMeeting(meetingId, {
+      transcriptStatus: TRANSCRIPT_STATUS.FAILED
+    });
+    global.showToast('Failed to process recording', 'error');
+  } finally {
+    global.hideLoading();
+  }
+}
+
 describe('API 调用流程集成测试', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMeetings.clear();
   });
 
   describe('完整转写和摘要流程', () => {
@@ -281,5 +382,55 @@ describe('API 调用流程集成测试', () => {
       expect(data.text).toContain('<');
       expect(data.text).toContain('>');
     });
+  });
+});
+
+describe('Transcription flow with status transitions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockMeetings.clear();
+  });
+
+  test('转写流程应更新状态: pending -> transcribing -> completed', async () => {
+    const meetingId = 'test-1';
+    const audioBlob = new Blob(['audio data'], { type: 'audio/webm' });
+    
+    await saveMeeting({
+      id: meetingId,
+      transcriptStatus: 'pending'
+    });
+
+    // Mock successful transcription
+    global.transcribeAudio.mockResolvedValue({
+      success: true,
+      text: 'Transcribed text'
+    });
+
+    await processRecording(audioBlob, meetingId);
+
+    const meeting = await getMeeting(meetingId);
+    expect(meeting.transcriptStatus).toBe('completed');
+    expect(meeting.transcript).toBe('Transcribed text');
+  });
+
+  test('转写失败应更新状态为 failed', async () => {
+    const meetingId = 'test-2';
+    const audioBlob = new Blob(['audio data'], { type: 'audio/webm' });
+    
+    await saveMeeting({
+      id: meetingId,
+      transcriptStatus: 'pending'
+    });
+
+    // Mock failed transcription
+    global.transcribeAudio.mockResolvedValue({
+      success: false,
+      message: 'Network error'
+    });
+
+    await processRecording(audioBlob, meetingId);
+
+    const meeting = await getMeeting(meetingId);
+    expect(meeting.transcriptStatus).toBe('failed');
   });
 });

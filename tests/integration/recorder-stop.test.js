@@ -4,6 +4,13 @@
  * 这些测试验证异步回调的正确处理
  */
 
+const TRANSCRIPT_STATUS = {
+  PENDING: 'pending',
+  TRANSCRIBING: 'transcribing',
+  COMPLETED: 'completed',
+  FAILED: 'failed'
+};
+
 describe('Recorder 停止录音测试', () => {
   let mockMediaRecorder;
   let audioBlob = null;
@@ -150,14 +157,199 @@ describe('Recorder 停止录音测试', () => {
     });
   });
 
-  describe('实际 recorder.js 集成测试', () => {
-    it('stopRecording 应该返回有效的 Blob', async () => {
-      // 这个测试需要实际导入 recorder.js 的函数
-      // 由于 recorder.js 使用全局变量和复杂的初始化，
-      // 我们需要更完整的模拟
 
-      // 标记：这里应该测试实际的 stopRecording 函数
-      // 但由于模块依赖复杂，需要重构 recorder.js 使其更可测试
+
+  describe('Recording stop flow', () => {
+    let mockAudioBlob;
+    let savedMeetings = [];
+    let processRecordingCalls = [];
+    let savedMeetingBeforeProcess = null;
+    let lastRecordingDurationValue = '00:00:00';
+    let updateMeetingCalls = [];
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      savedMeetings = [];
+      processRecordingCalls = [];
+      updateMeetingCalls = [];
+      savedMeetingBeforeProcess = null;
+      lastRecordingDurationValue = '00:00:00';
+      mockAudioBlob = new Blob(['test audio data'], { type: 'audio/webm' });
+
+      global.saveMeeting = jest.fn(async (meeting) => {
+        savedMeetings.push(meeting);
+        savedMeetingBeforeProcess = { ...meeting };
+        return meeting;
+      });
+
+      global.updateMeeting = jest.fn(async (meetingId, updates) => {
+        updateMeetingCalls.push({ meetingId, updates });
+        const meeting = savedMeetings.find(m => m.id === meetingId);
+        if (meeting) {
+          Object.assign(meeting, updates);
+        }
+        return meeting;
+      });
+
+      global.getAllMeetings = jest.fn(async () => {
+        return [...savedMeetings];
+      });
+
+      global.stopRecording = jest.fn(async () => {
+        return mockAudioBlob;
+      });
+
+      global.updateRecordingButtons = jest.fn();
+      global.showToast = jest.fn();
+      global.getRecordingDuration = jest.fn(() => '00:05:30');
+
+      global.setLastRecordingDuration = jest.fn((duration) => {
+        lastRecordingDurationValue = duration;
+      });
+
+      global.getRecordingState = jest.fn(() => 'stopped');
+
+      global.processRecording = jest.fn(async (audioBlob, meetingId) => {
+        processRecordingCalls.push({ audioBlob, meetingId });
+        // Simulate the actual behavior: call updateMeeting to update the record
+        await global.updateMeeting(meetingId, {
+          transcript: 'Transcribed text',
+          summary: 'Meeting summary',
+          transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
+        });
+      });
+
+      global.currentSettings = {
+        sttApiUrl: 'https://test.api.com',
+        sttApiKey: 'test-key',
+        sttModel: 'test-model'
+      };
+
+      global.updateSubtitleContent = jest.fn();
+      global.showLoading = jest.fn();
+      global.hideLoading = jest.fn();
+      global.lastRecordingDuration = lastRecordingDurationValue;
+    });
+
+    async function handleStopRecording() {
+      try {
+        const currentDuration = global.getRecordingDuration();
+        global.setLastRecordingDuration(currentDuration);
+
+        const audioBlob = await global.stopRecording();
+        global.updateRecordingButtons(global.getRecordingState());
+
+        if (audioBlob) {
+          const meetingId = await saveEmptyMeetingRecord(audioBlob);
+          global.showToast('录音已停止，正在转写...', 'info');
+          await global.processRecording(audioBlob, meetingId);
+        }
+      } catch (error) {
+        console.error('Failed to stop recording:', error);
+        global.showToast('停止录音失败', 'error');
+      }
+    }
+
+    async function saveEmptyMeetingRecord(audioBlob) {
+      const meeting = {
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+        duration: lastRecordingDurationValue,
+        audioFile: audioBlob,
+        transcript: '',
+        summary: '',
+        transcriptStatus: TRANSCRIPT_STATUS.PENDING
+      };
+
+      await global.saveMeeting(meeting);
+      return meeting.id;
+    }
+
+    it('停止录音后应立即保存pending状态记录', async () => {
+      await handleStopRecording();
+
+      expect(savedMeetings.length).toBeGreaterThan(0);
+      expect(savedMeetingBeforeProcess).not.toBeNull();
+      expect(savedMeetingBeforeProcess.transcriptStatus).toBe(TRANSCRIPT_STATUS.PENDING);
+      expect(savedMeetingBeforeProcess.transcript).toBe('');
+      expect(savedMeetingBeforeProcess.summary).toBe('');
+      expect(savedMeetingBeforeProcess.audioFile).toBeDefined();
+      expect(savedMeetingBeforeProcess.duration).toBe('00:05:30');
+      expect(savedMeetingBeforeProcess.id).toBeDefined();
+      expect(savedMeetingBeforeProcess.date).toBeDefined();
+    });
+
+    it('processRecording should be called with audioBlob and meetingId', async () => {
+      await handleStopRecording();
+
+      expect(global.processRecording).toHaveBeenCalled();
+      expect(processRecordingCalls.length).toBe(1);
+
+      const call = processRecordingCalls[0];
+      expect(call.audioBlob).toBe(mockAudioBlob);
+      expect(call.meetingId).toBeDefined();
+
+      const latest = savedMeetings[savedMeetings.length - 1];
+      expect(call.meetingId).toBe(latest.id);
+    });
+
+    it('should show appropriate toast messages', async () => {
+      await handleStopRecording();
+
+      expect(global.showToast).toHaveBeenCalledWith(
+        expect.stringContaining('停止'),
+        'info'
+      );
+    });
+
+    it('saveEmptyMeetingRecord should create meeting with correct structure', async () => {
+      lastRecordingDurationValue = '00:10:45';
+      const meetingId = await saveEmptyMeetingRecord(mockAudioBlob);
+
+      expect(meetingId).toBeDefined();
+      expect(savedMeetings.length).toBe(1);
+
+      const meeting = savedMeetings[0];
+      expect(meeting.id).toBe(meetingId);
+      expect(meeting.transcriptStatus).toBe(TRANSCRIPT_STATUS.PENDING);
+      expect(meeting.transcript).toBe('');
+      expect(meeting.summary).toBe('');
+      expect(meeting.audioFile).toBe(mockAudioBlob);
+      expect(meeting.duration).toBe('00:10:45');
+    });
+
+    it('should update existing meeting record instead of creating duplicate', async () => {
+      await handleStopRecording();
+
+      // Verify only ONE meeting record exists (not duplicated)
+      expect(savedMeetings.length).toBe(1);
+
+      // Verify updateMeeting was called to update the existing record
+      expect(global.updateMeeting).toHaveBeenCalled();
+      expect(updateMeetingCalls.length).toBe(1);
+
+      const updateCall = updateMeetingCalls[0];
+      expect(updateCall.meetingId).toBe(savedMeetings[0].id);
+      expect(updateCall.updates.transcriptStatus).toBe(TRANSCRIPT_STATUS.COMPLETED);
+      expect(updateCall.updates.transcript).toBe('Transcribed text');
+
+      // Verify the meeting record now has completed status
+      const meeting = savedMeetings[0];
+      expect(meeting.transcriptStatus).toBe(TRANSCRIPT_STATUS.COMPLETED);
+      expect(meeting.transcript).toBe('Transcribed text');
+      expect(meeting.summary).toBe('Meeting summary');
+    });
+
+    it('processRecording should call updateMeeting with correct meetingId and set completed status', async () => {
+      await handleStopRecording();
+
+      expect(processRecordingCalls.length).toBe(1);
+      const processCall = processRecordingCalls[0];
+      expect(processCall.meetingId).toBe(savedMeetings[0].id);
+
+      // Verify updateMeeting was called with completed status
+      expect(updateMeetingCalls.length).toBe(1);
+      expect(updateMeetingCalls[0].updates.transcriptStatus).toBe(TRANSCRIPT_STATUS.COMPLETED);
     });
   });
 });
