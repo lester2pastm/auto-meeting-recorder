@@ -65,6 +65,9 @@ async function initApp() {
         
         setupEventListeners();
         
+        // 初始化退出保护
+        setupAppControl();
+        
         // 检查是否有未完成的录音
         if (typeof initRecoveryManager === 'function') {
             const recoveryMeta = await initRecoveryManager();
@@ -661,6 +664,59 @@ async function handleRefreshSummary() {
     } finally {
         refreshBtn.classList.remove('spinning');
     }
+}
+
+// ============================================
+// 应用控制与退出保护
+// ============================================
+
+function setupAppControl() {
+    if (window.electronAPI && window.electronAPI.onCheckRecordingStatus) {
+        window.electronAPI.onCheckRecordingStatus(() => {
+            let isRecording = false;
+            // 尝试获取录音状态
+            if (typeof getRecordingState === 'function') {
+                const state = getRecordingState();
+                isRecording = state.isRecording;
+            } else if (typeof window.isRecording !== 'undefined') {
+                 isRecording = window.isRecording;
+            }
+
+            if (isRecording) {
+                showExitConfirmModal();
+            } else {
+                window.electronAPI.forceClose();
+            }
+        });
+    }
+}
+
+function showExitConfirmModal() {
+    const modal = document.getElementById('exitConfirmModal');
+    if (!modal) return;
+    
+    modal.classList.add('active');
+    
+    const btnCancel = document.getElementById('btnCancelExit');
+    const btnConfirm = document.getElementById('btnConfirmExit');
+    const btnClose = document.getElementById('btnCloseExitModal');
+    const overlay = document.getElementById('exitConfirmOverlay');
+
+    const closeModal = () => {
+        modal.classList.remove('active');
+    };
+
+    const handleConfirm = () => {
+        closeModal();
+        if (window.electronAPI && window.electronAPI.forceClose) {
+            window.electronAPI.forceClose();
+        }
+    };
+    
+    if (btnCancel) btnCancel.onclick = closeModal;
+    if (btnClose) btnClose.onclick = closeModal;
+    if (overlay) overlay.onclick = closeModal;
+    if (btnConfirm) btnConfirm.onclick = handleConfirm;
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

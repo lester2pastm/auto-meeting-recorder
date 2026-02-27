@@ -86,7 +86,26 @@ function createWindow() {
       callback(false);
     }
   });
+
+  // 处理窗口关闭事件
+  mainWindow.on('close', (e) => {
+    if (willQuit) {
+      return;
+    }
+    e.preventDefault();
+    mainWindow.webContents.send('check-recording-status');
+  });
 }
+
+let willQuit = false;
+
+// IPC 处理器：强制关闭应用
+ipcMain.on('force-close', () => {
+  willQuit = true;
+  if (mainWindow) {
+    mainWindow.close();
+  }
+});
 
 // 应用就绪
 app.whenReady().then(() => {

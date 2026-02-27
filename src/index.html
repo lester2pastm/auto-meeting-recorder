@@ -417,6 +417,29 @@
         </div>
     </div>
 
+    <!-- 退出确认对话框 -->
+    <div id="exitConfirmModal" class="modal">
+        <div class="modal-overlay" id="exitConfirmOverlay"></div>
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="exitConfirmTitle">正在录音中</h3>
+                <button class="modal-close" id="btnCloseExitModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p data-i18n="exitConfirmMessage">正在进行录音，退出应用将停止录音。确定要退出吗？</p>
+            </div>
+            <div class="modal-footer" style="justify-content: flex-end; gap: 10px;">
+                <button id="btnCancelExit" class="btn btn-secondary" data-i18n="cancel">取消</button>
+                <button id="btnConfirmExit" class="btn btn-danger" data-i18n="confirmExit">退出</button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/i18n.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/recovery-manager.js"></script>
@@ -424,6 +447,7 @@
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/recovery-ui.js"></script>
+    <script src="js/transcription-manager.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

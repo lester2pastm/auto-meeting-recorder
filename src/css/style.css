@@ -1199,6 +1199,24 @@ body {
     max-height: calc(90vh - 80px);
 }
 
+.modal-footer {
+    padding: var(--space-5) var(--space-6);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    background: var(--bg-hover);
+    border-bottom-left-radius: var(--radius-xl);
+    border-bottom-right-radius: var(--radius-xl);
+}
+
+.modal-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
 /* Detail Section */
 .detail-section {
     margin-bottom: var(--space-6);

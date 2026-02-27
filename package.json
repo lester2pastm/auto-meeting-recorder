@@ -1,9 +1,9 @@
 {
   "name": "meeting-minutes-app",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
-"scripts": {
+  "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "dev:win": "echo 'Switch to Windows environment first: npm run use:win' && exit 1",
