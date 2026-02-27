@@ -42,5 +42,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   writeRecoveryMeta: (meta) => ipcRenderer.invoke('write-recovery-meta', meta),
   deleteRecoveryMeta: () => ipcRenderer.invoke('delete-recovery-meta'),
   fileExists: (filePath) => ipcRenderer.invoke('file-exists', filePath),
-  deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath)
+  deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
+
+  // App Control
+  onCheckRecordingStatus: (callback) => ipcRenderer.on('check-recording-status', callback),
+  forceClose: () => ipcRenderer.send('force-close')
 });

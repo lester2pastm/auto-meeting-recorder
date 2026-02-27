@@ -57,7 +57,11 @@ const i18n = {
             audioTranscribing: '正在转写音频文件...',
             audioTranscribed: '音频转写完成',
             summaryRefreshed: '会议纪要已更新',
-            noTranscriptForRefresh: '请先进行录音或上传音频文件'
+            noTranscriptForRefresh: '请先进行录音或上传音频文件',
+            exitConfirmTitle: '正在录音中',
+            exitConfirmMessage: '正在进行录音，退出应用将停止录音。确定要退出吗？',
+            cancel: '取消',
+            confirmExit: '退出'
         },
         en: {
             appTitle: 'Auto Meeting Minutes',
@@ -111,7 +115,11 @@ const i18n = {
             audioTranscribing: 'Transcribing audio file...',
             audioTranscribed: 'Audio transcribed',
             summaryRefreshed: 'Meeting summary refreshed',
-            noTranscriptForRefresh: 'Please record or upload audio first'
+            noTranscriptForRefresh: 'Please record or upload audio first',
+            exitConfirmTitle: 'Recording in Progress',
+            exitConfirmMessage: 'Recording is in progress. Exiting will stop the recording. Are you sure you want to exit?',
+            cancel: 'Cancel',
+            confirmExit: 'Exit'
         }
     },
     
