@@ -440,6 +440,26 @@
         </div>
     </div>
 
+    <!-- 系统依赖检测对话框 -->
+    <div id="dependencyModal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3 class="modal-title">系统依赖检测</h3>
+                <button class="modal-close" id="dependencyModalCloseBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body" id="dependencyModalBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="dependencyModalConfirm">确定</button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/i18n.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/recovery-manager.js"></script>

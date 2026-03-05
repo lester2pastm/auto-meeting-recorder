@@ -4,6 +4,7 @@ const fs = require('fs');
 const Store = require('electron-store');
 const { spawn, exec } = require('child_process');
 const { promisify } = require('util');
+const { checkLinuxDependencies } = require('./linux-audio-helper');
 
 // 初始化配置存储
 const store = new Store();
@@ -281,6 +282,16 @@ ipcMain.handle('check-ffmpeg', async () => {
     return { success: true, available: true, version };
   } catch (error) {
     return { success: true, available: false, error: error.message };
+  }
+});
+
+// 检查 Linux 系统依赖（统一检测音频系统和 FFmpeg）
+ipcMain.handle('check-linux-dependencies', async () => {
+  try {
+    const result = await checkLinuxDependencies(store);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 });
 

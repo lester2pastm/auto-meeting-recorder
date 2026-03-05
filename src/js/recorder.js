@@ -75,7 +75,7 @@ async function startRecording() {
             await startRecoveryTracking(currentPlatform, isLinuxPlatform);
         }
         
-        // Linux 平台使用 FFmpeg 录制
+        // Linux 平台使用 FFmpeg 录制（已在应用启动时检测依赖）
         if (isLinuxPlatform && window.electronAPI && window.electronAPI.checkFFmpeg) {
             const ffmpegCheck = await window.electronAPI.checkFFmpeg();
             if (ffmpegCheck.success && ffmpegCheck.available) {
@@ -85,6 +85,7 @@ async function startRecording() {
                 return await startLinuxRecording();
             } else {
                 console.warn('Linux: 未检测到 ffmpeg，使用标准方式录制');
+                return await startStandardRecording();
             }
         }
         
