@@ -23,6 +23,15 @@ async function detectAudioSystem() {
   }
 }
 
+async function isPackageInstalled(packageName) {
+  try {
+    const { stdout } = await execPromise(`dpkg -l ${packageName}`);
+    return stdout.includes('\nii ');
+  } catch {
+    return false;
+  }
+}
+
 async function checkLinuxDependencies(store) {
   if (process.platform !== 'linux') {
     return { hasDependencies: true };
@@ -33,39 +42,36 @@ async function checkLinuxDependencies(store) {
     return { hasDependencies: true };
   }
 
-  const audioSystem = await detectAudioSystem();
+  const missingDeps = [];
 
-  if (!audioSystem.available) {
-    let installCommand = '';
-    let packageManager = '';
+  const pulseAvailable = await isPackageInstalled('pulseaudio') || 
+                         await isPackageInstalled('pulseaudio-module-x11') ||
+                         await isPackageInstalled('libpulse0');
+  
+  if (!pulseAvailable) {
+    missingDeps.push({
+      name: '音频系统 (PulseAudio)',
+      command: 'sudo apt install pulseaudio pavucontrol'
+    });
+  }
 
-    try {
-      await execPromise('which apt');
-      packageManager = 'apt';
-      installCommand = 'sudo apt install pulseaudio pavucontrol';
-    } catch {
-      try {
-        await execPromise('which dnf');
-        packageManager = 'dnf';
-        installCommand = 'sudo dnf install pulseaudio pavucontrol';
-      } catch {
-        try {
-          await execPromise('which pacman');
-          packageManager = 'pacman';
-          installCommand = 'sudo pacman -S pulseaudio pavucontrol';
-        } catch {
-          packageManager = 'unknown';
-          installCommand = '请查阅文档安装 PulseAudio 和 pavucontrol';
-        }
-      }
-    }
+  const ffmpegAvailable = await isPackageInstalled('ffmpeg');
+  
+  if (!ffmpegAvailable) {
+    missingDeps.push({
+      name: 'FFmpeg',
+      command: 'sudo apt install ffmpeg'
+    });
+  }
 
+  if (missingDeps.length > 0) {
     return {
       hasDependencies: false,
-      packageManager,
-      installCommand
+      missingDeps
     };
   }
+
+  const audioSystem = await detectAudioSystem();
 
   return {
     hasDependencies: true,

@@ -22,6 +22,9 @@ async function initApp() {
             initRecoveryUI();
         }
         
+        // 检测 Linux FFmpeg 依赖
+        await checkFFmpegDependency();
+        
         // 优先从文件系统加载配置（Electron 环境）
         if (typeof window !== 'undefined' && window.electronAPI) {
             const fileConfig = await loadConfigFromFile();
@@ -84,6 +87,60 @@ async function initApp() {
         console.error('Failed to initialize app:', error);
         showToast(i18n ? i18n.get('initFailed') : '应用初始化失败', 'error');
     }
+}
+
+async function checkFFmpegDependency() {
+    if (typeof window === 'undefined' || !window.electronAPI || !window.electronAPI.checkLinuxDependencies) {
+        return;
+    }
+    
+    try {
+        const platform = await window.electronAPI.getPlatform();
+        if (!platform.success || platform.platform !== 'linux') {
+            return;
+        }
+        
+        const deps = await window.electronAPI.checkLinuxDependencies();
+        
+        if (!deps.success) {
+            console.error('检测系统依赖失败:', deps.error);
+            return;
+        }
+        
+        if (!deps.hasDependencies && deps.missingDeps && deps.missingDeps.length > 0) {
+            showDependencyModal(deps.missingDeps);
+        }
+    } catch (error) {
+        console.error('检测依赖失败:', error);
+    }
+}
+
+function showDependencyModal(missingDeps) {
+    const modal = document.getElementById('dependencyModal');
+    if (!modal) {
+        showToast('Linux 系统需要安装以下依赖才能录制系统音频:\n' + 
+            missingDeps.map(d => `${d.name}: ${d.command}`).join('\n'), 'warning');
+        return;
+    }
+    
+    const body = document.getElementById('dependencyModalBody');
+    if (body) {
+        body.innerHTML = `
+            <p>以下依赖未安装，将无法录制系统音频:</p>
+            <ul style="margin: 15px 0; padding-left: 20px;">
+                ${missingDeps.map(d => `<li style="margin-bottom: 10px;"><strong>${d.name}:</strong><br><code style="font-size: 13px;">${d.command}</code></li>`).join('')}
+            </ul>
+            <p style="color: #888;">安装后重启应用即可。</p>
+        `;
+    }
+    
+    modal.classList.add('active');
+    
+    const closeModal = () => modal.classList.remove('active');
+    
+    document.getElementById('dependencyModalCloseBtn')?.addEventListener('click', closeModal);
+    document.getElementById('dependencyModalConfirm')?.addEventListener('click', closeModal);
+    modal.querySelector('.modal-overlay')?.addEventListener('click', closeModal);
 }
 
 function setupEventListeners() {

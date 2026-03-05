@@ -162,12 +162,38 @@ function hideSummaryBadge() {
 }
 
 function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        showToast(i18n ? i18n.get('copySuccess') : '复制成功', 'success');
-    }).catch(err => {
+    if (navigator.clipboard && window.electronAPI) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast(i18n ? i18n.get('copySuccess') : '复制成功', 'success');
+        }).catch(() => {
+            fallbackCopyToClipboard(text);
+        });
+    } else {
+        fallbackCopyToClipboard(text);
+    }
+}
+
+function fallbackCopyToClipboard(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    textArea.style.top = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showToast(i18n ? i18n.get('copySuccess') : '复制成功', 'success');
+        } else {
+            showToast(i18n ? i18n.get('copyFailed') : '复制失败', 'error');
+        }
+    } catch (err) {
         showToast(i18n ? i18n.get('copyFailed') : '复制失败', 'error');
         console.error('Copy error:', err);
-    });
+    }
+    document.body.removeChild(textArea);
 }
 
 function renderHistoryList(meetings) {
@@ -430,6 +456,46 @@ function showLoading(message) {
     
     if (summaryContent) {
         summaryContent.innerHTML = loadingHTML.replace(message, '生成中...');
+    }
+}
+
+function hideLoading() {
+    const subtitleContent = document.getElementById('subtitleContent');
+    const summaryContent = document.getElementById('summaryContent');
+    
+    // 只在内容为空时才设置空状态提示，不要清除已有内容
+    if (subtitleContent && !subtitleContent.textContent?.trim()) {
+        const emptyHint = i18n ? i18n.get('emptySubtitleHint') : '开始录音后将显示转写内容';
+        subtitleContent.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="22"/>
+                    </svg>
+                </div>
+                <p>${emptyHint}</p>
+            </div>
+        `;
+    }
+    
+    if (summaryContent && !summaryContent.textContent?.trim()) {
+        const emptyHint = i18n ? i18n.get('emptySummaryHint') : '转写完成后将显示会议纪要';
+        summaryContent.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <line x1="10" y1="9" x2="8" y2="9"/>
+                    </svg>
+                </div>
+                <p>${emptyHint}</p>
+            </div>
+        `;
     }
 }
 

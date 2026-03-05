@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // FFmpeg 相关接口（Linux 系统音频录制）
   checkFFmpeg: () => ipcRenderer.invoke('check-ffmpeg'),
+  checkLinuxDependencies: () => ipcRenderer.invoke('check-linux-dependencies'),
   startFFmpegSystemAudio: (outputPath, device) => ipcRenderer.invoke('start-ffmpeg-system-audio', { outputPath, device }),
   stopFFmpegRecording: () => ipcRenderer.invoke('stop-ffmpeg-recording'),
   mergeAudioFiles: (microphonePath, systemAudioPath, outputPath) => ipcRenderer.invoke('merge-audio-files', { microphonePath, systemAudioPath, outputPath }),
