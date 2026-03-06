@@ -6,6 +6,7 @@ let pauseStartTime = null;
 let recordingPausedTime = 0;
 let timerInterval = null;
 let audioBlob = null;
+let onAudioFileReady = null; // 回调：音频文件读取完成后触发
 
 // 音频可视化相关变量
 let audioContext = null;
@@ -356,6 +357,11 @@ async function startStandardRecording() {
                 if (readResult.success) {
                     const buffer = new Uint8Array(readResult.data);
                     audioBlob = new Blob([buffer], { type: 'audio/webm' });
+                    
+                    // 通知文件已准备好
+                    if (typeof onAudioFileReady === 'function') {
+                        onAudioFileReady(audioBlob);
+                    }
                 }
             } catch (error) {
                 console.error('[Recorder] Error reading audio file:', error);
@@ -462,42 +468,33 @@ async function stopRecording() {
             return;
         }
         
+        // 先更新录音状态，让 UI 立即响应
+        isRecording = false;
+        isPaused = false;
+        stopTimer();
+        
+        if (typeof stopTempSaveTimer === 'function') {
+            stopTempSaveTimer();
+        }
+        
         try {
             if (isFFmpegRecording) {
-                // Linux ffmpeg 录制停止
                 const result = await stopLinuxRecording();
                 resolve(result);
             } else {
-                // 标准录制停止
+                // 标准录制停止 - 立即返回，文件读取在后台进行
                 if (mediaRecorder) {
-                    const originalOnStop = mediaRecorder.onstop;
-                    
-                    mediaRecorder.onstop = async (event) => {
-                        // 等待原始 onstop 完成（包括文件读取）
-                        if (originalOnStop) {
-                            await originalOnStop(event);
-                        }
-                        resolve(audioBlob);
-                    };
-                    
+                    // 立即调用 stop，不等待 onstop
                     mediaRecorder.stop();
-                } else {
-                    resolve(null);
+                    
+                    // 设置后台文件读取完成后的回调
+                    // 这样 stopRecording 会立即返回，但文件读取完成后会触发回调
                 }
+                
+                // 立即返回 null，表示停止成功，文件读取在后台进行
+                // 调用者应该注册 onAudioFileReady 回调来处理文件
+                resolve(null);
             }
-            
-            isRecording = false;
-            isPaused = false;
-            stopTimer();
-            
-            // 停止恢复跟踪（但不删除临时文件，让 onstop 回调处理）
-            if (typeof stopTempSaveTimer === 'function') {
-                stopTempSaveTimer();
-            }
-            
-            // 注意：正常停止时不立即清除恢复数据
-            // 临时文件会在 onstop 回调中处理，或下次启动时清理
-            
         } catch (error) {
             reject(error);
         }
@@ -596,10 +593,10 @@ function getRecordingDuration() {
         duration = Date.now() - recordingStartTime - recordingPausedTime;
     }
     
-    return formatDuration(duration);
+    return formatRecordingTime(duration);
 }
 
-function formatDuration(ms) {
+function formatRecordingTime(ms) {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -637,6 +634,11 @@ function updateRecordingTime(duration) {
 
 function getAudioBlob() {
     return audioBlob;
+}
+
+// 设置音频文件准备好的回调
+function setAudioFileReadyCallback(callback) {
+    onAudioFileReady = callback;
 }
 
 // 初始化音频波形可视化

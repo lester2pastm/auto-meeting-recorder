@@ -57,15 +57,8 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
         const isSiliconFlow = apiUrl.includes('siliconflow.cn') || apiUrl.includes('siliconflow.ai');
         
         if (isSiliconFlow) {
-            // 先转换为 WAV 获取准确的大小信息
-            let processedBlob;
-            try {
-                processedBlob = await convertToWav(audioBlob);
-            } catch (e) {
-                processedBlob = audioBlob;
-            }
-            
-            const sizeMB = processedBlob.size / (1024 * 1024);
+            // 直接使用原始 blob，不需要转换为 WAV
+            const sizeMB = audioBlob.size / (1024 * 1024);
             
             // 检查是否超过限制
             if (sizeMB > 50) {
@@ -75,7 +68,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
             
             // 获取音频时长
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const arrayBuffer = await processedBlob.arrayBuffer();
+            const arrayBuffer = await audioBlob.arrayBuffer();
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
             const durationMinutes = audioBuffer.duration / 60;
             await audioContext.close();
@@ -84,6 +77,10 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
                 console.log('音频时长超过 60 分钟限制，使用分段转写...');
                 return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model);
             }
+            
+            // 不超过限制，直接使用原始 webm 格式
+            console.log('使用原始 webm 格式转写');
+            return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model);
         }
 
         // 继续原有逻辑（不分段）
@@ -238,8 +235,8 @@ function blobToBase64(blob) {
 }
 
 // 分割音频文件（用于处理超过 API 限制的大文件）
-// API 限制：时长 ≤ 1小时，文件大小 ≤ 50MB
-async function splitAudio(audioBlob, maxDurationMinutes = 55, maxSizeMB = 45) {
+// API 限制：文件大小 ≤ 50MB，使用 45MB 作为安全阈值
+async function splitAudio(audioBlob, maxSizeMB = 45) {
     console.log('开始分割音频...');
     
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -250,55 +247,32 @@ async function splitAudio(audioBlob, maxDurationMinutes = 55, maxSizeMB = 45) {
     const totalDuration = audioBuffer.duration;
     const totalDurationMinutes = totalDuration / 60;
     
+    // 直接使用原始 blob 大小计算分段数
+    const totalSizeMB = audioBlob.size / (1024 * 1024);
+    
     console.log(`音频总时长: ${totalDuration.toFixed(2)}秒 (${totalDurationMinutes.toFixed(2)}分钟)`);
+    console.log(`音频总大小: ${totalSizeMB.toFixed(2)}MB`);
     
-    // 计算需要分割的段数
+    // 根据大小计算需要分割的段数
+    const numSegments = Math.ceil(totalSizeMB / maxSizeMB);
+    console.log(`根据大小限制，需要分成 ${numSegments} 个片段`);
+    
+    // 计算每个片段的时长
+    const segmentDuration = totalDuration / numSegments;
+    
     const segments = [];
-    const segmentDurationSamples = Math.floor(maxDurationMinutes * 60 * sampleRate);
-    const totalSamples = audioBuffer.length;
     
-    let startSample = 0;
-    let segmentIndex = 0;
-    
-    while (startSample < totalSamples) {
-        const endSample = Math.min(startSample + segmentDurationSamples, totalSamples);
-        const segmentLength = endSample - startSample;
+    for (let i = 0; i < numSegments; i++) {
+        const startTime = i * segmentDuration;
+        const endTime = (i === numSegments - 1) ? totalDuration : (i + 1) * segmentDuration;
         
-        // 创建片段的 AudioBuffer
-        const numberOfChannels = audioBuffer.numberOfChannels;
-        const segmentBuffer = audioContext.createBuffer(
-            numberOfChannels,
-            segmentLength,
-            sampleRate
-        );
-        
-        // 复制数据到片段
-        for (let channel = 0; channel < numberOfChannels; channel++) {
-            const sourceData = audioBuffer.getChannelData(channel);
-            const segmentData = segmentBuffer.getChannelData(channel);
-            for (let i = 0; i < segmentLength; i++) {
-                segmentData[i] = sourceData[startSample + i];
-            }
-        }
-        
-        // 转换为 WAV Blob
-        const segmentBlob = await audioBufferToWav(segmentBuffer);
-        
-        // 检查大小，如果超过限制则进一步分割
+        // 从 AudioBuffer 提取该时间段并转为 webm
+        const segmentBlob = await extractAudioSegment(audioBuffer, startTime, endTime, sampleRate);
         const sizeMB = segmentBlob.size / (1024 * 1024);
-        console.log(`片段 ${segmentIndex + 1}: ${(segmentLength / sampleRate / 60).toFixed(2)}分钟, 大小: ${sizeMB.toFixed(2)}MB`);
         
-        if (sizeMB > maxSizeMB) {
-            // 如果片段仍然太大，递归分割为更小的片段（减小分段时长）
-            console.log(`片段过大，进一步分割...`);
-            await audioContext.close();
-            const newMaxDuration = Math.max(5, maxDurationMinutes - 10);
-            return splitAudio(segmentBlob, newMaxDuration, maxSizeMB);
-        }
+        console.log(`片段 ${i + 1}/${numSegments}: ${((endTime - startTime) / 60).toFixed(2)}分钟, 大小: ${sizeMB.toFixed(2)}MB`);
         
         segments.push(segmentBlob);
-        startSample = endSample;
-        segmentIndex++;
     }
     
     await audioContext.close();
@@ -306,6 +280,67 @@ async function splitAudio(audioBlob, maxDurationMinutes = 55, maxSizeMB = 45) {
     return segments;
 }
 
+// 从 AudioBuffer 提取时间段并转换为 webm
+async function extractAudioSegment(audioBuffer, startTime, endTime, sampleRate) {
+    const startSample = Math.floor(startTime * sampleRate);
+    const endSample = Math.floor(endTime * sampleRate);
+    const segmentLength = endSample - startSample;
+    
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    const segmentBuffer = new AudioContext().createBuffer(
+        numberOfChannels,
+        segmentLength,
+        sampleRate
+    );
+    
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sourceData = audioBuffer.getChannelData(channel);
+        const segmentData = segmentBuffer.getChannelData(channel);
+        segmentData.set(sourceData.subarray(startSample, endSample));
+    }
+    
+    return await audioBufferToWebm(segmentBuffer);
+}
+
+// 将 AudioBuffer 转换为 webm Blob（简化版）
+async function audioBufferToWebm(audioBuffer) {
+    return new Promise((resolve) => {
+        const ctx = new AudioContext();
+        const offlineCtx = new OfflineAudioContext(
+            audioBuffer.numberOfChannels,
+            audioBuffer.length,
+            audioBuffer.sampleRate
+        );
+        
+        const source = offlineCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(offlineCtx.destination);
+        source.start();
+        
+        offlineCtx.startRendering().then((rendered) => {
+            const dest = ctx.createMediaStreamDestination();
+            const recorder = new MediaRecorder(dest.stream, { 
+                mimeType: 'audio/webm;codecs=opus' 
+            });
+            const chunks = [];
+            
+            recorder.ondataavailable = (e) => chunks.push(e.data);
+            recorder.onstop = () => {
+                resolve(new Blob(chunks, { type: 'audio/webm' }));
+                ctx.close();
+            };
+            
+            const src = ctx.createBufferSource();
+            src.buffer = rendered;
+            src.connect(dest);
+            src.start();
+            recorder.start();
+            src.onended = () => recorder.stop();
+        });
+    });
+}
+
+// 将 AudioBuffer 转换为 WAV Blob
 // 将 AudioBuffer 转换为 WAV Blob
 async function audioBufferToWav(audioBuffer) {
     const numberOfChannels = audioBuffer.numberOfChannels;
@@ -378,7 +413,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     // 需要分割
     console.log('音频超过限制，开始分段处理...');
-    const segments = await splitAudio(processedBlob);
+    const segments = await splitAudio(audioBlob);
     
     // 逐个转写每个片段
     const transcripts = [];

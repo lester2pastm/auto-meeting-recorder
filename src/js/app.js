@@ -213,19 +213,29 @@ function handleResumeRecording() {
 
 async function handleStopRecording() {
     try {
-        // 在停止前保存时长
         const currentDuration = getRecordingDuration();
         setLastRecordingDuration(currentDuration);
         
+        // 先注册回调：文件读取完成后自动保存记录并转写
+        if (typeof setAudioFileReadyCallback === 'function') {
+            setAudioFileReadyCallback(async (audioBlob) => {
+                if (audioBlob) {
+                    // 文件读取完成，保存记录并开始转写
+                    const meetingId = await saveEmptyMeetingRecord(audioBlob);
+                    showToast('录音已停止，正在转写...', 'info');
+                    await processRecording(audioBlob, meetingId);
+                }
+            });
+        }
+        
+        // 停止录音（Linux 平台会同步等待文件读取完成）
         const audioBlob = await stopRecording();
         updateRecordingButtons(getRecordingState());
         
+        // 如果 audioBlob 已准备好（Linux 平台），直接处理
         if (audioBlob) {
-            // 先保存空记录（pending状态）
             const meetingId = await saveEmptyMeetingRecord(audioBlob);
             showToast('录音已停止，正在转写...', 'info');
-            
-            // 然后尝试转写，传入meetingId
             await processRecording(audioBlob, meetingId);
         }
     } catch (error) {
