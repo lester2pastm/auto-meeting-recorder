@@ -158,26 +158,26 @@ app.on('window-all-closed', () => {
 // IPC 处理器：保存音频文件
 ipcMain.handle('save-audio', async (event, { blob, filename }) => {
   try {
-    console.log('[Main] save-audio called:', { filename, blobType: typeof blob, blobLength: blob ? blob.length : 'null' });
+    safeLog('[Main] save-audio called:', { filename, blobType: typeof blob, blobLength: blob ? blob.length : 'null' });
     
     // 确保音频目录存在
     if (!fs.existsSync(AUDIO_DIR)) {
-      console.log('[Main] Creating audio directory:', AUDIO_DIR);
+      safeLog('[Main] Creating audio directory:', AUDIO_DIR);
       fs.mkdirSync(AUDIO_DIR, { recursive: true });
     }
     
     const filePath = path.join(AUDIO_DIR, filename);
-    console.log('[Main] Saving to:', filePath);
+    safeLog('[Main] Saving to:', filePath);
     
     const buffer = Buffer.from(blob);
-    console.log('[Main] Buffer created, size:', buffer.length);
+    safeLog('[Main] Buffer created, size:', buffer.length);
     
     fs.writeFileSync(filePath, buffer);
-    console.log('[Main] File saved successfully');
+    safeLog('[Main] File saved successfully');
     
     return { success: true, filePath };
   } catch (error) {
-    console.error('[Main] save-audio error:', error);
+    safeError('[Main] save-audio error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -377,7 +377,7 @@ async function getDefaultPulseAudioDevice(type = 'output') {
     
     return defaultSource || 'default';
   } catch (error) {
-    console.warn('Failed to get default PulseAudio device:', error.message);
+      safeWarn('Failed to get default PulseAudio device:', error.message);
     return 'default';
   }
 }
@@ -594,7 +594,7 @@ ipcMain.handle('merge-audio-files', async (event, { microphonePath, systemAudioP
             fs.unlinkSync(microphonePath);
             fs.unlinkSync(systemAudioPath);
           } catch (e) {
-            console.warn('Failed to clean up temp files:', e.message);
+            safeWarn('Failed to clean up temp files:', e.message);
           }
           resolve({ success: true, outputPath });
         } else {
@@ -607,7 +607,7 @@ ipcMain.handle('merge-audio-files', async (event, { microphonePath, systemAudioP
       });
     });
   } catch (error) {
-    console.error('Error merging audio files:', error);
+    safeError('Error merging audio files:', error);
     return { success: false, error: error.message };
   }
 });
@@ -640,7 +640,7 @@ ipcMain.handle('get-pulseaudio-sources', async () => {
 
     return { success: true, sources };
   } catch (error) {
-    console.warn('Failed to get PulseAudio sources:', error.message);
+    safeWarn('Failed to get PulseAudio sources:', error.message);
     return { success: true, sources: [], error: error.message };
   }
 });
@@ -656,7 +656,7 @@ ipcMain.handle('read-audio-file', async (event, filePath) => {
     // 返回 Array 以便序列化通过 IPC
     return { success: true, data: Array.from(buffer) };
   } catch (error) {
-    console.error('Error reading audio file:', error);
+    safeError('Error reading audio file:', error);
     return { success: false, error: error.message };
   }
 });
@@ -674,7 +674,7 @@ ipcMain.handle('save-audio-to-path', async (event, { data, filePath }) => {
     fs.writeFileSync(filePath, buffer);
     return { success: true, filePath };
   } catch (error) {
-    console.error('Error saving audio to path:', error);
+    safeError('Error saving audio to path:', error);
     return { success: false, error: error.message };
   }
 });
@@ -693,7 +693,7 @@ ipcMain.handle('append-audio-to-path', async (event, { data, filePath }) => {
     fs.appendFileSync(filePath, buffer);
     return { success: true, filePath };
   } catch (error) {
-    console.error('Error appending audio to path:', error);
+    safeError('Error appending audio to path:', error);
     return { success: false, error: error.message };
   }
 });
@@ -711,7 +711,7 @@ ipcMain.handle('read-recovery-meta', async () => {
     }
     return { success: true, meta: null };
   } catch (error) {
-    console.error('Error reading recovery meta:', error);
+    safeError('Error reading recovery meta:', error);
     return { success: false, error: error.message };
   }
 });
@@ -722,7 +722,7 @@ ipcMain.handle('write-recovery-meta', async (event, meta) => {
     fs.writeFileSync(RECOVERY_META_PATH, JSON.stringify(meta, null, 2));
     return { success: true };
   } catch (error) {
-    console.error('Error writing recovery meta:', error);
+    safeError('Error writing recovery meta:', error);
     return { success: false, error: error.message };
   }
 });
@@ -735,7 +735,7 @@ ipcMain.handle('delete-recovery-meta', async () => {
     }
     return { success: true };
   } catch (error) {
-    console.error('Error deleting recovery meta:', error);
+    safeError('Error deleting recovery meta:', error);
     return { success: false, error: error.message };
   }
 });
