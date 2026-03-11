@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 平台检测
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   
+  // 获取应用版本
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  
   // FFmpeg 相关接口（Linux 系统音频录制）
   checkFFmpeg: () => ipcRenderer.invoke('check-ffmpeg'),
   checkLinuxDependencies: () => ipcRenderer.invoke('check-linux-dependencies'),
