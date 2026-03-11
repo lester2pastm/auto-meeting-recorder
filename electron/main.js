@@ -404,11 +404,20 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
     ffmpegSystemAudioProcess = spawn('ffmpeg', args);
     
     let errorOutput = '';
+    const MAX_ERROR_OUTPUT = 102400; // 100KB
     let lastRMSLevel = -70;  // 记录上一次的 RMS 音量
+    let lastAudioLevelSend = 0;  // 上次发送 audio-level 的时间
+    const AUDIO_LEVEL_INTERVAL = 150;  // 节流：每 150ms 发送一次音量信息
     
     ffmpegSystemAudioProcess.stderr.on('data', (data) => {
       const message = data.toString();
-      errorOutput += message;
+      
+      // 限制日志缓冲区大小，避免内存溢出
+      if (errorOutput.length + message.length > MAX_ERROR_OUTPUT) {
+        errorOutput = errorOutput.slice(-MAX_ERROR_OUTPUT / 2) + message;
+      } else {
+        errorOutput += message;
+      }
       
       // 解析 astats 音量信息 - RMS 电平
       const rmsMatch = message.match(/lavfi\.astats\.Overall\.RMS_level=([\-\d\.]+)/);
@@ -417,13 +426,18 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
         const rmsLevel = parseFloat(rmsMatch[1]);
         lastRMSLevel = rmsLevel;
         
-        // 发送音量信息到渲染进程
-        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-          mainWindow.webContents.send('audio-level', {
-            type: 'system',
-            rms: rmsLevel,
-            timestamp: Date.now()
-          });
+        // 节流发送音量信息，避免 IPC 消息过载
+        const now = Date.now();
+        if (now - lastAudioLevelSend >= AUDIO_LEVEL_INTERVAL) {
+          lastAudioLevelSend = now;
+          
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('audio-level', {
+              type: 'system',
+              rms: rmsLevel,
+              timestamp: now
+            });
+          }
         }
       }
       
