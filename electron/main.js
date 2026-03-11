@@ -29,6 +29,25 @@ if (!fs.existsSync(AUDIO_DIR)) {
 
 let mainWindow;
 
+// 安全日志函数，避免 EPIPE 错误
+function safeLog(...args) {
+  try {
+    console.log(...args);
+  } catch (e) {}
+}
+
+function safeError(...args) {
+  try {
+    console.error(...args);
+  } catch (e) {}
+}
+
+function safeWarn(...args) {
+  try {
+    console.warn(...args);
+  } catch (e) {}
+}
+
 function createWindow() {
   // 获取主屏幕尺寸
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -379,7 +398,7 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
     // 如果没有指定设备，自动检测
     if (!device) {
       device = await getDefaultPulseAudioDevice('output');
-      console.log('Auto-detected system audio device:', device);
+      safeLog('Auto-detected system audio device:', device);
     }
 
     // 构建 ffmpeg 命令录制系统音频
@@ -399,7 +418,7 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       outputPath
     ];
 
-    console.log('Starting ffmpeg system audio recording:', args.join(' '));
+    safeLog('Starting ffmpeg system audio recording:', args.join(' '));
 
     ffmpegSystemAudioProcess = spawn('ffmpeg', args);
     
@@ -443,22 +462,18 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       
       // 只记录关键信息
       if (message.includes('Error') || message.includes('error')) {
-        console.error('FFmpeg system audio error:', message);
+          safeError('FFmpeg system audio error:', message);
       }
     });
 
     ffmpegSystemAudioProcess.on('error', (error) => {
       try {
-        console.error('FFmpeg system audio process error:', error);
+        safeError('FFmpeg system audio process error:', error);
       } catch (e) {}
     });
 
     ffmpegSystemAudioProcess.on('exit', (code) => {
-      try {
-        console.log(`FFmpeg system audio process exited with code ${code}`);
-      } catch (e) {
-        // 忽略退出时的日志错误，避免 EPIPE
-      }
+      safeLog(`FFmpeg system audio process exited with code ${code}`);
       ffmpegSystemAudioProcess = null;
     });
 
@@ -480,7 +495,7 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
 
     return { success: true, pid: ffmpegSystemAudioProcess.pid };
   } catch (error) {
-    console.error('Failed to start ffmpeg system audio recording:', error);
+    safeError('Failed to start ffmpeg system audio recording:', error);
     return { success: false, error: error.message };
   }
 });
@@ -532,7 +547,7 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
 
     return { success: true, results };
   } catch (error) {
-    console.error('Error stopping ffmpeg recording:', error);
+    safeError('Error stopping ffmpeg recording:', error);
     return { success: false, error: error.message };
   }
 });
@@ -562,7 +577,7 @@ ipcMain.handle('merge-audio-files', async (event, { microphonePath, systemAudioP
       outputPath
     ];
 
-    console.log('Merging audio files:', args.join(' '));
+    safeLog('Merging audio files:', args.join(' '));
 
     return new Promise((resolve, reject) => {
       const ffmpeg = spawn('ffmpeg', args);
