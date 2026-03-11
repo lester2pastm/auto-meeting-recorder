@@ -385,21 +385,12 @@ async function audioBufferToWav(audioBuffer) {
 
 // 分段转写音频
 async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
-    // 将音频转换为 WAV 并获取信息
-    let processedBlob = audioBlob;
-    try {
-        processedBlob = await convertToWav(audioBlob);
-        console.log('音频已转换为 WAV 格式:', { size: processedBlob.size, type: processedBlob.type });
-    } catch (convertError) {
-        console.warn('音频转换失败，使用原始格式:', convertError.message);
-    }
+    // 直接使用原始 webm，不需要转换为 WAV
+    const sizeMB = audioBlob.size / (1024 * 1024);
     
-    const sizeMB = processedBlob.size / (1024 * 1024);
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const arrayBuffer = await processedBlob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    const durationMinutes = audioBuffer.duration / 60;
-    await audioContext.close();
+    // 获取音频时长（使用 audio 元素）
+    const duration = await getAudioDuration(audioBlob);
+    const durationMinutes = duration / 60;
     
     console.log(`音频信息: ${durationMinutes.toFixed(2)}分钟, ${sizeMB.toFixed(2)}MB`);
     
@@ -408,7 +399,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     if (!needsSplit) {
         // 不需要分割，直接转写
-        return await transcribeAudio(audioBlob, apiUrl, apiKey, model);
+        return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model);
     }
     
     // 需要分割
@@ -420,7 +411,6 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     for (let i = 0; i < segments.length; i++) {
         console.log(`转写片段 ${i + 1}/${segments.length}...`);
         
-        // 为每个片段调用转写（复用现有的转写逻辑，但传入已处理的片段）
         const result = await transcribeSingleSegment(segments[i], apiUrl, apiKey, model);
         
         if (result.success) {
@@ -428,7 +418,6 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
             console.log(`片段 ${i + 1} 转写完成`);
         } else {
             console.error(`片段 ${i + 1} 转写失败:`, result.message);
-            // 继续处理其他片段
         }
     }
     
@@ -436,11 +425,43 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
         return { success: false, message: '所有片段转写失败' };
     }
     
-    // 合并转写结果
     const combinedText = transcripts.join('\n\n');
     console.log(`转写完成，共 ${segments.length} 个片段，合并后文本长度: ${combinedText.length}`);
     
     return { success: true, text: combinedText };
+}
+
+// 获取音频时长（使用 audio 元素，避免解码整个文件）
+async function getAudioDuration(audioBlob) {
+    return new Promise((resolve, reject) => {
+        const audio = new Audio();
+        const url = URL.createObjectURL(audioBlob);
+        
+        audio.onloadedmetadata = () => {
+            URL.revokeObjectURL(url);
+            resolve(audio.duration);
+        };
+        
+        audio.onerror = () => {
+            URL.revokeObjectURL(url);
+            // 如果失败，尝试使用 AudioContext 解码
+            getAudioDurationFallback(audioBlob).then(resolve).catch(reject);
+        };
+        
+        audio.src = url;
+    });
+}
+
+// 获取音频时长（备用方案：使用 AudioContext 解码）
+async function getAudioDurationFallback(audioBlob) {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        return audioBuffer.duration;
+    } finally {
+        await audioContext.close();
+    }
 }
 
 // 转写单个音频片段
