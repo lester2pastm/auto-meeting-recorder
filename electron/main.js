@@ -29,24 +29,11 @@ if (!fs.existsSync(AUDIO_DIR)) {
 
 let mainWindow;
 
-// 安全日志函数，避免 EPIPE 错误
-function safeLog(...args) {
-  try {
-    console.log(...args);
-  } catch (e) {}
-}
-
-function safeError(...args) {
-  try {
-    console.error(...args);
-  } catch (e) {}
-}
-
-function safeWarn(...args) {
-  try {
-    console.warn(...args);
-  } catch (e) {}
-}
+// 安全日志函数，完全避免 EPIPE 错误
+// 由于 Electron 打包后可能出现 stdout 管道问题，直接禁用日志
+function safeLog() {}
+function safeError() {}
+function safeWarn() {}
 
 function createWindow() {
   // 获取主屏幕尺寸
