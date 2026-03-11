@@ -6,7 +6,7 @@
 
 **Auto Meeting Recorder** - 跨平台会议录制桌面应用
 
-- **版本**: 2.1.2
+- **版本**: 参考 package.json（从 package.json 动态读取）
 - **技术栈**: Electron 28 + 原生 JavaScript
 - **平台**: Windows / macOS / Linux
 - **核心功能**: 音频录制 → 语音转写 → AI 生成纪要

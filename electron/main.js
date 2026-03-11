@@ -274,6 +274,14 @@ ipcMain.handle('get-platform', async () => {
   };
 });
 
+// 获取应用版本
+ipcMain.handle('get-app-version', async () => {
+  return { 
+    success: true, 
+    version: app.getVersion()
+  };
+});
+
 // 检查 ffmpeg 是否可用
 ipcMain.handle('check-ffmpeg', async () => {
   try {

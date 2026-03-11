@@ -955,6 +955,11 @@ body {
     grid-column: span 2;
 }
 
+.about-version {
+    font-size: var(--text-base);
+    color: var(--text-secondary);
+}
+
 .settings-card-header {
     display: flex;
     align-items: center;

@@ -5,6 +5,7 @@
 1. **不要手动创建 Release** - 项目使用 GitHub Actions 自动构建，推送 `v*` tag 即可
 2. **CI/CD 前先检查配置** - 执行部署相关操作前，先查看 `.github/workflows/`
 3. **Linux 依赖** - 需要 `xdg-desktop-portal` 才能录制系统音频
+4. **版本号管理** - 只需修改 `package.json` 中的 `version` 字段，其他文件（HTML、CLAUDE.md）会自动同步
 
 ## 经验总结
 

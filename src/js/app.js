@@ -25,6 +25,9 @@ async function initApp() {
         // 检测 Linux FFmpeg 依赖
         await checkFFmpegDependency();
         
+        // 获取应用版本
+        await loadAppVersion();
+        
         // 优先从文件系统加载配置（Electron 环境）
         if (typeof window !== 'undefined' && window.electronAPI) {
             const fileConfig = await loadConfigFromFile();
@@ -112,6 +115,24 @@ async function checkFFmpegDependency() {
         }
     } catch (error) {
         console.error('检测依赖失败:', error);
+    }
+}
+
+async function loadAppVersion() {
+    if (typeof window === 'undefined' || !window.electronAPI || !window.electronAPI.getAppVersion) {
+        return;
+    }
+    
+    try {
+        const result = await window.electronAPI.getAppVersion();
+        if (result.success) {
+            const versionEl = document.getElementById('appVersion');
+            if (versionEl) {
+                versionEl.textContent = result.version;
+            }
+        }
+    } catch (error) {
+        console.error('获取应用版本失败:', error);
     }
 }
 
