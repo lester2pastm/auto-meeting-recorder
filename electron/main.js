@@ -448,11 +448,17 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
     });
 
     ffmpegSystemAudioProcess.on('error', (error) => {
-      console.error('FFmpeg system audio process error:', error);
+      try {
+        console.error('FFmpeg system audio process error:', error);
+      } catch (e) {}
     });
 
     ffmpegSystemAudioProcess.on('exit', (code) => {
-      console.log(`FFmpeg system audio process exited with code ${code}`);
+      try {
+        console.log(`FFmpeg system audio process exited with code ${code}`);
+      } catch (e) {
+        // 忽略退出时的日志错误，避免 EPIPE
+      }
       ffmpegSystemAudioProcess = null;
     });
 
