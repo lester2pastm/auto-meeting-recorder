@@ -1,3 +1,25 @@
+// 带超时的 fetch 封装函数（用于大文件上传）
+// 默认 5 分钟超时，支持音频转写等大文件操作
+async function fetchWithTimeout(url, options, timeout = 300000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error(`请求超时（${timeout / 1000}秒）`);
+        }
+        throw error;
+    }
+}
+
 async function testSttApi(apiUrl, apiKey, model = 'whisper-1') {
     try {
         const formData = new FormData();
@@ -116,7 +138,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
             };
 
             console.log('发送百炼录音文件识别请求:', { url: apiUrl, model });
-            response = await fetch(apiUrl, {
+            response = await fetchWithTimeout(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
@@ -132,7 +154,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
             formData.append('model', model || 'whisper-1');
 
             console.log('发送 DashScope 兼容请求:', { url: audioEndpoint, model });
-            response = await fetch(audioEndpoint, {
+            response = await fetchWithTimeout(audioEndpoint, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`
@@ -150,7 +172,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
             formData.append('model', model || 'whisper-1');
 
             console.log('发送 SiliconFlow 请求:', { url: audioEndpoint, model });
-            response = await fetch(audioEndpoint, {
+            response = await fetchWithTimeout(audioEndpoint, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`
@@ -163,7 +185,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
             formData.append('model', model);
 
             console.log('发送 OpenAI 请求:', { url: apiUrl, model });
-            response = await fetch(apiUrl, {
+            response = await fetchWithTimeout(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`
@@ -481,7 +503,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model) {
                 parameters: { sample_rate: 16000, format: 'wav', language_hints: ['zh', 'en'] }
             };
             
-            response = await fetch(apiUrl, {
+            response = await fetchWithTimeout(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
@@ -495,7 +517,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model) {
             formData.append('file', audioBlob, 'segment.wav');
             formData.append('model', model || 'whisper-1');
             
-            response = await fetch(audioEndpoint, {
+            response = await fetchWithTimeout(audioEndpoint, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
@@ -510,7 +532,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model) {
             formData.append('file', audioBlob, 'segment.wav');
             formData.append('model', model || 'whisper-1');
             
-            response = await fetch(audioEndpoint, {
+            response = await fetchWithTimeout(audioEndpoint, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
@@ -520,7 +542,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model) {
             formData.append('file', audioBlob, 'segment.wav');
             formData.append('model', model);
             
-            response = await fetch(apiUrl, {
+            response = await fetchWithTimeout(apiUrl, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
