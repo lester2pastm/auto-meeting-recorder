@@ -233,7 +233,12 @@ function handleResumeRecording() {
 }
 
 async function handleStopRecording() {
+    const stopBtn = document.getElementById('btnStopRecording');
+    
     try {
+        stopBtn.classList.add('btn-loading');
+        stopBtn.disabled = true;
+        
         const currentDuration = getRecordingDuration();
         setLastRecordingDuration(currentDuration);
         
@@ -262,6 +267,9 @@ async function handleStopRecording() {
     } catch (error) {
         console.error('Failed to stop recording:', error);
         showToast('停止录音失败', 'error');
+    } finally {
+        stopBtn.classList.remove('btn-loading');
+        stopBtn.disabled = false;
     }
 }
 

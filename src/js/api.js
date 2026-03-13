@@ -258,29 +258,47 @@ function blobToBase64(blob) {
 
 // 分割音频文件（用于处理超过 API 限制的大文件）
 // API 限制：文件大小 ≤ 50MB，使用 45MB 作为安全阈值
-async function splitAudio(audioBlob, maxSizeMB = 45) {
+async function splitAudio(audioBlob, maxSizeMB = 45, knownDuration = null) {
     console.log('开始分割音频...');
     
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    let audioBuffer;
+    let totalDuration;
+    let sampleRate;
     
-    const sampleRate = audioBuffer.sampleRate;
-    const totalDuration = audioBuffer.duration;
-    const totalDurationMinutes = totalDuration / 60;
+    if (knownDuration && knownDuration > 0) {
+        console.log('使用已知的音频时长，避免解码...');
+        const tempAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const decoded = await tempAudioContext.decodeAudioData(arrayBuffer);
+        sampleRate = decoded.sampleRate;
+        totalDuration = knownDuration;
+        await tempAudioContext.close();
+        console.log(`音频总时长: ${totalDuration.toFixed(2)}秒 (${(totalDuration / 60).toFixed(2)}分钟)`);
+    } else {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        sampleRate = audioBuffer.sampleRate;
+        totalDuration = audioBuffer.duration;
+        await audioContext.close();
+        
+        console.log(`音频总时长: ${totalDuration.toFixed(2)}秒 (${(totalDuration / 60).toFixed(2)}分钟)`);
+    }
     
-    // 直接使用原始 blob 大小计算分段数
     const totalSizeMB = audioBlob.size / (1024 * 1024);
-    
-    console.log(`音频总时长: ${totalDuration.toFixed(2)}秒 (${totalDurationMinutes.toFixed(2)}分钟)`);
     console.log(`音频总大小: ${totalSizeMB.toFixed(2)}MB`);
     
-    // 根据大小计算需要分割的段数
     const numSegments = Math.ceil(totalSizeMB / maxSizeMB);
     console.log(`根据大小限制，需要分成 ${numSegments} 个片段`);
     
-    // 计算每个片段的时长
     const segmentDuration = totalDuration / numSegments;
+    
+    console.log('解码音频用于分割...');
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    sampleRate = audioBuffer.sampleRate;
     
     const segments = [];
     
@@ -288,7 +306,6 @@ async function splitAudio(audioBlob, maxSizeMB = 45) {
         const startTime = i * segmentDuration;
         const endTime = (i === numSegments - 1) ? totalDuration : (i + 1) * segmentDuration;
         
-        // 从 AudioBuffer 提取该时间段并转为 webm
         const segmentBlob = await extractAudioSegment(audioBuffer, startTime, endTime, sampleRate);
         const sizeMB = segmentBlob.size / (1024 * 1024);
         
@@ -429,7 +446,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     // 需要分割
     console.log('音频超过限制，开始分段处理...');
-    const segments = await splitAudio(audioBlob);
+    const segments = await splitAudio(audioBlob, 45, duration);
     
     // 逐个转写每个片段
     const transcripts = [];
