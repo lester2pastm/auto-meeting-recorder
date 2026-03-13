@@ -416,12 +416,15 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     console.log(`音频信息: ${durationMinutes.toFixed(2)}分钟, ${sizeMB.toFixed(2)}MB`);
     
+    const calculatedTimeout = Math.max(300000, Math.ceil(durationMinutes * 60 * 1000));
+    console.log(`转写超时时间: ${(calculatedTimeout / 1000 / 60).toFixed(1)}分钟`);
+    
     // 检查是否需要分割
     const needsSplit = sizeMB > 50;
     
     if (!needsSplit) {
         // 不需要分割，直接转写
-        return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model);
+        return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, calculatedTimeout);
     }
     
     // 需要分割
@@ -433,7 +436,16 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     for (let i = 0; i < segments.length; i++) {
         console.log(`转写片段 ${i + 1}/${segments.length}...`);
         
-        const result = await transcribeSingleSegment(segments[i], apiUrl, apiKey, model);
+        let result = await transcribeSingleSegment(segments[i], apiUrl, apiKey, model, calculatedTimeout);
+        
+        let retryCount = 0;
+        const maxRetries = 2;
+        while (!result.success && retryCount < maxRetries) {
+            retryCount++;
+            console.log(`片段 ${i + 1} 转写失败，${retryCount}/${maxRetries} 次重试...`);
+            await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
+            result = await transcribeSingleSegment(segments[i], apiUrl, apiKey, model, calculatedTimeout * 2);
+        }
         
         if (result.success) {
             transcripts.push(result.text);
@@ -487,7 +499,7 @@ async function getAudioDurationFallback(audioBlob) {
 }
 
 // 转写单个音频片段
-async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model) {
+async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout = 300000) {
     try {
         const isBailian = apiUrl.includes('bailian') || apiUrl.includes('dashscope.aliyuncs.com/api/v1');
         const isDashScopeCompatible = apiUrl.includes('dashscope') && apiUrl.includes('compatible-mode');
@@ -510,18 +522,18 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model) {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(requestBody)
-            });
+            }, timeout);
         } else if (isDashScopeCompatible) {
             const audioEndpoint = apiUrl.replace('/chat/completions', '/audio/transcriptions');
             const formData = new FormData();
-            formData.append('file', audioBlob, 'segment.wav');
+            formData.append('file', audioBlob, 'segment.webm');
             formData.append('model', model || 'whisper-1');
             
             response = await fetchWithTimeout(audioEndpoint, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
-            });
+            }, timeout);
         } else if (isSiliconFlow) {
             let audioEndpoint = apiUrl;
             if (apiUrl.includes('/chat/completions')) {
@@ -529,24 +541,24 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model) {
             }
             
             const formData = new FormData();
-            formData.append('file', audioBlob, 'segment.wav');
+            formData.append('file', audioBlob, 'segment.webm');
             formData.append('model', model || 'whisper-1');
             
             response = await fetchWithTimeout(audioEndpoint, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
-            });
+            }, timeout);
         } else {
             const formData = new FormData();
-            formData.append('file', audioBlob, 'segment.wav');
+            formData.append('file', audioBlob, 'segment.webm');
             formData.append('model', model);
             
             response = await fetchWithTimeout(apiUrl, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
-            });
+            }, timeout);
         }
         
         if (!response.ok) {
