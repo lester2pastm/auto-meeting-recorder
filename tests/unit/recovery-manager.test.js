@@ -68,7 +68,7 @@ describe('Recovery Manager 模块测试', () => {
         startTime: new Date().toISOString(),
         platform: 'win32',
         isLinux: false,
-        tempFiles: ['/audio/temp_recording_123456.webm'],
+        tempFile: '/audio/temp_recording_123456.webm',
         lastSaveTime: Date.now(),
         duration: 60000
       };
@@ -78,8 +78,7 @@ describe('Recovery Manager 模块测试', () => {
       async function initRecoveryManager() {
         const result = await window.electronAPI.readRecoveryMeta();
         if (result.success && result.meta) {
-          // 检查文件是否存在
-          for (const filePath of result.meta.tempFiles) {
+          for (const filePath of [result.meta.tempFile]) {
             const fileResult = await window.electronAPI.fileExists(filePath);
             if (!fileResult.exists) {
               return null;
@@ -93,13 +92,13 @@ describe('Recovery Manager 模块测试', () => {
       const result = await initRecoveryManager();
       
       expect(result).toEqual(mockMeta);
-      expect(window.electronAPI.fileExists).toHaveBeenCalledWith(mockMeta.tempFiles[0]);
+      expect(window.electronAPI.fileExists).toHaveBeenCalledWith(mockMeta.tempFile);
     });
 
     it('存在未完成录音但文件不存在时应该返回 null', async () => {
       const mockMeta = {
         id: '123456',
-        tempFiles: ['/audio/temp_recording_123456.webm']
+        tempFile: '/audio/temp_recording_123456.webm'
       };
       window.electronAPI.readRecoveryMeta.mockResolvedValue({ success: true, meta: mockMeta });
       window.electronAPI.fileExists.mockResolvedValue({ exists: false });
@@ -107,7 +106,7 @@ describe('Recovery Manager 模块测试', () => {
       async function initRecoveryManager() {
         const result = await window.electronAPI.readRecoveryMeta();
         if (result.success && result.meta) {
-          for (const filePath of result.meta.tempFiles) {
+          for (const filePath of [result.meta.tempFile]) {
             const fileResult = await window.electronAPI.fileExists(filePath);
             if (!fileResult.exists) {
               return null;
@@ -162,12 +161,7 @@ describe('Recovery Manager 模块测试', () => {
           startTime: new Date().toISOString(),
           platform: platform,
           isLinux: isLinux,
-          tempFiles: isLinux ? [
-            `${audioDir}/temp_mic_${timestamp}.webm`,
-            `${audioDir}/temp_sys_${timestamp}.webm`
-          ] : [
-            `${audioDir}/temp_recording_${timestamp}.webm`
-          ],
+          tempFile: `${audioDir}/temp_recording_${timestamp}.webm`,
           lastSaveTime: timestamp,
           duration: 0
         };
@@ -180,12 +174,11 @@ describe('Recovery Manager 模块测试', () => {
       expect(result).not.toBeNull();
       expect(result.platform).toBe('win32');
       expect(result.isLinux).toBe(false);
-      expect(result.tempFiles).toHaveLength(1);
-      expect(result.tempFiles[0]).toMatch(/temp_recording_\d+\.webm$/);
+      expect(result.tempFile).toMatch(/temp_recording_\d+\.webm$/);
       expect(window.electronAPI.writeRecoveryMeta).toHaveBeenCalledWith(result);
     });
 
-    it('Linux 平台应该创建双文件元数据结构', async () => {
+    it('Linux 平台应该创建单文件元数据结构', async () => {
       window.electronAPI.getAudioDirectory.mockResolvedValue({ 
         success: true, 
         path: '/audio' 
@@ -204,12 +197,7 @@ describe('Recovery Manager 模块测试', () => {
           startTime: new Date().toISOString(),
           platform: platform,
           isLinux: isLinux,
-          tempFiles: isLinux ? [
-            `${audioDir}/temp_mic_${timestamp}.webm`,
-            `${audioDir}/temp_sys_${timestamp}.webm`
-          ] : [
-            `${audioDir}/temp_recording_${timestamp}.webm`
-          ],
+          tempFile: `${audioDir}/temp_recording_${timestamp}.webm`,
           lastSaveTime: timestamp,
           duration: 0
         };
@@ -222,9 +210,7 @@ describe('Recovery Manager 模块测试', () => {
       expect(result).not.toBeNull();
       expect(result.platform).toBe('linux');
       expect(result.isLinux).toBe(true);
-      expect(result.tempFiles).toHaveLength(2);
-      expect(result.tempFiles[0]).toMatch(/temp_mic_\d+\.webm$/);
-      expect(result.tempFiles[1]).toMatch(/temp_sys_\d+\.webm$/);
+      expect(result.tempFile).toMatch(/temp_recording_\d+\.webm$/);
     });
 
     it('获取音频目录失败时应该返回 null', async () => {
@@ -293,19 +279,14 @@ describe('Recovery Manager 模块测试', () => {
     it('应该删除所有临时文件和元数据', async () => {
       const meta = {
         id: '123456',
-        tempFiles: [
-          '/audio/temp_recording_123456.webm',
-          '/audio/temp_mic_123456.webm'
-        ]
+        tempFile: '/audio/temp_recording_123456.webm'
       };
       window.electronAPI.deleteFile.mockResolvedValue({ success: true });
       window.electronAPI.deleteRecoveryMeta.mockResolvedValue({ success: true });
       
       async function clearRecoveryData(recoveryMeta) {
-        if (recoveryMeta && recoveryMeta.tempFiles) {
-          for (const filePath of recoveryMeta.tempFiles) {
-            await window.electronAPI.deleteFile(filePath);
-          }
+        if (recoveryMeta && recoveryMeta.tempFile) {
+          await window.electronAPI.deleteFile(recoveryMeta.tempFile);
         }
         await window.electronAPI.deleteRecoveryMeta();
         return null;
@@ -313,24 +294,20 @@ describe('Recovery Manager 模块测试', () => {
       
       await clearRecoveryData(meta);
       
-      expect(window.electronAPI.deleteFile).toHaveBeenCalledTimes(2);
-      expect(window.electronAPI.deleteFile).toHaveBeenCalledWith(meta.tempFiles[0]);
-      expect(window.electronAPI.deleteFile).toHaveBeenCalledWith(meta.tempFiles[1]);
+      expect(window.electronAPI.deleteFile).toHaveBeenCalledTimes(1);
+      expect(window.electronAPI.deleteFile).toHaveBeenCalledWith(meta.tempFile);
       expect(window.electronAPI.deleteRecoveryMeta).toHaveBeenCalled();
     });
 
-    it('tempFiles 为空时不应该尝试删除文件', async () => {
+    it('tempFile 为空时不应该尝试删除文件', async () => {
       const meta = {
-        id: '123456',
-        tempFiles: []
+        id: '123456'
       };
       window.electronAPI.deleteRecoveryMeta.mockResolvedValue({ success: true });
       
       async function clearRecoveryData(recoveryMeta) {
-        if (recoveryMeta && recoveryMeta.tempFiles) {
-          for (const filePath of recoveryMeta.tempFiles) {
-            await window.electronAPI.deleteFile(filePath);
-          }
+        if (recoveryMeta && recoveryMeta.tempFile) {
+          await window.electronAPI.deleteFile(recoveryMeta.tempFile);
         }
         await window.electronAPI.deleteRecoveryMeta();
         return null;
@@ -348,7 +325,7 @@ describe('Recovery Manager 模块测试', () => {
       const meta = {
         id: '123456',
         isLinux: false,
-        tempFiles: ['/audio/temp_recording_123456.webm']
+        tempFile: '/audio/temp_recording_123456.webm'
       };
       const mockData = new Uint8Array([1, 2, 3, 4, 5]);
       window.electronAPI.readAudioFile.mockResolvedValue({ 
@@ -362,7 +339,7 @@ describe('Recovery Manager 模块测试', () => {
           if (recoveryMeta.isLinux) {
             return null; // Linux 处理省略
           } else {
-            const tempPath = recoveryMeta.tempFiles[0];
+            const tempPath = recoveryMeta.tempFile;
             const readResult = await window.electronAPI.readAudioFile(tempPath);
             if (!readResult.success) {
               throw new Error('Failed to read temp audio');
@@ -378,43 +355,27 @@ describe('Recovery Manager 模块测试', () => {
       
       expect(result).not.toBeNull();
       expect(result.type).toBe('audio/webm');
-      expect(window.electronAPI.readAudioFile).toHaveBeenCalledWith(meta.tempFiles[0]);
+      expect(window.electronAPI.readAudioFile).toHaveBeenCalledWith(meta.tempFile);
       expect(window.electronAPI.mergeAudioFiles).not.toHaveBeenCalled();
     });
 
-    it('Linux 平台应该合并两个音频文件', async () => {
+    it('Linux 平台应该直接读取单个录音文件', async () => {
       const meta = {
         id: '123456',
         isLinux: true,
-        tempFiles: [
-          '/audio/temp_mic_123456.webm',
-          '/audio/temp_sys_123456.webm'
-        ]
+        tempFile: '/audio/temp_recording_123456.webm'
       };
       const mockData = new Uint8Array([1, 2, 3, 4, 5]);
-      window.electronAPI.mergeAudioFiles.mockResolvedValue({ 
-        success: true, 
-        outputPath: '/audio/recovered_123456.webm' 
-      });
       window.electronAPI.readAudioFile.mockResolvedValue({ 
         success: true, 
-        data: Array.from(mockData) 
+        data: mockData 
       });
       
       async function recoverAudioBlob(recoveryMeta) {
         if (!recoveryMeta) return null;
         try {
           if (recoveryMeta.isLinux) {
-            const micPath = recoveryMeta.tempFiles[0];
-            const sysPath = recoveryMeta.tempFiles[1];
-            const outputPath = micPath.replace('temp_mic_', 'recovered_');
-            const mergeResult = await window.electronAPI.mergeAudioFiles(
-              micPath, sysPath, outputPath
-            );
-            if (!mergeResult.success) {
-              throw new Error('Failed to merge audio files');
-            }
-            const readResult = await window.electronAPI.readAudioFile(outputPath);
+            const readResult = await window.electronAPI.readAudioFile(recoveryMeta.tempFile);
             if (!readResult.success) {
               throw new Error('Failed to read recovered audio');
             }
@@ -430,37 +391,28 @@ describe('Recovery Manager 模块测试', () => {
       const result = await recoverAudioBlob(meta);
       
       expect(result).not.toBeNull();
-      expect(window.electronAPI.mergeAudioFiles).toHaveBeenCalledWith(
-        meta.tempFiles[0],
-        meta.tempFiles[1],
-        '/audio/recovered_123456.webm'
-      );
-      expect(window.electronAPI.readAudioFile).toHaveBeenCalledWith('/audio/recovered_123456.webm');
+      expect(window.electronAPI.mergeAudioFiles).not.toHaveBeenCalled();
+      expect(window.electronAPI.readAudioFile).toHaveBeenCalledWith(meta.tempFile);
     });
 
-    it('合并失败时应该返回 null', async () => {
+    it('读取失败时应该返回 null', async () => {
       const meta = {
         id: '123456',
         isLinux: true,
-        tempFiles: ['/audio/temp_mic_123456.webm', '/audio/temp_sys_123456.webm']
+        tempFile: '/audio/temp_recording_123456.webm'
       };
-      window.electronAPI.mergeAudioFiles.mockResolvedValue({ 
+      window.electronAPI.readAudioFile.mockResolvedValue({ 
         success: false, 
-        error: 'FFmpeg error' 
+        error: 'Read error' 
       });
       
       async function recoverAudioBlob(recoveryMeta) {
         if (!recoveryMeta) return null;
         try {
           if (recoveryMeta.isLinux) {
-            const micPath = recoveryMeta.tempFiles[0];
-            const sysPath = recoveryMeta.tempFiles[1];
-            const outputPath = micPath.replace('temp_mic_', 'recovered_');
-            const mergeResult = await window.electronAPI.mergeAudioFiles(
-              micPath, sysPath, outputPath
-            );
-            if (!mergeResult.success) {
-              throw new Error('Failed to merge audio files');
+            const readResult = await window.electronAPI.readAudioFile(recoveryMeta.tempFile);
+            if (!readResult.success) {
+              throw new Error('Failed to read temp audio');
             }
             return {};
           }
@@ -489,13 +441,18 @@ describe('Recovery Manager 模块测试', () => {
   describe('检查临时文件存在性', () => {
     it('所有文件存在时应该返回 true', async () => {
       const meta = {
-        tempFiles: ['/audio/file1.webm', '/audio/file2.webm']
+        tempFile: '/audio/file1.webm',
+        systemTempFile: '/audio/file2.webm'
       };
       window.electronAPI.fileExists.mockResolvedValue({ exists: true });
       
       async function checkTempFilesExist(meta) {
-        if (!meta || !meta.tempFiles) return false;
-        for (const filePath of meta.tempFiles) {
+        if (!meta) return false;
+        const filesToCheck = [meta.tempFile];
+        if (meta.systemTempFile) {
+          filesToCheck.push(meta.systemTempFile);
+        }
+        for (const filePath of filesToCheck) {
           const result = await window.electronAPI.fileExists(filePath);
           if (!result.exists) {
             return false;
@@ -512,15 +469,20 @@ describe('Recovery Manager 模块测试', () => {
 
     it('任一文件不存在时应该返回 false', async () => {
       const meta = {
-        tempFiles: ['/audio/file1.webm', '/audio/file2.webm']
+        tempFile: '/audio/file1.webm',
+        systemTempFile: '/audio/file2.webm'
       };
       window.electronAPI.fileExists
         .mockResolvedValueOnce({ exists: true })
         .mockResolvedValueOnce({ exists: false });
       
       async function checkTempFilesExist(meta) {
-        if (!meta || !meta.tempFiles) return false;
-        for (const filePath of meta.tempFiles) {
+        if (!meta) return false;
+        const filesToCheck = [meta.tempFile];
+        if (meta.systemTempFile) {
+          filesToCheck.push(meta.systemTempFile);
+        }
+        for (const filePath of filesToCheck) {
           const result = await window.electronAPI.fileExists(filePath);
           if (!result.exists) {
             return false;
@@ -536,7 +498,7 @@ describe('Recovery Manager 模块测试', () => {
 
     it('meta 为 null 时应该返回 false', async () => {
       async function checkTempFilesExist(meta) {
-        if (!meta || !meta.tempFiles) return false;
+        if (!meta || !meta.tempFile) return false;
         return true;
       }
       
@@ -545,10 +507,10 @@ describe('Recovery Manager 模块测试', () => {
       expect(result).toBe(false);
     });
 
-    it('tempFiles 为空数组时应该返回 true（没有文件需要检查）', async () => {
+    it('只有单个 tempFile 时应该返回 true', async () => {
       async function checkTempFilesExist(meta) {
-        if (!meta || !meta.tempFiles) return false;
-        for (const filePath of meta.tempFiles) {
+        if (!meta || !meta.tempFile) return false;
+        for (const filePath of [meta.tempFile]) {
           const result = await window.electronAPI.fileExists(filePath);
           if (!result.exists) {
             return false;
@@ -557,9 +519,9 @@ describe('Recovery Manager 模块测试', () => {
         return true;
       }
       
-      const result = await checkTempFilesExist({ tempFiles: [] });
+      window.electronAPI.fileExists.mockResolvedValue({ exists: true });
+      const result = await checkTempFilesExist({ tempFile: '/audio/temp_recording_123456.webm' });
       
-      // 空数组的循环不执行，直接返回 true
       expect(result).toBe(true);
     });
   });

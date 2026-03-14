@@ -93,10 +93,8 @@ async function startRecoveryTracking(platform, isLinux) {
         startTime: new Date().toISOString(),
         platform: platform,
         isLinux: isLinux,
-        tempFile: isLinux ? 
-            `${audioDir}/temp_mic_${timestamp}.webm` : 
-            `${audioDir}/temp_recording_${timestamp}.webm`,
-        systemTempFile: isLinux ? `${audioDir}/temp_sys_${timestamp}.webm` : null,
+        tempFile: `${audioDir}/temp_recording_${timestamp}.webm`,
+        systemTempFile: null,
         lastSaveTime: timestamp,
         duration: 0,
         chunkCount: 0
@@ -194,37 +192,15 @@ async function recoverAudioBlob(meta) {
     if (!targetMeta) return null;
     
     try {
-        if (targetMeta.isLinux) {
-            const micPath = targetMeta.tempFile;
-            const sysPath = targetMeta.systemTempFile;
-            const outputPath = micPath.replace('temp_mic_', 'recovered_');
-            
-            const mergeResult = await window.electronAPI.mergeAudioFiles(
-                micPath, sysPath, outputPath
-            );
-            
-            if (!mergeResult.success) {
-                throw new Error('Failed to merge audio files');
-            }
-            
-            const readResult = await window.electronAPI.readAudioFile(outputPath);
-            if (!readResult.success) {
-                throw new Error('Failed to read recovered audio');
-            }
-            
-            const buffer = new Uint8Array(readResult.data);
-            return new Blob([buffer], { type: 'audio/webm' });
-        } else {
-            const tempPath = targetMeta.tempFile;
-            const readResult = await window.electronAPI.readAudioFile(tempPath);
-            
-            if (!readResult.success) {
-                throw new Error('Failed to read temp audio');
-            }
-            
-            const buffer = new Uint8Array(readResult.data);
-            return new Blob([buffer], { type: 'audio/webm' });
+        const tempPath = targetMeta.tempFile;
+        const readResult = await window.electronAPI.readAudioFile(tempPath);
+
+        if (!readResult.success) {
+            throw new Error('Failed to read temp audio');
         }
+
+        const buffer = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
+        return new Blob([buffer], { type: 'audio/webm' });
     } catch (error) {
         console.error('[Recovery] Error recovering audio:', error);
         return null;
