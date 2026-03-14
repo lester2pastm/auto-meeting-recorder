@@ -188,6 +188,28 @@ function setupEventListeners() {
     document.getElementById('btnSaveTemplate').addEventListener('click', handleSaveTemplate);
 }
 
+let isRecordingWorkflowBusy = false;
+
+function updateRecordingWorkflowState(isBusy, message = '', targets) {
+    isRecordingWorkflowBusy = isBusy;
+
+    if (typeof updateRecordingButtons === 'function' && typeof getRecordingState === 'function') {
+        updateRecordingButtons(getRecordingState(), { isProcessing: isBusy });
+    }
+
+    if (isBusy && message && typeof showLoading === 'function') {
+        showLoading(message, targets);
+    }
+}
+
+function clearRecordingWorkflowState() {
+    isRecordingWorkflowBusy = false;
+
+    if (typeof updateRecordingButtons === 'function' && typeof getRecordingState === 'function') {
+        updateRecordingButtons(getRecordingState(), { isProcessing: false });
+    }
+}
+
 async function loadHistoryList() {
     try {
         const meetings = await getAllMeetings();
@@ -234,10 +256,12 @@ function handleResumeRecording() {
 
 async function handleStopRecording() {
     const stopBtn = document.getElementById('btnStopRecording');
+    let shouldKeepBusyState = false;
     
     try {
         stopBtn.classList.add('btn-loading');
         stopBtn.disabled = true;
+        updateRecordingWorkflowState(true, '正在停止录音...');
         
         const currentDuration = getRecordingDuration();
         setLastRecordingDuration(currentDuration);
@@ -245,31 +269,57 @@ async function handleStopRecording() {
         // 先注册回调：文件读取完成后自动保存记录并转写
         if (typeof setAudioFileReadyCallback === 'function') {
             setAudioFileReadyCallback(async (audioBlob) => {
-                if (audioBlob) {
-                    // 文件读取完成，保存记录并开始转写
-                    const meetingId = await saveEmptyMeetingRecord(audioBlob);
-                    showToast('录音已停止，正在转写...', 'info');
-                    await processRecording(audioBlob, meetingId);
+                try {
+                    if (audioBlob) {
+                        updateRecordingWorkflowState(true, '正在保存录音...');
+                        const meeting = await saveEmptyMeetingRecord(audioBlob);
+                        updateRecordingWorkflowState(true, '正在转写...');
+                        showToast('录音已停止，正在转写...', 'info');
+                        await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
+                    } else {
+                        clearRecordingWorkflowState();
+                        hideLoading();
+                    }
+                } catch (error) {
+                    clearRecordingWorkflowState();
+                    hideLoading();
+                    console.error('异步处理录音文件失败:', error);
+                    showToast('处理录音失败: ' + error.message, 'error');
+                } finally {
+                    if (typeof setAudioFileReadyCallback === 'function') {
+                        setAudioFileReadyCallback(null);
+                    }
                 }
             });
         }
         
         // 停止录音（Linux 平台会同步等待文件读取完成）
         const audioBlob = await stopRecording();
-        updateRecordingButtons(getRecordingState());
+        updateRecordingButtons(getRecordingState(), { isProcessing: true });
         
         // 如果 audioBlob 已准备好（Linux 平台），直接处理
         if (audioBlob) {
-            const meetingId = await saveEmptyMeetingRecord(audioBlob);
+            updateRecordingWorkflowState(true, '正在保存录音...');
+            const meeting = await saveEmptyMeetingRecord(audioBlob);
+            updateRecordingWorkflowState(true, '正在转写...');
             showToast('录音已停止，正在转写...', 'info');
-            await processRecording(audioBlob, meetingId);
+            await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
+        } else {
+            shouldKeepBusyState = true;
+            updateRecordingWorkflowState(true, '正在整理录音...');
         }
     } catch (error) {
         console.error('Failed to stop recording:', error);
+        clearRecordingWorkflowState();
+        hideLoading();
         showToast('停止录音失败', 'error');
     } finally {
         stopBtn.classList.remove('btn-loading');
         stopBtn.disabled = false;
+
+        if (!shouldKeepBusyState) {
+            clearRecordingWorkflowState();
+        }
     }
 }
 
@@ -285,11 +335,10 @@ async function saveEmptyMeetingRecord(audioBlob) {
         transcriptStatus: TRANSCRIPT_STATUS.PENDING
     };
     
-    await saveMeeting(meeting);
-    return meeting.id;
+    return await saveMeeting(meeting);
 }
 
-async function processRecording(audioBlob, meetingId) {
+async function processRecording(audioBlob, meetingId, audioFilePath = null) {
     try {
         console.log('处理录音, meetingId:', meetingId, '当前设置:', currentSettings);
 
@@ -299,7 +348,7 @@ async function processRecording(audioBlob, meetingId) {
             return;
         }
 
-        showLoading('正在转写...');
+        updateRecordingWorkflowState(true, '正在转写...');
         console.log('开始调用转写 API:', { url: currentSettings.sttApiUrl, model: currentSettings.sttModel });
 
         // 更新为转写中状态
@@ -307,7 +356,7 @@ async function processRecording(audioBlob, meetingId) {
             transcriptStatus: TRANSCRIPT_STATUS.TRANSCRIBING 
         });
 
-        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel);
+        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel, audioFilePath);
 
         console.log('转写结果:', result);
 
@@ -321,6 +370,7 @@ async function processRecording(audioBlob, meetingId) {
         }
 
         updateSubtitleContent(result.text);
+        updateRecordingWorkflowState(true, '正在生成纪要...', { transcript: false, summary: true });
         showToast('转写完成，正在生成纪要...', 'info');
 
         // 保存当前转写文本，用于刷新纪要
@@ -341,6 +391,7 @@ async function processRecording(audioBlob, meetingId) {
         });
         showToast('处理录音失败', 'error');
     } finally {
+        clearRecordingWorkflowState();
         hideLoading();
     }
 }
@@ -656,7 +707,7 @@ async function processAudioFile(file) {
             apiUrl: currentSettings.sttApiUrl 
         });
 
-        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel);
+        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel, file.path || null);
 
         console.log('转写结果:', result);
 

@@ -409,13 +409,14 @@ async function exportMeetingAudio(meeting) {
     }
 }
 
-function updateRecordingButtons(state) {
+function updateRecordingButtons(state, options = {}) {
     const btnStart = document.getElementById('btnStartRecording');
     const btnPause = document.getElementById('btnPauseRecording');
     const btnResume = document.getElementById('btnResumeRecording');
     const btnStop = document.getElementById('btnStopRecording');
     const audioBars = document.getElementById('audioBars');
     const recordingIndicator = document.getElementById('recordingIndicator');
+    const isProcessing = options.isProcessing === true;
 
     if (state.isRecording) {
         btnStart.style.display = 'none';
@@ -437,9 +438,18 @@ function updateRecordingButtons(state) {
         btnStop.style.display = 'none';
         recordingIndicator.classList.remove('active');
     }
+
+    [btnStart, btnPause, btnResume, btnStop].forEach((button) => {
+        if (!button) {
+            return;
+        }
+
+        button.disabled = isProcessing;
+        button.classList.toggle('btn-loading', isProcessing && button === btnStop && state.isRecording);
+    });
 }
 
-function showLoading(message) {
+function showLoading(message, targets = { transcript: true, summary: true }) {
     const subtitleContent = document.getElementById('subtitleContent');
     const summaryContent = document.getElementById('summaryContent');
     
@@ -450,11 +460,11 @@ function showLoading(message) {
         </div>
     `;
     
-    if (subtitleContent) {
+    if (subtitleContent && targets.transcript !== false) {
         subtitleContent.innerHTML = loadingHTML;
     }
     
-    if (summaryContent) {
+    if (summaryContent && targets.summary !== false) {
         summaryContent.innerHTML = loadingHTML.replace(message, '生成中...');
     }
 }
@@ -497,6 +507,16 @@ function hideLoading() {
             </div>
         `;
     }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        updateSubtitleContent,
+        updateSummaryContent,
+        showLoading,
+        hideLoading,
+        updateRecordingButtons
+    };
 }
 
 function loadSettings(settings) {
