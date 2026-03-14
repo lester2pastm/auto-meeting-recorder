@@ -35,6 +35,34 @@ function safeLog() {}
 function safeError() {}
 function safeWarn() {}
 
+function normalizeBinaryPayload(data) {
+  if (!data) {
+    return Buffer.alloc(0);
+  }
+
+  if (Buffer.isBuffer(data)) {
+    return data;
+  }
+
+  if (data instanceof Uint8Array) {
+    return Buffer.from(data);
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data);
+  }
+
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  if (Array.isArray(data)) {
+    return Buffer.from(data);
+  }
+
+  throw new Error('Unsupported audio payload type');
+}
+
 function createWindow() {
   // 获取主屏幕尺寸
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -156,7 +184,7 @@ ipcMain.handle('save-audio', async (event, { blob, filename }) => {
     const filePath = path.join(AUDIO_DIR, filename);
     safeLog('[Main] Saving to:', filePath);
     
-    const buffer = Buffer.from(blob);
+    const buffer = normalizeBinaryPayload(blob);
     safeLog('[Main] Buffer created, size:', buffer.length);
     
     fs.writeFileSync(filePath, buffer);
@@ -176,7 +204,7 @@ ipcMain.handle('get-audio', async (event, filePathOrName) => {
     const filePath = path.isAbsolute(filePathOrName) ? filePathOrName : path.join(AUDIO_DIR, filePathOrName);
     if (fs.existsSync(filePath)) {
       const buffer = fs.readFileSync(filePath);
-      return { success: true, data: Array.from(buffer) };
+      return { success: true, data: new Uint8Array(buffer) };
     }
     return { success: false, error: 'File not found' };
   } catch (error) {
@@ -388,32 +416,32 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       safeLog('Auto-detected system audio device:', device);
     }
 
-    // 构建 ffmpeg 命令录制系统音频
-    // 使用 pulse 音频输入，录制系统输出（monitor）
-    // 使用 astats 滤镜获取实时音量信息
+    const microphoneDevice = await getDefaultPulseAudioDevice('input');
     const monitorDevice = device.endsWith('.monitor') ? device : `${device}.monitor`;
+
     const args = [
       '-f', 'pulse',
-      '-i', monitorDevice,         // 系统音频 monitor 设备
-      '-filter_complex', '[0:a]astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]', // 使用 astats 获取实时 RMS 音量
+      '-i', microphoneDevice,
+      '-f', 'pulse',
+      '-i', monitorDevice,
+      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]',
       '-map', '[aout]',
-      '-acodec', 'libopus',        // 使用 opus 编码
-      '-b:a', '128k',              // 比特率
-      '-ar', '48000',              // 采样率
-      '-ac', '2',                  // 双声道
-      '-y',                        // 覆盖已存在文件
+      '-acodec', 'libopus',
+      '-b:a', '128k',
+      '-ar', '48000',
+      '-ac', '2',
+      '-y',
       outputPath
     ];
 
-    safeLog('Starting ffmpeg system audio recording:', args.join(' '));
+    safeLog('Starting ffmpeg mixed audio recording:', args.join(' '));
 
     ffmpegSystemAudioProcess = spawn('ffmpeg', args);
     
     let errorOutput = '';
     const MAX_ERROR_OUTPUT = 102400; // 100KB
-    let lastRMSLevel = -70;  // 记录上一次的 RMS 音量
-    let lastAudioLevelSend = 0;  // 上次发送 audio-level 的时间
-    const AUDIO_LEVEL_INTERVAL = 150;  // 节流：每 150ms 发送一次音量信息
+    let lastAudioLevelSend = 0;
+    const AUDIO_LEVEL_INTERVAL = 150;
     
     ffmpegSystemAudioProcess.stderr.on('data', (data) => {
       const message = data.toString();
@@ -430,7 +458,6 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       
       if (rmsMatch) {
         const rmsLevel = parseFloat(rmsMatch[1]);
-        lastRMSLevel = rmsLevel;
         
         // 节流发送音量信息，避免 IPC 消息过载
         const now = Date.now();
@@ -640,10 +667,76 @@ ipcMain.handle('read-audio-file', async (event, filePath) => {
     }
     
     const buffer = fs.readFileSync(filePath);
-    // 返回 Array 以便序列化通过 IPC
-    return { success: true, data: Array.from(buffer) };
+    return { success: true, data: new Uint8Array(buffer) };
   } catch (error) {
     safeError('Error reading audio file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found: ' + filePath };
+    }
+
+    const segmentCount = Math.max(1, options.segmentCount || 1);
+    const segmentDuration = Math.max(1, Math.ceil(options.segmentDuration || 1));
+    const sourceDir = path.dirname(filePath);
+    const sourceName = path.basename(filePath, path.extname(filePath));
+    const targetDir = path.join(sourceDir, `${sourceName}_segments_${Date.now()}`);
+
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    const outputPattern = path.join(targetDir, `${sourceName}_%03d.webm`);
+    const args = [
+      '-i', filePath,
+      '-vn',
+      '-c:a', 'libopus',
+      '-b:a', '128k',
+      '-ar', '48000',
+      '-f', 'segment',
+      '-segment_time', String(segmentDuration),
+      '-reset_timestamps', '1',
+      '-y',
+      outputPattern
+    ];
+
+    await new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', args);
+      let stderr = '';
+
+      ffmpeg.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+
+        reject(new Error(stderr || `FFmpeg split failed with code ${code}`));
+      });
+
+      ffmpeg.on('error', (error) => {
+        reject(error);
+      });
+    });
+
+    const files = fs.readdirSync(targetDir)
+      .filter((name) => name.endsWith('.webm'))
+      .sort()
+      .slice(0, segmentCount)
+      .map((name) => path.join(targetDir, name));
+
+    if (files.length === 0) {
+      return { success: false, error: 'No split audio segments created' };
+    }
+
+    return { success: true, files };
+  } catch (error) {
+    safeError('Error splitting audio file:', error);
     return { success: false, error: error.message };
   }
 });
@@ -657,7 +750,7 @@ ipcMain.handle('save-audio-to-path', async (event, { data, filePath }) => {
       fs.mkdirSync(dir, { recursive: true });
     }
     
-    const buffer = Buffer.from(data);
+    const buffer = normalizeBinaryPayload(data);
     fs.writeFileSync(filePath, buffer);
     return { success: true, filePath };
   } catch (error) {
@@ -675,7 +768,7 @@ ipcMain.handle('append-audio-to-path', async (event, { data, filePath }) => {
       fs.mkdirSync(dir, { recursive: true });
     }
     
-    const buffer = Buffer.from(data);
+    const buffer = normalizeBinaryPayload(data);
     // 使用追加模式写入文件
     fs.appendFileSync(filePath, buffer);
     return { success: true, filePath };
