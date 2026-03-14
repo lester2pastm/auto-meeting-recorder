@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopFFmpegRecording: () => ipcRenderer.invoke('stop-ffmpeg-recording'),
   mergeAudioFiles: (microphonePath, systemAudioPath, outputPath) => ipcRenderer.invoke('merge-audio-files', { microphonePath, systemAudioPath, outputPath }),
   getPulseAudioSources: () => ipcRenderer.invoke('get-pulseaudio-sources'),
+  splitAudioFile: (filePath, options) => ipcRenderer.invoke('split-audio-file', { filePath, options }),
   readAudioFile: (filePath) => ipcRenderer.invoke('read-audio-file', filePath),
   saveAudioToPath: (data, filePath) => ipcRenderer.invoke('save-audio-to-path', { data, filePath }),
   appendAudioToPath: (data, filePath) => ipcRenderer.invoke('append-audio-to-path', { data, filePath }),

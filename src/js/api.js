@@ -71,7 +71,7 @@ async function testSummaryApi(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     }
 }
 
-async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
+async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null) {
     try {
         console.log('开始转写音频:', { apiUrl, model, blobSize: audioBlob.size, blobType: audioBlob.type });
 
@@ -85,7 +85,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
             // 检查是否超过限制
             if (sizeMB > 50) {
                 console.log('文件大小超过 50MB 限制，使用分段转写...');
-                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model);
+                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath);
             }
             
             // 获取音频时长
@@ -97,7 +97,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
             
             if (durationMinutes > 60) {
                 console.log('音频时长超过 60 分钟限制，使用分段转写...');
-                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model);
+                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath);
             }
             
             // 不超过限制，直接使用原始 webm 格式
@@ -242,6 +242,12 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
     }
 }
 
+function calculateSegmentCount(sizeMB, durationMinutes, maxSizeMB = 45, maxDurationMinutes = 55) {
+    const sizeSegments = Math.max(1, Math.ceil(sizeMB / maxSizeMB));
+    const durationSegments = Math.max(1, Math.ceil(durationMinutes / maxDurationMinutes));
+    return Math.max(sizeSegments, durationSegments);
+}
+
 // 辅助函数：将 Blob 转换为 Base64
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
@@ -317,6 +323,36 @@ async function splitAudio(audioBlob, maxSizeMB = 45, knownDuration = null) {
     await audioContext.close();
     console.log(`音频已分割为 ${segments.length} 个片段`);
     return segments;
+}
+
+async function createBlobFromFilePath(filePath) {
+    const readResult = await window.electronAPI.readAudioFile(filePath);
+    if (!readResult.success) {
+        throw new Error(readResult.error || 'Failed to read audio segment');
+    }
+
+    const binary = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
+    return new Blob([binary], { type: 'audio/webm' });
+}
+
+async function splitAudioByFilePath(filePath, totalDuration, totalSizeMB) {
+    const durationMinutes = totalDuration / 60;
+    const segmentCount = calculateSegmentCount(totalSizeMB, durationMinutes);
+
+    if (!window.electronAPI || typeof window.electronAPI.splitAudioFile !== 'function') {
+        throw new Error('splitAudioFile IPC is not available');
+    }
+
+    const result = await window.electronAPI.splitAudioFile(filePath, {
+        segmentCount,
+        segmentDuration: totalDuration / segmentCount
+    });
+
+    if (!result.success) {
+        throw new Error(result.error || 'Failed to split audio file');
+    }
+
+    return result.files || [];
 }
 
 // 从 AudioBuffer 提取时间段并转换为 webm
@@ -423,7 +459,7 @@ async function audioBufferToWav(audioBuffer) {
 }
 
 // 分段转写音频
-async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1') {
+async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null) {
     // 直接使用原始 webm，不需要转换为 WAV
     const sizeMB = audioBlob.size / (1024 * 1024);
     
@@ -437,7 +473,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     console.log(`转写超时时间: ${(calculatedTimeout / 1000 / 60).toFixed(1)}分钟`);
     
     // 检查是否需要分割
-    const needsSplit = sizeMB > 50;
+    const needsSplit = sizeMB > 50 || durationMinutes > 60;
     
     if (!needsSplit) {
         // 不需要分割，直接转写
@@ -446,14 +482,30 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     // 需要分割
     console.log('音频超过限制，开始分段处理...');
-    const segments = await splitAudio(audioBlob, 45, duration);
+    let segments = null;
+    let segmentPaths = [];
+
+    if (audioFilePath && window.electronAPI && typeof window.electronAPI.splitAudioFile === 'function') {
+        try {
+            segmentPaths = await splitAudioByFilePath(audioFilePath, duration, sizeMB);
+            console.log(`主进程已分割为 ${segmentPaths.length} 个片段`);
+        } catch (error) {
+            console.warn('主进程分段失败，回退到渲染进程分段:', error.message);
+            segments = await splitAudio(audioBlob, 45, duration);
+        }
+    } else {
+        segments = await splitAudio(audioBlob, 45, duration);
+    }
     
     // 逐个转写每个片段
     const transcripts = [];
-    for (let i = 0; i < segments.length; i++) {
-        console.log(`转写片段 ${i + 1}/${segments.length}...`);
+    const totalSegments = segmentPaths.length || segments.length;
+
+    for (let i = 0; i < totalSegments; i++) {
+        console.log(`转写片段 ${i + 1}/${totalSegments}...`);
+        const segmentBlob = segmentPaths.length > 0 ? await createBlobFromFilePath(segmentPaths[i]) : segments[i];
         
-        let result = await transcribeSingleSegment(segments[i], apiUrl, apiKey, model, calculatedTimeout);
+        let result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, calculatedTimeout);
         
         let retryCount = 0;
         const maxRetries = 2;
@@ -461,7 +513,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
             retryCount++;
             console.log(`片段 ${i + 1} 转写失败，${retryCount}/${maxRetries} 次重试...`);
             await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
-            result = await transcribeSingleSegment(segments[i], apiUrl, apiKey, model, calculatedTimeout * 2);
+            result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, calculatedTimeout * 2);
         }
         
         if (result.success) {
@@ -476,8 +528,12 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
         return { success: false, message: '所有片段转写失败' };
     }
     
+    if (segmentPaths.length > 0 && window.electronAPI && typeof window.electronAPI.deleteFile === 'function') {
+        await Promise.all(segmentPaths.map((filePath) => window.electronAPI.deleteFile(filePath).catch(() => null)));
+    }
+
     const combinedText = transcripts.join('\n\n');
-    console.log(`转写完成，共 ${segments.length} 个片段，合并后文本长度: ${combinedText.length}`);
+    console.log(`转写完成，共 ${totalSegments} 个片段，合并后文本长度: ${combinedText.length}`);
     
     return { success: true, text: combinedText };
 }
@@ -692,4 +748,15 @@ async function convertToWav(audioBlob) {
     await audioContext.close();
     
     return new Blob([wavBuffer], { type: 'audio/wav' });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        transcribeAudio,
+        transcribeAudioSegments,
+        transcribeSingleSegment,
+        calculateSegmentCount,
+        getAudioDuration,
+        splitAudioByFilePath
+    };
 }
