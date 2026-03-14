@@ -3,7 +3,7 @@
  * 测试 IndexedDB 操作、音频文件管理和配置存储功能
  */
 
-const { saveMeeting, getMeeting, updateMeeting } = require('../../src/js/storage');
+const { saveMeeting, getMeeting, updateMeeting, saveAudioFile } = require('../../src/js/storage');
 
 // 模拟 storage.js 的依赖
 const mockDB = {
@@ -59,18 +59,22 @@ describe('Storage 模块测试', () => {
   });
 
   describe('音频文件操作', () => {
-    it('saveAudioFile 应该调用 electronAPI.saveAudio', async () => {
+    it('saveAudioFile 应该调用 electronAPI.saveAudio 并传递 Uint8Array', async () => {
       window.electronAPI.saveAudio.mockResolvedValue({ success: true, filePath: '/path/to/audio.webm' });
-      
-      // 模拟调用 saveAudioFile
-      const filename = '2026-02-01_14-30-45.webm';
-      // 模拟音频数据数组
-      const array = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-      
-      const result = await window.electronAPI.saveAudio(array, filename);
-      
-      expect(window.electronAPI.saveAudio).toHaveBeenCalledWith(array, filename);
+
+      const mockDate = new Date('2026-02-01T14:30:45');
+      jest.spyOn(global, 'Date').mockImplementation(() => mockDate);
+
+      const result = await saveAudioFile(new Blob([new Uint8Array([1, 2, 3, 4, 5])], { type: 'audio/webm' }));
+
+      expect(window.electronAPI.saveAudio).toHaveBeenCalledTimes(1);
+      const [binaryData, filename] = window.electronAPI.saveAudio.mock.calls[0];
+      expect(binaryData).toBeInstanceOf(Uint8Array);
+      expect(Array.from(binaryData)).toEqual([1, 2, 3, 4, 5]);
+      expect(filename).toBe('2026-02-01_14-30-45.webm');
       expect(result.success).toBe(true);
+
+      global.Date.mockRestore();
     });
 
     it('getAudioFile 应该调用 electronAPI.getAudio', async () => {
