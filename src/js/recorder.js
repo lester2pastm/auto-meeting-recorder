@@ -32,9 +32,6 @@ let isFFmpegRecording = false;
 // FFmpeg 录制相关变量（Linux）
 let linuxRecordingPaths = null;
 
-// Linux 混合录制模式变量
-let linuxMicMediaRecorder = null;
-
 // 初始化平台检测
 async function detectPlatform() {
     if (window.electronAPI && window.electronAPI.getPlatform) {
@@ -99,11 +96,10 @@ async function startRecording() {
     }
 }
 
-// Linux 平台使用混合录制（麦克风用 MediaRecorder，系统音频用 FFmpeg）
 async function startLinuxRecording() {
     try {
         if (window.DEBUG_AUDIO) {
-            console.log('=== 开始 Linux 混合录音 ===');
+            console.log('=== 开始 Linux FFmpeg 录音 ===');
         }
         
         // 检查 recoveryMeta 是否已初始化
@@ -111,15 +107,12 @@ async function startLinuxRecording() {
             throw new Error('恢复元数据未初始化，请确保 startRecoveryTracking() 已被调用');
         }
         
-        if (!recoveryMeta.tempFile || !recoveryMeta.systemTempFile) {
+        if (!recoveryMeta.tempFile) {
             throw new Error('恢复元数据缺少临时文件路径');
         }
         
-        // 使用 recoveryMeta 中定义的路径
         linuxRecordingPaths = {
-            microphone: recoveryMeta.tempFile,
-            systemAudio: recoveryMeta.systemTempFile,
-            output: recoveryMeta.tempFile.replace('temp_mic_', 'combined_')
+            output: recoveryMeta.tempFile
         };
         
         console.log('[Recorder] Linux recording paths:', linuxRecordingPaths);
@@ -191,29 +184,6 @@ async function startLinuxRecording() {
         // 4. 初始化波形可视化（使用合并后的音频流）
         await initWaveform(visualizerStream);
         
-        // 4. 使用 MediaRecorder 录制麦克风
-        linuxMicMediaRecorder = new MediaRecorder(microphoneStream, {
-            mimeType: 'audio/webm'
-        });
-        
-        linuxMicMediaRecorder.ondataavailable = async (event) => {
-            if (event.data.size > 0) {
-                const arrayBuffer = await event.data.arrayBuffer();
-                const chunkData = Array.from(new Uint8Array(arrayBuffer));
-                
-                if (typeof appendAudioChunk === 'function') {
-                    await appendAudioChunk(chunkData);
-                }
-            }
-        };
-        
-        linuxMicMediaRecorder.onstop = async () => {
-            console.log('[Recorder] Microphone recording stopped, file saved');
-        };
-        
-        linuxMicMediaRecorder.start(1000);
-        
-        // 4. 获取 PulseAudio 源列表并启动 FFmpeg 录制系统音频
         const sourcesResult = await window.electronAPI.getPulseAudioSources();
         
         let systemDevice = 'default';
@@ -227,13 +197,12 @@ async function startLinuxRecording() {
             }
         }
         
-        // 启动系统音频录制（FFmpeg）
         const sysResult = await window.electronAPI.startFFmpegSystemAudio(
-            linuxRecordingPaths.systemAudio, 
+            linuxRecordingPaths.output,
             systemDevice
         );
         if (!sysResult.success) {
-            throw new Error('启动系统音频录制失败: ' + sysResult.error);
+            throw new Error('启动 Linux 录音失败: ' + sysResult.error);
         }
         
         // 设置 FFmpeg 录制标志（isRecording 已经在前面设置）
@@ -341,7 +310,7 @@ async function startStandardRecording() {
     mediaRecorder.ondataavailable = async (event) => {
         if (event.data.size > 0) {
             const arrayBuffer = await event.data.arrayBuffer();
-            const chunkData = Array.from(new Uint8Array(arrayBuffer));
+            const chunkData = new Uint8Array(arrayBuffer);
             
             if (typeof appendAudioChunk === 'function') {
                 await appendAudioChunk(chunkData);
@@ -355,7 +324,7 @@ async function startStandardRecording() {
             try {
                 const readResult = await window.electronAPI.readAudioFile(meta.tempFile);
                 if (readResult.success) {
-                    const buffer = new Uint8Array(readResult.data);
+                    const buffer = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
                     audioBlob = new Blob([buffer], { type: 'audio/webm' });
                     
                     // 通知文件已准备好
@@ -501,62 +470,26 @@ async function stopRecording() {
     });
 }
 
-// 停止 Linux 混合录制并合并音频
 async function stopLinuxRecording() {
     try {
         if (!linuxRecordingPaths) {
             throw new Error('录音路径未设置');
         }
-        
-        // 获取恢复元数据中的正确麦克风文件路径
-        const recoveryMeta = typeof getRecoveryMeta === 'function' ? getRecoveryMeta() : null;
-        const microphonePath = recoveryMeta && recoveryMeta.tempFile ? recoveryMeta.tempFile : linuxRecordingPaths.microphone;
-        
-        // 1. 停止麦克风录制（MediaRecorder）
-        if (linuxMicMediaRecorder && linuxMicMediaRecorder.state !== 'inactive') {
-            await new Promise((resolve) => {
-                // 等待 onstop 回调完成
-                const originalOnStop = linuxMicMediaRecorder.onstop;
-                linuxMicMediaRecorder.onstop = async (event) => {
-                    if (originalOnStop) {
-                        await originalOnStop(event);
-                    }
-                    resolve();
-                };
-                linuxMicMediaRecorder.stop();
-            });
-        }
-        
-        // 2. 停止系统音频录制（FFmpeg）
+
         await window.electronAPI.stopFFmpegRecording();
-        
-        // 等待 FFmpeg 文件写入完成
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // 3. 合并音频文件 - 使用正确的麦克风路径
-        const mergeResult = await window.electronAPI.mergeAudioFiles(
-            microphonePath,
-            linuxRecordingPaths.systemAudio,
-            linuxRecordingPaths.output
-        );
-        
-        if (!mergeResult.success) {
-            throw new Error('合并音频失败: ' + mergeResult.error);
-        }
-        
-        // 4. 读取合并后的文件为 Blob
-        const readResult = await window.electronAPI.readAudioFile(mergeResult.outputPath);
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const readResult = await window.electronAPI.readAudioFile(linuxRecordingPaths.output);
         if (!readResult.success) {
             throw new Error('读取音频文件失败: ' + readResult.error);
         }
         
-        const buffer = new Uint8Array(readResult.data);
+        const buffer = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
         audioBlob = new Blob([buffer], { type: 'audio/webm' });
         
-        // 5. 清理
         stopAllStreams();
         stopWaveform();
-        linuxMicMediaRecorder = null;
         isFFmpegRecording = false;
         linuxRecordingPaths = null;
         
@@ -568,7 +501,6 @@ async function stopLinuxRecording() {
         
     } catch (error) {
         console.error('停止 Linux 录制失败:', error);
-        linuxMicMediaRecorder = null;
         isFFmpegRecording = false;
         linuxRecordingPaths = null;
         throw error;

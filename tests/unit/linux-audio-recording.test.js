@@ -86,7 +86,7 @@ describe('Linux System Audio Recording', () => {
   });
 
   describe('FFmpeg System Audio Recording', () => {
-    test('should start system audio recording with monitor device', () => {
+    test('should start mixed microphone and system audio recording', () => {
       const result = {
         success: true,
         pid: 12345
@@ -117,39 +117,24 @@ describe('Linux System Audio Recording', () => {
     });
   });
 
-  describe('FFmpeg Microphone Recording', () => {
-    test('should start microphone recording', () => {
-      const result = {
-        success: true,
-        pid: 12346
-      };
-      
-      expect(result.success).toBe(true);
-      expect(result.pid).toBeGreaterThan(0);
-    });
-  });
-
   describe('Stop FFmpeg Recording', () => {
-    test('should stop both system audio and microphone recording', () => {
+    test('should stop mixed recording process', () => {
       const result = {
         success: true,
         results: {
-          systemAudio: true,
-          microphone: true
+          systemAudio: true
         }
       };
       
       expect(result.success).toBe(true);
       expect(result.results.systemAudio).toBe(true);
-      expect(result.results.microphone).toBe(true);
     });
 
     test('should handle case when no recording is active', () => {
       const result = {
         success: true,
         results: {
-          systemAudio: false,
-          microphone: false
+          systemAudio: false
         }
       };
       
@@ -157,35 +142,12 @@ describe('Linux System Audio Recording', () => {
     });
   });
 
-  describe('Merge Audio Files', () => {
-    test('should merge microphone and system audio files', () => {
-      const result = {
-        success: true,
-        outputPath: '/tmp/combined.webm'
-      };
-      
-      expect(result.success).toBe(true);
-      expect(result.outputPath).toBe('/tmp/combined.webm');
-    });
+  describe('Single Output Recording', () => {
+    test('should write mixed audio directly to a single output file', () => {
+      const outputPath = '/tmp/recording.webm';
 
-    test('should fail if microphone file does not exist', () => {
-      const result = {
-        success: false,
-        error: 'Microphone audio file not found'
-      };
-      
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Microphone audio file not found');
-    });
-
-    test('should fail if system audio file does not exist', () => {
-      const result = {
-        success: false,
-        error: 'System audio file not found'
-      };
-      
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('System audio file not found');
+      expect(outputPath).toBe('/tmp/recording.webm');
+      expect(outputPath.endsWith('.webm')).toBe(true);
     });
   });
 });
@@ -216,14 +178,19 @@ describe('Device Name Handling', () => {
 });
 
 describe('FFmpeg Command Generation', () => {
-  test('should generate correct ffmpeg args for system audio', () => {
+  test('should generate correct ffmpeg args for mixed audio recording', () => {
+    const micDevice = 'alsa_input.pci-0000_00_1f.3.analog-stereo';
     const device = 'alsa_output.pci-0000_00_1f.3.analog-stereo';
-    const outputPath = '/tmp/test-system.webm';
+    const outputPath = '/tmp/test-recording.webm';
     const monitorDevice = device.endsWith('.monitor') ? device : `${device}.monitor`;
     
     const args = [
       '-f', 'pulse',
+      '-i', micDevice,
+      '-f', 'pulse',
       '-i', monitorDevice,
+      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]',
+      '-map', '[aout]',
       '-acodec', 'libopus',
       '-b:a', '128k',
       '-ar', '48000',
@@ -232,50 +199,10 @@ describe('FFmpeg Command Generation', () => {
       outputPath
     ];
     
-    expect(args[3]).toBe('alsa_output.pci-0000_00_1f.3.analog-stereo.monitor');
+    expect(args[3]).toBe(micDevice);
+    expect(args[7]).toBe('alsa_output.pci-0000_00_1f.3.analog-stereo.monitor');
     expect(args[args.length - 1]).toBe(outputPath);
-  });
-
-  test('should generate correct ffmpeg args for microphone', () => {
-    const device = 'alsa_input.pci-0000_00_1f.3.analog-stereo';
-    const outputPath = '/tmp/test-mic.webm';
-    
-    const args = [
-      '-f', 'pulse',
-      '-i', device,
-      '-acodec', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
-      '-ac', '1',
-      '-y',
-      outputPath
-    ];
-    
-    expect(args[3]).toBe(device);
-    expect(args[args.length - 1]).toBe(outputPath);
-  });
-
-  test('should generate correct ffmpeg merge args', () => {
-    const micPath = '/tmp/mic.webm';
-    const sysPath = '/tmp/sys.webm';
-    const outputPath = '/tmp/combined.webm';
-    
-    const args = [
-      '-i', micPath,
-      '-i', sysPath,
-      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=3[aout]',
-      '-map', '[aout]',
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
-      '-y',
-      outputPath
-    ];
-    
-    expect(args[1]).toBe(micPath);
-    expect(args[3]).toBe(sysPath);
-    expect(args[args.length - 1]).toBe(outputPath);
-    expect(args).toContain('[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=3[aout]');
+    expect(args).toContain('[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]');
   });
 });
 
@@ -315,7 +242,7 @@ describe('Audio Source Detection', () => {
 });
 
 describe('File Reading for Blob Conversion', () => {
-  test('should read file and return Array for IPC serialization', () => {
+  test('should read file and return Uint8Array for IPC serialization', () => {
     // Create a test file
     const testFile = '/tmp/test-audio-jest.bin';
     const testData = Buffer.from([0x00, 0x01, 0x02, 0x03, 0xFF]);
@@ -323,12 +250,12 @@ describe('File Reading for Blob Conversion', () => {
     
     try {
       const buffer = fs.readFileSync(testFile);
-      const array = Array.from(buffer);
-      
-      expect(Array.isArray(array)).toBe(true);
-      expect(array).toHaveLength(5);
-      expect(array[0]).toBe(0);
-      expect(array[4]).toBe(255);
+      const binary = new Uint8Array(buffer);
+
+      expect(binary).toBeInstanceOf(Uint8Array);
+      expect(binary).toHaveLength(5);
+      expect(binary[0]).toBe(0);
+      expect(binary[4]).toBe(255);
     } finally {
       // Cleanup
       if (fs.existsSync(testFile)) {
@@ -344,46 +271,31 @@ describe('Recording Paths Generation', () => {
     const audioDir = '/tmp/audio_files';
     
     const paths = {
-      microphone: `${audioDir}/mic_${timestamp}.webm`,
-      systemAudio: `${audioDir}/sys_${timestamp}.webm`,
-      output: `${audioDir}/combined_${timestamp}.webm`
+      output: `${audioDir}/temp_recording_${timestamp}.webm`
     };
     
-    expect(paths.microphone).toContain('mic_');
-    expect(paths.systemAudio).toContain('sys_');
-    expect(paths.output).toContain('combined_');
-    expect(paths.microphone.endsWith('.webm')).toBe(true);
+    expect(paths.output).toContain('temp_recording_');
+    expect(paths.output.endsWith('.webm')).toBe(true);
   });
 
-  test('should use consistent microphone path for recording and merging', () => {
-    // Bug fix verification: stopLinuxRecording should use recoveryMeta.tempFile
-    // instead of linuxRecordingPaths.microphone for the microphone file path
-    // This ensures the merge uses the correct path where data was actually saved
-    
+  test('should use recovery temp file as final recording path', () => {
     const timestamp = Date.now();
     const audioDir = '/tmp/audio_files';
-    
-    // 模拟 startLinuxRecording 中定义的路径
+
     const linuxRecordingPaths = {
-      microphone: `${audioDir}/mic_${timestamp}.webm`,      // 旧的不一致路径
-      systemAudio: `${audioDir}/sys_${timestamp}.webm`,
-      output: `${audioDir}/combined_${timestamp}.webm`
+      output: `${audioDir}/temp_recording_${timestamp}.webm`
     };
-    
-    // 模拟 recoveryMeta 中定义的路径（实际保存麦克风数据的位置）
+
     const recoveryMeta = {
-      tempFile: `${audioDir}/temp_mic_${timestamp}.webm`,    // 正确的麦克风数据路径
-      systemTempFile: `${audioDir}/temp_sys_${timestamp}.webm`
+      tempFile: `${audioDir}/temp_recording_${timestamp}.webm`
     };
-    
-    // 修复后的逻辑：优先使用 recoveryMeta.tempFile
-    const microphonePath = recoveryMeta && recoveryMeta.tempFile 
+
+    const recordingPath = recoveryMeta && recoveryMeta.tempFile 
       ? recoveryMeta.tempFile 
-      : linuxRecordingPaths.microphone;
-    
-    // 验证：应该使用 recoveryMeta.tempFile（实际保存数据的路径）
-    expect(microphonePath).toBe(recoveryMeta.tempFile);
-    expect(microphonePath).not.toBe(linuxRecordingPaths.microphone);
-    expect(microphonePath).toContain('temp_mic_');
+      : linuxRecordingPaths.output;
+
+    expect(recordingPath).toBe(recoveryMeta.tempFile);
+    expect(recordingPath).toBe(linuxRecordingPaths.output);
+    expect(recordingPath).toContain('temp_recording_');
   });
 });
