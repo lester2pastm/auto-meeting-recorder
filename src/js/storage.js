@@ -18,6 +18,23 @@ function generateAudioFilename() {
   return `${date}_${time}.webm`;
 }
 
+function blobToUint8Array(blob) {
+  if (!blob) {
+    return Promise.resolve(new Uint8Array());
+  }
+
+  if (typeof blob.arrayBuffer === 'function') {
+    return blob.arrayBuffer().then((arrayBuffer) => new Uint8Array(arrayBuffer));
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result));
+    reader.onerror = () => reject(reader.error || new Error('Failed to read blob'));
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 // 保存音频文件（Electron 环境）
 async function saveAudioFile(audioBlob) {
   console.log('[Storage] saveAudioFile called, isElectron:', isElectron());
@@ -32,18 +49,11 @@ async function saveAudioFile(audioBlob) {
   console.log('[Storage] Audio blob size:', audioBlob.size, 'type:', audioBlob.type);
   
   try {
-    // 将 Blob 转换为 ArrayBuffer，然后转换为普通数组
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    console.log('[Storage] ArrayBuffer created, size:', arrayBuffer.byteLength);
-    
-    const uint8Array = new Uint8Array(arrayBuffer);
+    const uint8Array = await blobToUint8Array(audioBlob);
     console.log('[Storage] Uint8Array created, length:', uint8Array.length);
-    
-    const array = Array.from(uint8Array);
-    console.log('[Storage] Array created, length:', array.length);
-    
+
     console.log('[Storage] Calling electronAPI.saveAudio...');
-    const result = await window.electronAPI.saveAudio(array, filename);
+    const result = await window.electronAPI.saveAudio(uint8Array, filename);
     console.log('[Storage] saveAudio result:', result);
     
     return result;
@@ -61,8 +71,7 @@ async function getAudioFile(filename) {
 
   const result = await window.electronAPI.getAudio(filename);
   if (result.success) {
-    // 将数组转换回 Uint8Array，然后创建 Blob
-    const uint8Array = new Uint8Array(result.data);
+    const uint8Array = result.data instanceof Uint8Array ? result.data : new Uint8Array(result.data);
     result.blob = new Blob([uint8Array], { type: 'audio/webm' });
   }
   return result;
