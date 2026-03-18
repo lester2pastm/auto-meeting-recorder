@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
 // 安全地暴露 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 配置操作
   saveConfig: (config) => ipcRenderer.invoke('save-config', config),
   loadConfig: () => ipcRenderer.invoke('load-config'),
+
+  copyText: (text) => {
+    clipboard.writeText(text);
+    return true;
+  },
 
   // 屏幕分享源获取（用于系统音频录制）
   getDesktopCapturerSources: () => ipcRenderer.invoke('get-desktop-capturer-sources'),

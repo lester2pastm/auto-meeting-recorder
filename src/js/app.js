@@ -643,6 +643,8 @@ async function copySummary(id) {
  * @param {string} meetingId - 会议ID
  */
 async function handleRefreshTranscriptInDetail(meetingId) {
+    let shouldCheckCompletion = false;
+
     try {
         const meeting = await getMeeting(meetingId);
         if (!meeting) {
@@ -667,32 +669,38 @@ async function handleRefreshTranscriptInDetail(meetingId) {
             return;
         }
 
-        // 添加按钮旋转动画
-        const refreshBtn = document.getElementById(`btnRefreshTranscript_${meetingId}`);
-        if (refreshBtn) {
-            refreshBtn.classList.add('spinning');
-            refreshBtn.disabled = true;
-        }
+        await renderMeetingDetail({
+            ...meeting,
+            transcript: '',
+            transcriptStatus: TRANSCRIPT_STATUS.TRANSCRIBING
+        });
 
         showToast('正在重新转写...', 'info');
 
         // 调用重试转写
-        await retryTranscription(meetingId, audioBlob);
-
-        // 重新获取更新后的会议记录并刷新详情弹窗
-        const updatedMeeting = await getMeeting(meetingId);
-        if (updatedMeeting) {
-            await renderMeetingDetail(updatedMeeting);
+        const retryResult = await retryTranscription(meetingId, audioBlob);
+        if (!retryResult || retryResult.allowed === false) {
+            return;
         }
 
-        showToast('转写完成', 'success');
+        shouldCheckCompletion = true;
     } catch (error) {
         console.error('Failed to refresh transcript:', error);
         showToast('重新转写失败: ' + error.message, 'error');
     } finally {
+        const updatedMeeting = await getMeeting(meetingId);
+        if (updatedMeeting) {
+            await renderMeetingDetail(updatedMeeting);
+
+            if (shouldCheckCompletion && updatedMeeting.transcriptStatus === TRANSCRIPT_STATUS.COMPLETED) {
+                showToast('转写完成', 'success');
+            }
+            return;
+        }
+
         const refreshBtn = document.getElementById(`btnRefreshTranscript_${meetingId}`);
         if (refreshBtn) {
-            refreshBtn.classList.remove('spinning');
+            refreshBtn.classList.remove('btn-loading');
             refreshBtn.disabled = false;
         }
     }
@@ -703,6 +711,8 @@ async function handleRefreshTranscriptInDetail(meetingId) {
  * @param {string} meetingId - 会议ID
  */
 async function handleRefreshSummaryInDetail(meetingId) {
+    let shouldCheckCompletion = false;
+
     try {
         const meeting = await getMeeting(meetingId);
         if (!meeting) {
@@ -720,12 +730,11 @@ async function handleRefreshSummaryInDetail(meetingId) {
             return;
         }
 
-        // 添加按钮旋转动画
-        const refreshBtn = document.querySelector(`#detailContent .detail-content-actions button:first-child`);
-        if (refreshBtn) {
-            refreshBtn.classList.add('spinning');
-            refreshBtn.disabled = true;
-        }
+        await renderMeetingDetail({
+            ...meeting,
+            summary: '',
+            summaryStatus: 'generating'
+        });
 
         showToast('正在重新生成纪要...', 'info');
 
@@ -747,21 +756,24 @@ async function handleRefreshSummaryInDetail(meetingId) {
         await updateMeeting(meetingId, {
             summary: result.summary
         });
-
-        // 重新获取更新后的会议记录并刷新详情弹窗
-        const updatedMeeting = await getMeeting(meetingId);
-        if (updatedMeeting) {
-            await renderMeetingDetail(updatedMeeting);
-        }
-
-        showToast('纪要已重新生成', 'success');
+        shouldCheckCompletion = true;
     } catch (error) {
         console.error('Failed to refresh summary:', error);
         showToast('重新生成纪要失败: ' + error.message, 'error');
     } finally {
-        const refreshBtn = document.querySelector(`#detailContent .detail-content-actions button:first-child`);
+        const updatedMeeting = await getMeeting(meetingId);
+        if (updatedMeeting) {
+            await renderMeetingDetail(updatedMeeting);
+
+            if (shouldCheckCompletion) {
+                showToast('纪要已重新生成', 'success');
+            }
+            return;
+        }
+
+        const refreshBtn = document.getElementById(`btnRefreshSummary_${meetingId}`);
         if (refreshBtn) {
-            refreshBtn.classList.remove('spinning');
+            refreshBtn.classList.remove('btn-loading');
             refreshBtn.disabled = false;
         }
     }
