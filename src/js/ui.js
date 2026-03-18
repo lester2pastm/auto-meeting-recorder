@@ -170,16 +170,24 @@ function hideSummaryBadge() {
     }
 }
 
-function copyToClipboard(text) {
-    if (navigator.clipboard && window.electronAPI) {
-        navigator.clipboard.writeText(text).then(() => {
+async function copyToClipboard(text) {
+    try {
+        if (window.electronAPI && typeof window.electronAPI.copyText === 'function') {
+            await window.electronAPI.copyText(text);
             showToast(i18n ? i18n.get('copySuccess') : '复制成功', 'success');
-        }).catch(() => {
-            fallbackCopyToClipboard(text);
-        });
-    } else {
-        fallbackCopyToClipboard(text);
+            return true;
+        }
+
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(text);
+            showToast(i18n ? i18n.get('copySuccess') : '复制成功', 'success');
+            return true;
+        }
+    } catch (error) {
+        console.warn('Clipboard API copy failed, using fallback:', error);
     }
+
+    return fallbackCopyToClipboard(text);
 }
 
 function fallbackCopyToClipboard(text) {
@@ -191,18 +199,23 @@ function fallbackCopyToClipboard(text) {
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
+
     try {
         const successful = document.execCommand('copy');
         if (successful) {
             showToast(i18n ? i18n.get('copySuccess') : '复制成功', 'success');
+            return true;
         } else {
             showToast(i18n ? i18n.get('copyFailed') : '复制失败', 'error');
+            return false;
         }
     } catch (err) {
         showToast(i18n ? i18n.get('copyFailed') : '复制失败', 'error');
         console.error('Copy error:', err);
+        return false;
+    } finally {
+        document.body.removeChild(textArea);
     }
-    document.body.removeChild(textArea);
 }
 
 function renderHistoryList(meetings) {
@@ -295,6 +308,14 @@ async function renderMeetingDetail(meeting) {
     }
 
     const isElectronEnv = typeof window !== 'undefined' && window.electronAPI;
+    const isTranscriptProcessing = meeting.transcriptStatus === 'transcribing';
+    const isSummaryProcessing = meeting.summaryStatus === 'generating';
+    const transcriptContent = isTranscriptProcessing
+        ? getLoadingMarkup('正在重新转写，请稍候...')
+        : (meeting.transcript || '暂无转写文本');
+    const summaryContent = isSummaryProcessing
+        ? getLoadingMarkup('正在重新生成纪要，请稍候...')
+        : (meeting.summary || '暂无会议纪要');
 
     detailContent.innerHTML = `
         <div class="detail-section">
@@ -360,15 +381,17 @@ async function renderMeetingDetail(meeting) {
                 </svg>
                 转写文本
             </h3>
-            <div class="detail-content-area">${meeting.transcript || '暂无转写文本'}</div>
+            <div class="detail-content-area${isTranscriptProcessing ? ' is-loading' : ''}" id="detailTranscriptContent_${meeting.id}">${transcriptContent}</div>
             ${hasAudioFile ? `
-            <button class="action-btn test-btn" id="btnRefreshTranscript_${meeting.id}" onclick="handleRefreshTranscriptInDetail('${meeting.id}')" style="margin-top: 12px;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                    <polyline points="23 4 23 10 17 10"/>
-                    <polyline points="1 20 1 14 7 14"/>
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                </svg>
-                重新转写
+            <button class="action-btn test-btn${isTranscriptProcessing ? ' btn-loading' : ''}" id="btnRefreshTranscript_${meeting.id}" onclick="handleRefreshTranscriptInDetail('${meeting.id}')" style="margin-top: 12px;" ${isTranscriptProcessing ? 'disabled' : ''}>
+                <span class="btn-content">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    ${isTranscriptProcessing ? '重新转写中...' : '重新转写'}
+                </span>
             </button>
             ` : ''}
         </div>
@@ -381,15 +404,17 @@ async function renderMeetingDetail(meeting) {
                 </svg>
                 会议纪要
             </h3>
-            <div class="detail-content-area">${meeting.summary || '暂无会议纪要'}</div>
+            <div class="detail-content-area${isSummaryProcessing ? ' is-loading' : ''}" id="detailSummaryContent_${meeting.id}">${summaryContent}</div>
             <div class="detail-content-actions" style="margin-top: 12px; display: flex; gap: 8px;">
-                <button class="action-btn test-btn" onclick="handleRefreshSummaryInDetail('${meeting.id}')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                        <polyline points="23 4 23 10 17 10"/>
-                        <polyline points="1 20 1 14 7 14"/>
-                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                    </svg>
-                    重新生成
+                <button class="action-btn test-btn${isSummaryProcessing ? ' btn-loading' : ''}" id="btnRefreshSummary_${meeting.id}" onclick="handleRefreshSummaryInDetail('${meeting.id}')" ${isSummaryProcessing ? 'disabled' : ''}>
+                    <span class="btn-content">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <polyline points="1 20 1 14 7 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        ${isSummaryProcessing ? '重新生成中...' : '重新生成'}
+                    </span>
                 </button>
                 <button class="action-btn test-btn" onclick="copySummary('${meeting.id}')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
@@ -528,6 +553,8 @@ function hideLoading() {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+        copyToClipboard,
+        renderMeetingDetail,
         updateSubtitleContent,
         updateSummaryContent,
         showLoading,
