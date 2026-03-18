@@ -635,6 +635,139 @@ async function copySummary(id) {
 }
 
 // ============================================
+// 会议详情页刷新功能
+// ============================================
+
+/**
+ * 在会议详情页重新转写音频
+ * @param {string} meetingId - 会议ID
+ */
+async function handleRefreshTranscriptInDetail(meetingId) {
+    try {
+        const meeting = await getMeeting(meetingId);
+        if (!meeting) {
+            showToast('未找到会议记录', 'error');
+            return;
+        }
+
+        // 检查是否有音频文件
+        let audioBlob = null;
+        if (meeting.audioFile && meeting.audioFile instanceof Blob) {
+            audioBlob = meeting.audioFile;
+        } else if (meeting.audioFilename && window.electronAPI) {
+            // 从文件系统加载音频
+            const result = await getAudioFile(meeting.audioFilename);
+            if (result.success && result.blob) {
+                audioBlob = result.blob;
+            }
+        }
+
+        if (!audioBlob) {
+            showToast('没有可用的音频文件', 'error');
+            return;
+        }
+
+        // 添加按钮旋转动画
+        const refreshBtn = document.getElementById(`btnRefreshTranscript_${meetingId}`);
+        if (refreshBtn) {
+            refreshBtn.classList.add('spinning');
+            refreshBtn.disabled = true;
+        }
+
+        showToast('正在重新转写...', 'info');
+
+        // 调用重试转写
+        await retryTranscription(meetingId, audioBlob);
+
+        // 重新获取更新后的会议记录并刷新详情弹窗
+        const updatedMeeting = await getMeeting(meetingId);
+        if (updatedMeeting) {
+            await renderMeetingDetail(updatedMeeting);
+        }
+
+        showToast('转写完成', 'success');
+    } catch (error) {
+        console.error('Failed to refresh transcript:', error);
+        showToast('重新转写失败: ' + error.message, 'error');
+    } finally {
+        const refreshBtn = document.getElementById(`btnRefreshTranscript_${meetingId}`);
+        if (refreshBtn) {
+            refreshBtn.classList.remove('spinning');
+            refreshBtn.disabled = false;
+        }
+    }
+}
+
+/**
+ * 在会议详情页重新生成会议纪要
+ * @param {string} meetingId - 会议ID
+ */
+async function handleRefreshSummaryInDetail(meetingId) {
+    try {
+        const meeting = await getMeeting(meetingId);
+        if (!meeting) {
+            showToast('未找到会议记录', 'error');
+            return;
+        }
+
+        if (!meeting.transcript) {
+            showToast('没有转写文本，请先重新转写', 'error');
+            return;
+        }
+
+        if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
+            showToast('请先配置纪要生成API', 'error');
+            return;
+        }
+
+        // 添加按钮旋转动画
+        const refreshBtn = document.querySelector(`#detailContent .detail-content-actions button:first-child`);
+        if (refreshBtn) {
+            refreshBtn.classList.add('spinning');
+            refreshBtn.disabled = true;
+        }
+
+        showToast('正在重新生成纪要...', 'info');
+
+        // 调用生成纪要 API
+        const result = await generateSummary(
+            meeting.transcript,
+            currentSettings.summaryTemplate,
+            currentSettings.summaryApiUrl,
+            currentSettings.summaryApiKey,
+            currentSettings.summaryModel
+        );
+
+        if (!result.success) {
+            showToast('生成纪要失败: ' + result.message, 'error');
+            return;
+        }
+
+        // 更新数据库中的纪要
+        await updateMeeting(meetingId, {
+            summary: result.summary
+        });
+
+        // 重新获取更新后的会议记录并刷新详情弹窗
+        const updatedMeeting = await getMeeting(meetingId);
+        if (updatedMeeting) {
+            await renderMeetingDetail(updatedMeeting);
+        }
+
+        showToast('纪要已重新生成', 'success');
+    } catch (error) {
+        console.error('Failed to refresh summary:', error);
+        showToast('重新生成纪要失败: ' + error.message, 'error');
+    } finally {
+        const refreshBtn = document.querySelector(`#detailContent .detail-content-actions button:first-child`);
+        if (refreshBtn) {
+            refreshBtn.classList.remove('spinning');
+            refreshBtn.disabled = false;
+        }
+    }
+}
+
+// ============================================
 // 音频文件上传转写功能
 // ============================================
 
