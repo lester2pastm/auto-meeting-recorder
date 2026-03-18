@@ -352,13 +352,16 @@ async function renderMeetingDetail(meeting) {
                 转写文本
             </h3>
             <div class="detail-content-area">${meeting.transcript || '暂无转写文本'}</div>
-            <button class="action-btn test-btn" onclick="copyTranscript('${meeting.id}')" style="margin-top: 12px;">
+            ${hasAudioFile ? `
+            <button class="action-btn test-btn" id="btnRefreshTranscript_${meeting.id}" onclick="handleRefreshTranscriptInDetail('${meeting.id}')" style="margin-top: 12px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
                 </svg>
-                复制全文
+                重新转写
             </button>
+            ` : ''}
         </div>
 
         <div class="detail-section">
@@ -370,13 +373,23 @@ async function renderMeetingDetail(meeting) {
                 会议纪要
             </h3>
             <div class="detail-content-area">${meeting.summary || '暂无会议纪要'}</div>
-            <button class="action-btn test-btn" onclick="copySummary('${meeting.id}')" style="margin-top: 12px;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-                复制纪要
-            </button>
+            <div class="detail-content-actions" style="margin-top: 12px; display: flex; gap: 8px;">
+                <button class="action-btn test-btn" onclick="handleRefreshSummaryInDetail('${meeting.id}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    重新生成
+                </button>
+                <button class="action-btn test-btn" onclick="copySummary('${meeting.id}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                    复制纪要
+                </button>
+            </div>
         </div>
     `;
 
