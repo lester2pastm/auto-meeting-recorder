@@ -63,7 +63,15 @@ const i18n = {
             exitConfirmTitle: '正在录音中',
             exitConfirmMessage: '正在进行录音，退出应用将停止录音。确定要退出吗？',
             cancel: '取消',
-            confirmExit: '退出'
+            confirmExit: '退出',
+            workflowStopping: '正在停止录音...',
+            workflowSaving: '正在保存录音...',
+            workflowTranscribing: '正在转写...',
+            workflowGeneratingSummary: '正在生成纪要...',
+            workflowOrganizing: '正在整理录音...',
+            toastRecordingStopped: '录音已停止，正在转写...',
+            toastTranscriptionComplete: '转写完成，正在生成纪要...',
+            loadingGenerating: '生成中...'
         },
         en: {
             appTitle: 'Auto Meeting Minutes',
@@ -123,7 +131,15 @@ const i18n = {
             exitConfirmTitle: 'Recording in Progress',
             exitConfirmMessage: 'Recording is in progress. Exiting will stop the recording. Are you sure you want to exit?',
             cancel: 'Cancel',
-            confirmExit: 'Exit'
+            confirmExit: 'Exit',
+            workflowStopping: 'Stopping recording...',
+            workflowSaving: 'Saving recording...',
+            workflowTranscribing: 'Transcribing...',
+            workflowGeneratingSummary: 'Generating summary...',
+            workflowOrganizing: 'Organizing recording...',
+            toastRecordingStopped: 'Recording stopped, transcribing...',
+            toastTranscriptionComplete: 'Transcription complete, generating summary...',
+            loadingGenerating: 'Generating...'
         }
     },
     

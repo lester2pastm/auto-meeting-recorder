@@ -115,6 +115,15 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function getLoadingMarkup(message) {
+    return `
+        <div class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>${message}</p>
+        </div>
+    `;
+}
+
 function updateSummaryContent(summary) {
     const summaryContent = document.getElementById('summaryContent');
     if (summaryContent) {
@@ -465,20 +474,15 @@ function updateRecordingButtons(state, options = {}) {
 function showLoading(message, targets = { transcript: true, summary: true }) {
     const subtitleContent = document.getElementById('subtitleContent');
     const summaryContent = document.getElementById('summaryContent');
-    
-    const loadingHTML = `
-        <div class="loading-state">
-            <div class="loading-spinner"></div>
-            <p>${message}</p>
-        </div>
-    `;
+    const loadingHTML = getLoadingMarkup(message);
     
     if (subtitleContent && targets.transcript !== false) {
         subtitleContent.innerHTML = loadingHTML;
     }
     
     if (summaryContent && targets.summary !== false) {
-        summaryContent.innerHTML = loadingHTML.replace(message, '生成中...');
+        const loadingGenerating = i18n ? i18n.get('loadingGenerating') : '生成中...';
+        summaryContent.innerHTML = loadingHTML.replace(message, loadingGenerating);
     }
 }
 

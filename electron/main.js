@@ -662,11 +662,17 @@ ipcMain.handle('get-pulseaudio-sources', async () => {
 // 读取音频文件（用于渲染进程获取录制完成的音频）
 ipcMain.handle('read-audio-file', async (event, filePath) => {
   try {
-    if (!fs.existsSync(filePath)) {
+    if (!filePath) {
+      return { success: false, error: 'Invalid file path' };
+    }
+    
+    try {
+      await fs.promises.access(filePath);
+    } catch {
       return { success: false, error: 'File not found: ' + filePath };
     }
     
-    const buffer = fs.readFileSync(filePath);
+    const buffer = await fs.promises.readFile(filePath);
     return { success: true, data: new Uint8Array(buffer) };
   } catch (error) {
     safeError('Error reading audio file:', error);

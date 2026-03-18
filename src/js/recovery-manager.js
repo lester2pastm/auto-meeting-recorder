@@ -167,17 +167,19 @@ async function clearRecoveryData() {
     stopTempSaveTimer();
     
     if (recoveryMeta) {
-        const filesToDelete = [recoveryMeta.tempFile];
+        const filesToDelete = [];
+        if (recoveryMeta.tempFile) {
+            filesToDelete.push(recoveryMeta.tempFile);
+        }
         if (recoveryMeta.systemTempFile) {
             filesToDelete.push(recoveryMeta.systemTempFile);
         }
         
-        for (const filePath of filesToDelete) {
-            await window.electronAPI.deleteFile(filePath);
+        if (filesToDelete.length > 0) {
+            await Promise.all(filesToDelete.map(filePath => window.electronAPI.deleteFile(filePath)));
         }
     }
     
-    // 删除元数据文件
     await window.electronAPI.deleteRecoveryMeta();
     
     recoveryMeta = null;
