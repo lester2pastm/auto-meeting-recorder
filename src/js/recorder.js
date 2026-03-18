@@ -478,8 +478,6 @@ async function stopLinuxRecording() {
 
         await window.electronAPI.stopFFmpegRecording();
 
-        await new Promise(resolve => setTimeout(resolve, 500));
-
         const readResult = await window.electronAPI.readAudioFile(linuxRecordingPaths.output);
         if (!readResult.success) {
             throw new Error('读取音频文件失败: ' + readResult.error);

@@ -261,7 +261,7 @@ async function handleStopRecording() {
     try {
         stopBtn.classList.add('btn-loading');
         stopBtn.disabled = true;
-        updateRecordingWorkflowState(true, '正在停止录音...');
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowStopping') : '正在停止录音...');
         
         const currentDuration = getRecordingDuration();
         setLastRecordingDuration(currentDuration);
@@ -271,10 +271,10 @@ async function handleStopRecording() {
             setAudioFileReadyCallback(async (audioBlob) => {
                 try {
                     if (audioBlob) {
-                        updateRecordingWorkflowState(true, '正在保存录音...');
+                        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowSaving') : '正在保存录音...');
                         const meeting = await saveEmptyMeetingRecord(audioBlob);
-                        updateRecordingWorkflowState(true, '正在转写...');
-                        showToast('录音已停止，正在转写...', 'info');
+                        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
+                        showToast(i18n ? i18n.get('toastRecordingStopped') : '录音已停止，正在转写...', 'info');
                         await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
                     } else {
                         clearRecordingWorkflowState();
@@ -299,14 +299,14 @@ async function handleStopRecording() {
         
         // 如果 audioBlob 已准备好（Linux 平台），直接处理
         if (audioBlob) {
-            updateRecordingWorkflowState(true, '正在保存录音...');
+            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowSaving') : '正在保存录音...');
             const meeting = await saveEmptyMeetingRecord(audioBlob);
-            updateRecordingWorkflowState(true, '正在转写...');
-            showToast('录音已停止，正在转写...', 'info');
+            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
+            showToast(i18n ? i18n.get('toastRecordingStopped') : '录音已停止，正在转写...', 'info');
             await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
         } else {
             shouldKeepBusyState = true;
-            updateRecordingWorkflowState(true, '正在整理录音...');
+            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowOrganizing') : '正在整理录音...');
         }
     } catch (error) {
         console.error('Failed to stop recording:', error);
@@ -348,7 +348,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             return;
         }
 
-        updateRecordingWorkflowState(true, '正在转写...');
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
         console.log('开始调用转写 API:', { url: currentSettings.sttApiUrl, model: currentSettings.sttModel });
 
         // 更新为转写中状态
@@ -370,8 +370,8 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
         }
 
         updateSubtitleContent(result.text);
-        updateRecordingWorkflowState(true, '正在生成纪要...', { transcript: false, summary: true });
-        showToast('转写完成，正在生成纪要...', 'info');
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowGeneratingSummary') : '正在生成纪要...', { transcript: false, summary: true });
+        showToast(i18n ? i18n.get('toastTranscriptionComplete') : '转写完成，正在生成纪要...', 'info');
 
         // 保存当前转写文本，用于刷新纪要
         currentTranscript = result.text;
