@@ -499,7 +499,8 @@ function updateRecordingButtons(state, options = {}) {
 function showLoading(message, targets = { transcript: true, summary: true }) {
     const subtitleContent = document.getElementById('subtitleContent');
     const summaryContent = document.getElementById('summaryContent');
-    const loadingHTML = getLoadingMarkup(message);
+    const transcriptMessage = targets.transcriptMessage || message;
+    const loadingHTML = getLoadingMarkup(transcriptMessage);
     
     if (subtitleContent && targets.transcript !== false) {
         subtitleContent.innerHTML = loadingHTML;
@@ -507,7 +508,8 @@ function showLoading(message, targets = { transcript: true, summary: true }) {
     
     if (summaryContent && targets.summary !== false) {
         const loadingGenerating = i18n ? i18n.get('loadingGenerating') : '生成中...';
-        summaryContent.innerHTML = loadingHTML.replace(message, loadingGenerating);
+        const summaryMessage = targets.summaryMessage || loadingGenerating;
+        summaryContent.innerHTML = getLoadingMarkup(summaryMessage);
     }
 }
 
