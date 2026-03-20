@@ -20,6 +20,136 @@ async function fetchWithTimeout(url, options, timeout = 300000) {
     }
 }
 
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableSummaryStatus(status) {
+    return status === 429 || status >= 500;
+}
+
+function isRetryableSummaryError(error) {
+    if (!error) {
+        return false;
+    }
+
+    if (typeof error.status === 'number') {
+        return isRetryableSummaryStatus(error.status);
+    }
+
+    return error.name === 'AbortError' ||
+        error.name === 'TypeError' ||
+        error.message === 'Failed to fetch' ||
+        error.message.includes('net::ERR_') ||
+        error.message.includes('请求超时');
+}
+
+function getI18nValue(key, replacements = {}) {
+    let i18nInstance = null;
+
+    if (typeof window !== 'undefined' && window.i18n && typeof window.i18n.get === 'function') {
+        i18nInstance = window.i18n;
+    } else if (typeof require === 'function') {
+        try {
+            i18nInstance = require('./i18n');
+        } catch (error) {
+            i18nInstance = null;
+        }
+    }
+
+    let value = i18nInstance && typeof i18nInstance.get === 'function'
+        ? i18nInstance.get(key)
+        : key;
+
+    Object.keys(replacements).forEach((placeholder) => {
+        value = value.replace(`{${placeholder}}`, replacements[placeholder]);
+    });
+
+    return value;
+}
+
+function getSummaryRetryProgressLabel(error) {
+    if (!error || !error.message) {
+        return getI18nValue('summaryRetryGenericLabel');
+    }
+
+    if (error.message.includes('请求超时')) {
+        return getI18nValue('summaryRetryTimeoutLabel');
+    }
+
+    if (error.message === 'Failed to fetch' ||
+        error.message.includes('net::ERR_') ||
+        error.name === 'TypeError') {
+        return getI18nValue('summaryRetryNetworkLabel');
+    }
+
+    return getI18nValue('summaryRetryGenericLabel');
+}
+
+function getSummaryRetryExhaustedMessage(error) {
+    const progressLabel = getSummaryRetryProgressLabel(error);
+
+    if (progressLabel === getI18nValue('summaryRetryTimeoutLabel')) {
+        return getI18nValue('summaryRetryExhaustedTimeout');
+    }
+
+    if (progressLabel === getI18nValue('summaryRetryNetworkLabel')) {
+        return getI18nValue('summaryRetryExhaustedNetwork');
+    }
+
+    return getI18nValue('summaryRetryExhaustedGeneric');
+}
+
+function getTranscriptionRetryProgressLabel(error) {
+    if (!error || !error.message) {
+        return getI18nValue('transcriptionRetryGenericLabel');
+    }
+
+    if (error.message.includes('请求超时')) {
+        return getI18nValue('transcriptionRetryTimeoutLabel');
+    }
+
+    if (error.message === 'Failed to fetch' ||
+        error.message.includes('网络连接失败') ||
+        error.message.includes('net::ERR_') ||
+        error.name === 'TypeError') {
+        return getI18nValue('transcriptionRetryNetworkLabel');
+    }
+
+    return getI18nValue('transcriptionRetryGenericLabel');
+}
+
+function getTranscriptionRetryProgressMessage(error, attempt, maxAttempts) {
+    return getI18nValue('transcriptionRetryProgressTemplate', {
+        label: getTranscriptionRetryProgressLabel(error),
+        attempt: String(attempt),
+        maxAttempts: String(maxAttempts)
+    });
+}
+
+function getTranscriptionRetryExhaustedMessage(error) {
+    const progressLabel = getTranscriptionRetryProgressLabel(error);
+
+    if (progressLabel === getI18nValue('transcriptionRetryTimeoutLabel')) {
+        return getI18nValue('transcriptionRetryExhaustedTimeout');
+    }
+
+    if (progressLabel === getI18nValue('transcriptionRetryNetworkLabel')) {
+        return getI18nValue('transcriptionRetryExhaustedNetwork');
+    }
+
+    return getI18nValue('transcriptionRetryExhaustedGeneric');
+}
+
+async function parseSummaryError(response) {
+    try {
+        const errorData = await response.json();
+        return errorData.error?.message || errorData.message || `生成失败: ${response.status}`;
+    } catch (error) {
+        return `生成失败: ${response.status}`;
+    }
+}
+
 async function testSttApi(apiUrl, apiKey, model = 'whisper-1') {
     try {
         const formData = new FormData();
@@ -71,7 +201,7 @@ async function testSummaryApi(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     }
 }
 
-async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null) {
+async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null, onProgress = null) {
     try {
         console.log('开始转写音频:', { apiUrl, model, blobSize: audioBlob.size, blobType: audioBlob.type });
 
@@ -85,7 +215,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             // 检查是否超过限制
             if (sizeMB > 50) {
                 console.log('文件大小超过 50MB 限制，使用分段转写...');
-                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath);
+                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
             }
             
             // 获取音频时长
@@ -97,7 +227,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             
             if (durationMinutes > 60) {
                 console.log('音频时长超过 60 分钟限制，使用分段转写...');
-                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath);
+                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
             }
             
             // 不超过限制，直接使用原始 webm 格式
@@ -465,7 +595,7 @@ async function audioBufferToWav(audioBuffer) {
 }
 
 // 分段转写音频
-async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null) {
+async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null, onProgress = null) {
     // 直接使用原始 webm，不需要转换为 WAV
     const sizeMB = audioBlob.size / (1024 * 1024);
     
@@ -506,6 +636,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     // 逐个转写每个片段
     const transcripts = [];
     const totalSegments = segmentPaths.length || segments.length;
+    let lastFailedMessage = '';
 
     for (let i = 0; i < totalSegments; i++) {
         console.log(`转写片段 ${i + 1}/${totalSegments}...`);
@@ -517,7 +648,10 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
         const maxRetries = 2;
         while (!result.success && retryCount < maxRetries) {
             retryCount++;
-            console.log(`片段 ${i + 1} 转写失败，${retryCount}/${maxRetries} 次重试...`);
+            console.log(getTranscriptionRetryProgressMessage(result, retryCount + 1, maxRetries + 1));
+            if (typeof onProgress === 'function') {
+                onProgress(getTranscriptionRetryProgressMessage(result, retryCount + 1, maxRetries + 1));
+            }
             await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
             result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, calculatedTimeout * 2);
         }
@@ -526,12 +660,13 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
             transcripts.push(result.text);
             console.log(`片段 ${i + 1} 转写完成`);
         } else {
-            console.error(`片段 ${i + 1} 转写失败:`, result.message);
+            lastFailedMessage = getTranscriptionRetryExhaustedMessage(result);
+            console.error(`片段 ${i + 1} 转写失败:`, lastFailedMessage);
         }
     }
     
     if (transcripts.length === 0) {
-        return { success: false, message: '所有片段转写失败' };
+        return { success: false, message: lastFailedMessage || getI18nValue('transcriptionRetryExhaustedGeneric') };
     }
     
     if (segmentPaths.length > 0 && window.electronAPI && typeof window.electronAPI.deleteFile === 'function') {
@@ -672,7 +807,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout
     }
 }
 
-async function generateSummary(transcript, template, apiUrl, apiKey, model = 'gpt-3.5-turbo') {
+async function generateSummary(transcript, template, apiUrl, apiKey, model = 'gpt-3.5-turbo', onProgress = null) {
     try {
         const prompt = `请根据以下会议转录内容，按照指定的模板格式生成会议纪要：
 
@@ -684,30 +819,64 @@ ${transcript}
 
 请严格按照模板格式输出会议纪要，保持Markdown格式。`;
 
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'user', content: prompt }
-                ],
-                temperature: 0.7,
-                max_tokens: 2000
-            })
-        });
+        const maxAttempts = 3;
+        const requestTimeout = 15000;
+        const maxBackoff = 2000;
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || `生成失败: ${response.status}`);
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const response = await fetchWithTimeout(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            { role: 'user', content: prompt }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 2000
+                    })
+                }, requestTimeout);
+
+                if (!response.ok) {
+                    const error = new Error(await parseSummaryError(response));
+                    error.status = response.status;
+                    throw error;
+                }
+
+                const data = await response.json();
+                const summary = data.choices[0].message.content;
+                return { success: true, summary };
+            } catch (error) {
+                const shouldRetry = attempt < maxAttempts && isRetryableSummaryError(error);
+
+                if (!shouldRetry) {
+                    if (attempt === maxAttempts && isRetryableSummaryError(error)) {
+                        const exhaustedError = new Error(getSummaryRetryExhaustedMessage(error));
+                        exhaustedError.status = error.status;
+                        throw exhaustedError;
+                    }
+
+                    throw error;
+                }
+
+                const nextAttempt = attempt + 1;
+                if (typeof onProgress === 'function') {
+                    const progressLabel = getSummaryRetryProgressLabel(error);
+                    onProgress(getI18nValue('summaryRetryProgressTemplate', {
+                        label: progressLabel,
+                        attempt: String(nextAttempt),
+                        maxAttempts: String(maxAttempts)
+                    }));
+                }
+
+                const backoff = Math.min(1000 * attempt, maxBackoff);
+                await delay(backoff);
+            }
         }
-
-        const data = await response.json();
-        const summary = data.choices[0].message.content;
-        return { success: true, summary };
     } catch (error) {
         console.error('Summary generation error:', error);
         let userMessage = error.message;
@@ -773,6 +942,7 @@ if (typeof module !== 'undefined' && module.exports) {
         transcribeAudio,
         transcribeAudioSegments,
         transcribeSingleSegment,
+        generateSummary,
         calculateSegmentCount,
         getAudioDuration,
         splitAudioByFilePath
