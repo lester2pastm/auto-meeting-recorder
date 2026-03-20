@@ -35,6 +35,19 @@ describe('UI loading state targeting', () => {
     expect(document.getElementById('summaryContent').textContent).toContain('生成中');
   });
 
+  test('showLoading should allow a stage-specific summary message', () => {
+    const ui = require('../../src/js/ui');
+
+    ui.showLoading('正在识别录音内容...', {
+      transcript: true,
+      summary: true,
+      summaryMessage: '转写完成后自动生成纪要...'
+    });
+
+    expect(document.getElementById('subtitleContent').textContent).toContain('正在识别录音内容');
+    expect(document.getElementById('summaryContent').textContent).toContain('转写完成后自动生成纪要');
+  });
+
   test('copyToClipboard should prefer Electron clipboard bridge when available', async () => {
     window.electronAPI = {
       copyText: jest.fn().mockResolvedValue(undefined)

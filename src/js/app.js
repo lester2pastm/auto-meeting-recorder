@@ -342,13 +342,23 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
     try {
         console.log('处理录音, meetingId:', meetingId, '当前设置:', currentSettings);
 
+        const transcriptLoadingTargets = {
+            transcript: true,
+            summary: true,
+            summaryMessage: i18n ? i18n.get('workflowSummaryPending') : '转写完成后自动生成纪要...'
+        };
+
         if (!currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
             console.error('API 未配置:', { url: currentSettings.sttApiUrl, key: currentSettings.sttApiKey ? '已设置' : '未设置' });
             showToast('请先配置语音识别API', 'error');
             return;
         }
 
-        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
+        updateRecordingWorkflowState(
+            true,
+            i18n ? i18n.get('workflowTranscribingDetail') : '正在识别录音内容...',
+            transcriptLoadingTargets
+        );
         console.log('开始调用转写 API:', { url: currentSettings.sttApiUrl, model: currentSettings.sttModel });
 
         // 更新为转写中状态
@@ -356,7 +366,14 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             transcriptStatus: TRANSCRIPT_STATUS.TRANSCRIBING 
         });
 
-        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel, audioFilePath);
+        const result = await transcribeAudio(
+            audioBlob,
+            currentSettings.sttApiUrl,
+            currentSettings.sttApiKey,
+            currentSettings.sttModel,
+            audioFilePath,
+            (message) => updateRecordingWorkflowState(true, message, transcriptLoadingTargets)
+        );
 
         console.log('转写结果:', result);
 
@@ -370,7 +387,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
         }
 
         updateSubtitleContent(result.text);
-        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowGeneratingSummary') : '正在生成纪要...', { transcript: false, summary: true });
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowPreparingSummary') : '正在整理转写内容...', { transcript: false, summary: true });
         showToast(i18n ? i18n.get('toastTranscriptionComplete') : '转写完成，正在生成纪要...', 'info');
 
         // 保存当前转写文本，用于刷新纪要
@@ -401,11 +418,20 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
     let summary = '';
 
     try {
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowGeneratingSummary') : '正在生成会议纪要...', { transcript: false, summary: true });
+
         if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
             console.log('[App] Summary API not configured, skipping summary generation');
             showToast('未配置纪要生成API，仅保存转写内容', 'info');
         } else {
-            const result = await generateSummary(transcript, currentSettings.summaryTemplate, currentSettings.summaryApiUrl, currentSettings.summaryApiKey, currentSettings.summaryModel);
+            const result = await generateSummary(
+                transcript,
+                currentSettings.summaryTemplate,
+                currentSettings.summaryApiUrl,
+                currentSettings.summaryApiKey,
+                currentSettings.summaryModel,
+                (message) => updateRecordingWorkflowState(true, message, { transcript: false, summary: true })
+            );
 
             if (!result.success) {
                 console.log('[App] Summary generation failed:', result.message);
