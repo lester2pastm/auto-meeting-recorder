@@ -1,7 +1,7 @@
 # 自动会议纪要
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0.0-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.6.1-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -162,9 +162,9 @@
 
 | 平台 | 下载链接 |
 |------|----------|
-| Windows | [AutoMeetingRecorder-2.0.0-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-2.0.0-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-2.0.0-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Windows | [AutoMeetingRecorder-2.6.1-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| macOS | [AutoMeetingRecorder-2.6.1-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Linux | [AutoMeetingRecorder-2.6.1-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
 
 **从源码构建**
 
