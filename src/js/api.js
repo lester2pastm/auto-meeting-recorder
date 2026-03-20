@@ -238,7 +238,13 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
         return { success: true, text: transcriptText };
     } catch (error) {
         console.error('Transcription error:', error);
-        return { success: false, message: error.message };
+        let userMessage = error.message;
+        if (error.message === 'Failed to fetch' || 
+            error.message.includes('net::ERR_') ||
+            error.name === 'TypeError') {
+            userMessage = '网络连接失败，请检查网络或代理设置';
+        }
+        return { success: false, message: userMessage };
     }
 }
 
@@ -656,7 +662,13 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout
         return { success: true, text: transcriptText };
     } catch (error) {
         console.error('单片段转写错误:', error);
-        return { success: false, message: error.message };
+        let userMessage = error.message;
+        if (error.message === 'Failed to fetch' || 
+            error.message.includes('net::ERR_') ||
+            error.name === 'TypeError') {
+            userMessage = '网络连接失败，请检查网络或代理设置';
+        }
+        return { success: false, message: userMessage };
     }
 }
 
@@ -698,7 +710,13 @@ ${transcript}
         return { success: true, summary };
     } catch (error) {
         console.error('Summary generation error:', error);
-        return { success: false, message: error.message };
+        let userMessage = error.message;
+        if (error.message === 'Failed to fetch' || 
+            error.message.includes('net::ERR_') ||
+            error.name === 'TypeError') {
+            userMessage = '网络连接失败，请检查网络或代理设置';
+        }
+        return { success: false, message: userMessage };
     }
 }
 
