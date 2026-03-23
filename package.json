@@ -67,7 +67,7 @@
     },
     "linux": {
       "target": "AppImage",
-      "artifactName": "${productName}-${version}-linux.${ext}",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
       "category": "Office"
     },
     "publish": null
