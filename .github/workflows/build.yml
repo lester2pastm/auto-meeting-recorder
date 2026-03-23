@@ -158,8 +158,8 @@ jobs:
         files: |
           artifacts/windows-installer/*.exe
           artifacts/macos-installer/*.dmg
-          artifacts/linux-x64-installer/*.AppImage
-          artifacts/linux-arm64-installer/*.AppImage
+          artifacts/linux-x64-installer/*-linux-x64.AppImage
+          artifacts/linux-arm64-installer/*-linux-arm64.AppImage
         draft: false
         prerelease: false
         generate_release_notes: true
