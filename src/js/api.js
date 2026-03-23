@@ -1,6 +1,6 @@
 // 带超时的 fetch 封装函数（用于大文件上传）
-// 默认 5 分钟超时，支持音频转写等大文件操作
-async function fetchWithTimeout(url, options, timeout = 300000) {
+// 默认 10 分钟超时，支持音频转写等大文件操作
+async function fetchWithTimeout(url, options, timeout = 600000) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
@@ -605,7 +605,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     console.log(`音频信息: ${durationMinutes.toFixed(2)}分钟, ${sizeMB.toFixed(2)}MB`);
     
-    const calculatedTimeout = Math.max(300000, Math.ceil(durationMinutes * 60 * 1000));
+    const calculatedTimeout = Math.max(600000, Math.ceil(durationMinutes * 60 * 1000));
     console.log(`转写超时时间: ${(calculatedTimeout / 1000 / 60).toFixed(1)}分钟`);
     
     // 检查是否需要分割
@@ -713,7 +713,7 @@ async function getAudioDurationFallback(audioBlob) {
 }
 
 // 转写单个音频片段
-async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout = 300000) {
+async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout = 600000) {
     try {
         const isBailian = apiUrl.includes('bailian') || apiUrl.includes('dashscope.aliyuncs.com/api/v1');
         const isDashScopeCompatible = apiUrl.includes('dashscope') && apiUrl.includes('compatible-mode');

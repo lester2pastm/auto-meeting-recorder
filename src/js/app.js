@@ -1,5 +1,6 @@
 let currentSettings = null;
 let currentMeetingId = null;
+let currentAudioBlob = null;
 
 const TRANSCRIPT_STATUS = {
     PENDING: 'pending',
@@ -178,6 +179,7 @@ function setupEventListeners() {
     // 音频上传按钮
     document.getElementById('btnUploadAudio').addEventListener('click', handleUploadAudioClick);
     document.getElementById('audioFileInput').addEventListener('change', handleAudioFileSelect);
+    document.getElementById('btnRetryTranscription').addEventListener('click', handleRetryTranscription);
     
     // 刷新纪要按钮
     document.getElementById('btnRefreshSummary').addEventListener('click', handleRefreshSummary);
@@ -382,11 +384,25 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             await updateMeeting(meetingId, { 
                 transcriptStatus: TRANSCRIPT_STATUS.FAILED 
             });
+            
+            // 在全文区域显示清晰错误提示
+            let errorHint = '转写失败，请重新转写';
+            if (result.message && (result.message.includes('超时') || result.message.includes('网络') || result.message.includes('连接'))) {
+                errorHint = '网络不稳定，转写失败，请重新转写';
+            }
+            updateSubtitleContent(errorHint);
+            
+            // 保存音频blob和meetingId用于重试
+            currentAudioBlob = audioBlob;
+            currentMeetingId = meetingId;
+            showRetryTranscriptionButton();
+            
             showToast('转写失败: ' + result.message, 'error');
             return;
         }
 
         updateSubtitleContent(result.text);
+        hideRetryTranscriptionButton();
         updateRecordingWorkflowState(true, i18n ? i18n.get('workflowPreparingSummary') : '正在整理转写内容...', { transcript: false, summary: true });
         showToast(i18n ? i18n.get('toastTranscriptionComplete') : '转写完成，正在生成纪要...', 'info');
 
@@ -850,6 +866,50 @@ async function handleAudioFileSelect(event) {
     }
 }
 
+function showRetryTranscriptionButton() {
+    const btn = document.getElementById('btnRetryTranscription');
+    if (btn) btn.style.display = 'inline-flex';
+}
+
+function hideRetryTranscriptionButton() {
+    const btn = document.getElementById('btnRetryTranscription');
+    if (btn) btn.style.display = 'none';
+}
+
+async function handleRetryTranscription() {
+    if (!currentAudioBlob) {
+        showToast('没有可重新转写的音频', 'warning');
+        return;
+    }
+    
+    if (!currentSettings || !currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
+        showToast(i18n ? i18n.get('testFailed') : '请先配置语音识别API', 'error');
+        return;
+    }
+    
+    try {
+        showLoading(i18n ? i18n.get('audioTranscribing') : '正在重新转写...');
+        hideRetryTranscriptionButton();
+        
+        const result = await transcribeAudio(currentAudioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel);
+        
+        if (!result.success) {
+            showRetryTranscriptionButton();
+            showToast((i18n ? i18n.get('testFailed') : '转写失败') + ': ' + result.message, 'error');
+            hideLoading();
+            return;
+        }
+        
+        hideRetryTranscriptionButton();
+        updateSubtitleContent(result.text);
+        showToast(i18n ? i18n.get('toastTranscriptionComplete') : '转写完成', 'success');
+    } catch (error) {
+        showRetryTranscriptionButton();
+        showToast('重新转写失败: ' + error.message, 'error');
+        hideLoading();
+    }
+}
+
 async function processAudioFile(file) {
     console.log('[App] processAudioFile called, currentSettings:', currentSettings ? { 
         hasSttUrl: !!currentSettings.sttApiUrl, 
@@ -867,6 +927,7 @@ async function processAudioFile(file) {
     try {
         // 将 File 对象转换为 Blob
         const audioBlob = new Blob([await file.arrayBuffer()], { type: file.type });
+        currentAudioBlob = audioBlob;
         
         // 为上传的文件设置一个标识性的 duration
         setLastRecordingDuration('上传音频');
@@ -883,10 +944,15 @@ async function processAudioFile(file) {
         console.log('转写结果:', result);
 
         if (!result.success) {
+            // 转写失败，显示重试按钮
+            showRetryTranscriptionButton();
             showToast((i18n ? i18n.get('testFailed') : '转写失败') + ': ' + result.message, 'error');
             hideLoading();
             return;
         }
+        
+        // 转写成功，隐藏重试按钮
+        hideRetryTranscriptionButton();
 
         updateSubtitleContent(result.text);
         showToast(i18n ? i18n.get('generatingSummary') : '转写完成，正在生成纪要...', 'info');
