@@ -68,41 +68,81 @@ jobs:
         path: dist/*.dmg
         retention-days: 7
 
-  build-linux:
+  build-linux-x64:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'npm'
-        
+
     - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y libarchive-tools rpm
-        
+
     - name: Install dependencies
       run: npm ci
-      
-    - name: Build Linux app
+
+    - name: Build Linux x64 app
       run: npm run build:linux
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Upload Linux artifact
+
+    - name: Upload Linux x64 artifact
       uses: actions/upload-artifact@v4
       with:
-        name: linux-installer
+        name: linux-x64-installer
+        path: dist/*.AppImage
+        retention-days: 7
+
+  build-linux-arm64:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xdg-utils libatspi2.0-dev libsecret-1-dev libdbus-1-dev
+        sudo apt-get install -y libarchive-tools rpm
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build Linux ARM64 app
+      run: npm run build:linux -- --arm64
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        AR: aarch64-linux-gnu-ar
+        CC: aarch64-linux-gnu-gcc
+        CXX: aarch64-linux-gnu-g++
+        CFLAGS: -DGklkiniHQ_remove_GDK_pi_Context=1
+        CXXFLAGS: -DGklkiniHQ_remove_GDK_pi_Context=1
+        LD: aarch64-linux-gnu-ld
+
+    - name: Upload Linux ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arm64-installer
         path: dist/*.AppImage
         retention-days: 7
 
   release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows, build-macos, build-linux-x64, build-linux-arm64]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
@@ -118,7 +158,8 @@ jobs:
         files: |
           artifacts/windows-installer/*.exe
           artifacts/macos-installer/*.dmg
-          artifacts/linux-installer/*.AppImage
+          artifacts/linux-x64-installer/*.AppImage
+          artifacts/linux-arm64-installer/*.AppImage
         draft: false
         prerelease: false
         generate_release_notes: true
