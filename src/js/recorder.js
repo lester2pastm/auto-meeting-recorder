@@ -116,11 +116,27 @@ async function startLinuxRecording() {
         };
         
         console.log('[Recorder] Linux recording paths:', linuxRecordingPaths);
-        
+
         // 创建音频上下文
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // 1. 获取麦克风音频（用于录制和可视化）
+
+        // 1. 检测并修复 PulseAudio 输入设备（ARM Linux 常见问题）
+        if (window.electronAPI && window.electronAPI.checkPulseAudioInput) {
+            const checkResult = await window.electronAPI.checkPulseAudioInput();
+            if (checkResult.success && !checkResult.hasInput) {
+                console.log('[Recorder] 检测到无 PulseAudio 输入设备，尝试自动修复...');
+                if (window.electronAPI.fixPulseAudioInput) {
+                    const fixResult = await window.electronAPI.fixPulseAudioInput();
+                    if (fixResult.success) {
+                        console.log('[Recorder] PulseAudio 输入设备修复成功');
+                    } else {
+                        console.warn('[Recorder] PulseAudio 输入设备修复失败:', fixResult.error);
+                    }
+                }
+            }
+        }
+
+        // 3. 获取麦克风音频（用于录制和可视化）
         microphoneStream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 echoCancellation: true,
@@ -128,15 +144,15 @@ async function startLinuxRecording() {
                 autoGainControl: true
             }
         });
-        
-        // 2. 设置录音状态（必须在初始化波形可视化之前）
+
+        // 4. 设置录音状态（必须在初始化波形可视化之前）
         isRecording = true;
         isPaused = false;
         recordingStartTime = Date.now();
         recordingPausedTime = 0;
         startTimer();
-        
-        // 3. 获取系统音频用于可视化（通过 Web Audio API 捕获 monitor 设备）
+
+        // 5. 获取系统音频用于可视化（通过 Web Audio API 捕获 monitor 设备）
         let visualizerStream = microphoneStream;
         try {
             // 尝试获取系统音频 - 在 Linux 上需要使用 desktopCapturer

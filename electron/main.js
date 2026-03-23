@@ -674,6 +674,66 @@ ipcMain.handle('get-pulseaudio-sources', async () => {
   }
 });
 
+// 检测 PulseAudio 是否有可用的输入设备（麦克风）
+ipcMain.handle('check-pulseaudio-input', async () => {
+  if (!isLinux) {
+    return { success: true, hasInput: true };
+  }
+
+  try {
+    const { stdout } = await execAsync('pactl list sources short');
+    const lines = stdout.split('\n');
+
+    // 检查是否有非 monitor 的输入设备
+    for (const line of lines) {
+      if (line.trim()) {
+        const parts = line.split('\t');
+        if (parts.length >= 2) {
+          const sourceName = parts[1];
+          // monitor 设备是输出设备，不是输入设备
+          if (!sourceName.includes('.monitor')) {
+            return { success: true, hasInput: true };
+          }
+        }
+      }
+    }
+
+    return { success: true, hasInput: false };
+  } catch (error) {
+    safeWarn('Failed to check PulseAudio input:', error.message);
+    return { success: true, hasInput: false, error: error.message };
+  }
+});
+
+// 尝试自动修复 PulseAudio 输入设备（加载 module-alsa-source）
+ipcMain.handle('fix-pulseaudio-input', async (event, { device = 'hw:0', sourceName = 'mic' } = {}) => {
+  if (!isLinux) {
+    return { success: false, error: 'Only supported on Linux' };
+  }
+
+  try {
+    // 先检查是否已经加载了 module-alsa-source
+    const { stdout: listOutput } = await execAsync('pactl list modules short');
+    if (listOutput.includes('module-alsa-source')) {
+      safeLog('module-alsa-source already loaded');
+      return { success: true, alreadyLoaded: true };
+    }
+
+    // 加载 module-alsa-source
+    const loadCmd = `pactl load-module module-alsa-source device=${device} source_name=${sourceName}`;
+    safeLog('Loading PulseAudio module:', loadCmd);
+
+    const { stdout } = await execAsync(loadCmd);
+    const moduleIndex = stdout.trim();
+
+    safeLog('Loaded module-alsa-source with index:', moduleIndex);
+    return { success: true, moduleIndex };
+  } catch (error) {
+    safeWarn('Failed to fix PulseAudio input:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 // 读取音频文件（用于渲染进程获取录制完成的音频）
 ipcMain.handle('read-audio-file', async (event, filePath) => {
   try {
