@@ -1,7 +1,7 @@
 # 自动会议纪要
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.1-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.6.7-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -40,7 +40,8 @@
 ### 🎙️ **音频录制**
 - 支持麦克风和系统音频录制
 - 实时音频可视化效果，动态波形展示
-- 暂停和继续录制功能
+- Windows 和 macOS 支持暂停和继续录制
+- Linux 当前仅支持开始和停止录制
 - WebM 格式高质量音频采集
 - 支持上传现有音频文件进行转写
 
@@ -162,9 +163,9 @@
 
 | 平台 | 下载链接 |
 |------|----------|
-| Windows | [AutoMeetingRecorder-2.6.1-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-2.6.1-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-2.6.1-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Windows | [AutoMeetingRecorder-2.6.7-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| macOS | [AutoMeetingRecorder-2.6.7-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Linux | [AutoMeetingRecorder-2.6.7-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
 
 **从源码构建**
 
@@ -262,11 +263,12 @@ npx serve src
 ### 录制会议
 
 1. 点击**"开始录音"**开始捕获音频
-2. 休息时可使用**暂停**按钮
-3. 会议结束后点击**"停止录音"**
-4. 等待转录和纪要生成完成
-5. 在**会议全文**和**会议纪要**标签页之间切换查看
-6. 复制内容到剪贴板或按需导出
+2. Windows 和 macOS 可在休息时使用**暂停**按钮
+3. Linux 当前仅支持**开始录音**和**停止录音**
+4. 会议结束后点击**"停止录音"**
+5. 等待转录和纪要生成完成
+6. 在**会议全文**和**会议纪要**标签页之间切换查看
+7. 复制内容到剪贴板或按需导出
 
 ### 管理历史记录
 

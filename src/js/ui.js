@@ -464,10 +464,22 @@ function updateRecordingButtons(state, options = {}) {
     const audioBars = document.getElementById('audioBars');
     const recordingIndicator = document.getElementById('recordingIndicator');
     const isProcessing = options.isProcessing === true;
+    const isLinuxElectron = document.body?.dataset?.platform === 'linux' ||
+        (typeof window !== 'undefined' &&
+            window.electronAPI &&
+            typeof navigator !== 'undefined' &&
+            typeof navigator.platform === 'string' &&
+            navigator.platform.toLowerCase().includes('linux'));
+    const shouldShowPauseControls = !isLinuxElectron;
 
     if (state.isRecording) {
         btnStart.style.display = 'none';
-        if (state.isPaused) {
+        if (!shouldShowPauseControls) {
+            btnPause.style.display = 'none';
+            btnResume.style.display = 'none';
+            btnStop.style.display = 'inline-flex';
+            recordingIndicator.classList.add('active');
+        } else if (state.isPaused) {
             btnPause.style.display = 'none';
             btnResume.style.display = 'inline-flex';
             btnStop.style.display = 'inline-flex';

@@ -107,4 +107,28 @@ describe('UI loading state targeting', () => {
     expect(refreshBtn.disabled).toBe(true);
     expect(refreshBtn.classList.contains('btn-loading')).toBe(true);
   });
+
+  test('updateRecordingButtons should hide pause and resume controls on Linux while recording', () => {
+    document.body.innerHTML = `
+      <button id="btnStartRecording" style="display: inline-flex;"></button>
+      <button id="btnPauseRecording" style="display: none;"></button>
+      <button id="btnResumeRecording" style="display: none;"></button>
+      <button id="btnStopRecording" style="display: none;"></button>
+      <div id="audioBars"></div>
+      <div id="recordingIndicator"></div>
+    `;
+    document.body.dataset.platform = 'linux';
+
+    const ui = require('../../src/js/ui');
+
+    ui.updateRecordingButtons({
+      isRecording: true,
+      isPaused: false
+    });
+
+    expect(document.getElementById('btnStartRecording').style.display).toBe('none');
+    expect(document.getElementById('btnPauseRecording').style.display).toBe('none');
+    expect(document.getElementById('btnResumeRecording').style.display).toBe('none');
+    expect(document.getElementById('btnStopRecording').style.display).toBe('inline-flex');
+  });
 });

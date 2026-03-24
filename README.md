@@ -1,7 +1,7 @@
 # Auto Meeting Recorder
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.1-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.6.7-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -40,7 +40,8 @@
 ### 🎙️ **Audio Recording**
 - Record meeting audio with microphone and system audio support
 - Real-time audio visualization with animated waveform
-- Pause and resume recording at any time
+- Pause and resume recording on Windows and macOS
+- Linux currently supports start/stop recording only
 - High-quality audio capture in WebM format
 - Upload and process existing audio files
 
@@ -162,9 +163,9 @@
 
 | Platform | Download |
 |----------|----------|
-| Windows | [AutoMeetingRecorder-2.6.1-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-2.6.1-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-2.6.1-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Windows | [AutoMeetingRecorder-2.6.7-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| macOS | [AutoMeetingRecorder-2.6.7-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
+| Linux | [AutoMeetingRecorder-2.6.7-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
 
 **Build from Source**
 
@@ -262,11 +263,12 @@ Customize your meeting minutes template using Markdown:
 ### Recording a Meeting
 
 1. Click **"Start Recording"** to begin capturing audio
-2. Use the **Pause** button during breaks
-3. Click **"Stop Recording"** when the meeting ends
-4. Wait for transcription and summary generation
-5. Switch between **Meeting Transcript** and **Meeting Minutes** tabs
-6. Copy content to clipboard or export as needed
+2. Use the **Pause** button during breaks on Windows and macOS
+3. On Linux, recording currently supports **Start** and **Stop** only
+4. Click **"Stop Recording"** when the meeting ends
+5. Wait for transcription and summary generation
+6. Switch between **Meeting Transcript** and **Meeting Minutes** tabs
+7. Copy content to clipboard or export as needed
 
 ### Managing History
 
