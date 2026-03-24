@@ -10,6 +10,9 @@ yarn-error.log*
 dist/
 build/
 out/
+coverage/
+playwright-report/
+test-results/
 
 # Worktrees
 .worktrees/
@@ -25,6 +28,7 @@ worktrees/
 .idea/
 *.swp
 *.swo
+.trae/
 
 # OS
 .DS_Store
@@ -39,3 +43,7 @@ config.json
 .env
 .env.local
 .env.*.local
+
+# Local AI / internal collaboration notes
+CLAUDE.md
+docs/plans/
