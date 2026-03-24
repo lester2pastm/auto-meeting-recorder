@@ -1071,6 +1071,7 @@ body {
 
 .form-field input[type="text"],
 .form-field input[type="password"],
+.form-field select,
 .form-field textarea {
     width: 100%;
     padding: var(--space-3) var(--space-4);
@@ -1089,11 +1090,13 @@ body {
 }
 
 .form-field input:hover,
+.form-field select:hover,
 .form-field textarea:hover {
     border-color: var(--slate-300);
 }
 
 .form-field input:focus,
+.form-field select:focus,
 .form-field textarea:focus {
     outline: none;
     border-color: var(--accent);
@@ -1107,6 +1110,18 @@ body {
     font-family: var(--font-mono);
     font-size: 0.875rem;
     line-height: 1.6;
+}
+
+.form-help {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.form-actions {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
 }
 
 /* ============================================

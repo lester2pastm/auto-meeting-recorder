@@ -341,6 +341,60 @@
                         </div>
                     </div>
 
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <div class="settings-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                    <line x1="12" y1="19" x2="12" y2="22"/>
+                                    <path d="M16 8a4 4 0 0 1 4 4"/>
+                                    <path d="M18.5 4.5A7.5 7.5 0 0 1 22 12"/>
+                                </svg>
+                            </div>
+                            <div class="settings-title">
+                                <h3>音频源设置</h3>
+                                <p>选择录音时优先使用的麦克风和系统音频源</p>
+                            </div>
+                        </div>
+                        <div class="settings-form">
+                            <div class="form-field">
+                                <label for="preferredMicSource">麦克风源</label>
+                                <select id="preferredMicSource">
+                                    <option value="auto">自动选择（推荐）</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="preferredSystemSource">系统音频源</label>
+                                <select id="preferredSystemSource">
+                                    <option value="auto">自动选择（推荐）</option>
+                                    <option value="unavailable">当前不可用</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <div id="audioSourceStatus" class="form-help">正在检测音频源...</div>
+                            </div>
+                            <div class="form-actions">
+                                <button id="btnRefreshAudioSources" class="btn btn-outline" type="button">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="23 4 23 10 17 10"/>
+                                        <polyline points="1 20 1 14 7 14"/>
+                                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                    </svg>
+                                    <span>刷新设备列表</span>
+                                </button>
+                                <button id="btnSaveAudioSources" class="btn btn-primary" type="button">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                        <polyline points="17 21 17 13 7 13 7 21"/>
+                                        <polyline points="7 3 7 8 15 8"/>
+                                    </svg>
+                                    <span>保存音频源设置</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 模板配置 -->
                     <div class="settings-card settings-card-wide">
                         <div class="settings-card-header">
@@ -495,6 +549,7 @@
     <script src="js/i18n.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/recovery-manager.js"></script>
+    <script src="js/audio-source-settings.js"></script>
     <script src="js/recorder.js"></script>
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>

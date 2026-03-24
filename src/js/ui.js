@@ -553,18 +553,6 @@ function hideLoading() {
     }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        copyToClipboard,
-        renderMeetingDetail,
-        updateSubtitleContent,
-        updateSummaryContent,
-        showLoading,
-        hideLoading,
-        updateRecordingButtons
-    };
-}
-
 function loadSettings(settings) {
     if (!settings) return;
 
@@ -575,6 +563,8 @@ function loadSettings(settings) {
     const summaryApiKey = document.getElementById('summaryApiKey');
     const summaryModel = document.getElementById('summaryModel');
     const summaryTemplate = document.getElementById('summaryTemplate');
+    const preferredMicSource = document.getElementById('preferredMicSource');
+    const preferredSystemSource = document.getElementById('preferredSystemSource');
 
     if (sttApiUrl && settings.sttApiUrl) sttApiUrl.value = settings.sttApiUrl;
     if (sttApiKey && settings.sttApiKey) sttApiKey.value = settings.sttApiKey;
@@ -583,6 +573,8 @@ function loadSettings(settings) {
     if (summaryApiKey && settings.summaryApiKey) summaryApiKey.value = settings.summaryApiKey;
     if (summaryModel && settings.summaryModel) summaryModel.value = settings.summaryModel;
     if (summaryTemplate && settings.summaryTemplate) summaryTemplate.value = settings.summaryTemplate;
+    if (preferredMicSource && settings.preferredMicSource) preferredMicSource.value = settings.preferredMicSource;
+    if (preferredSystemSource && settings.preferredSystemSource) preferredSystemSource.value = settings.preferredSystemSource;
 }
 
 function getSettingsFromUI() {
@@ -593,8 +585,42 @@ function getSettingsFromUI() {
         summaryApiUrl: document.getElementById('summaryApiUrl').value.trim(),
         summaryApiKey: document.getElementById('summaryApiKey').value.trim(),
         summaryModel: document.getElementById('summaryModel').value.trim(),
-        summaryTemplate: document.getElementById('summaryTemplate').value.trim()
+        summaryTemplate: document.getElementById('summaryTemplate').value.trim(),
+        preferredMicSource: document.getElementById('preferredMicSource')?.value || 'auto',
+        preferredSystemSource: document.getElementById('preferredSystemSource')?.value || 'auto'
     };
+}
+
+function renderAudioSourceOptions({
+    microphoneSources = [],
+    systemSources = [],
+    selectedMicSource = 'auto',
+    selectedSystemSource = 'auto',
+    statusText = ''
+}) {
+    const micSelect = document.getElementById('preferredMicSource');
+    const systemSelect = document.getElementById('preferredSystemSource');
+    const statusEl = document.getElementById('audioSourceStatus');
+
+    const renderOptions = (selectEl, options, selectedValue) => {
+        if (!selectEl) return;
+
+        selectEl.innerHTML = options.map(option => {
+            const selectedAttr = option.id === selectedValue ? ' selected' : '';
+            return `<option value="${option.id}"${selectedAttr}>${option.label}</option>`;
+        }).join('');
+
+        if (!options.some(option => option.id === selectedValue) && options.length > 0) {
+            selectEl.value = options[0].id;
+        }
+    };
+
+    renderOptions(micSelect, microphoneSources, selectedMicSource);
+    renderOptions(systemSelect, systemSources, selectedSystemSource);
+
+    if (statusEl) {
+        statusEl.textContent = statusText;
+    }
 }
 
 const DEFAULT_TEMPLATE = `# 会议纪要
@@ -622,6 +648,21 @@ function loadDefaultTemplate() {
     if (summaryTemplate && !summaryTemplate.value) {
         summaryTemplate.value = DEFAULT_TEMPLATE;
     }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        copyToClipboard,
+        renderMeetingDetail,
+        updateSubtitleContent,
+        updateSummaryContent,
+        showLoading,
+        hideLoading,
+        updateRecordingButtons,
+        loadSettings,
+        getSettingsFromUI,
+        renderAudioSourceOptions
+    };
 }
 
 // ============================================

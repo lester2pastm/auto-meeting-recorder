@@ -4,7 +4,12 @@ const fs = require('fs');
 const Store = require('electron-store');
 const { spawn, exec } = require('child_process');
 const { promisify } = require('util');
-const { checkLinuxDependencies } = require('./linux-audio-helper');
+const {
+  checkLinuxDependencies,
+  parsePulseSourceList,
+  chooseRecordingSources,
+  getAlsaSourceLoadCandidates
+} = require('./linux-audio-helper');
 
 // 初始化配置存储
 const store = new Store();
@@ -355,57 +360,19 @@ ipcMain.handle('check-linux-dependencies', async () => {
 // 辅助函数：获取默认的 PulseAudio 设备
 async function getDefaultPulseAudioDevice(type = 'output') {
   try {
-    const { stdout } = await execAsync('pacmd list-sources');
-    const lines = stdout.split('\n');
-    let currentSource = null;
-    let defaultSource = null;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      
-      // 查找源名称
-      if (line.includes('name:')) {
-        const nameMatch = line.match(/name:\s*<([^>]+)>/);
-        if (nameMatch) {
-          currentSource = nameMatch[1];
-        }
-      }
-      
-      // 查找默认标记
-      if (line.includes('* index:') && currentSource) {
-        defaultSource = currentSource;
-      }
-    }
-    
-    // 查找第一个 monitor 设备作为系统音频源
+    const { stdout } = await execAsync('pactl list sources short');
+    const sources = parsePulseSourceList(stdout);
+    const selected = chooseRecordingSources(sources);
+
     if (type === 'output') {
-      for (const line of lines) {
-        if (line.includes('name:')) {
-          const nameMatch = line.match(/name:\s*<([^>]+)>/);
-          if (nameMatch && nameMatch[1].includes('.monitor')) {
-            return nameMatch[1].replace('.monitor', '');
-          }
-        }
-      }
+      return selected.monitor || 'default';
     }
-    
-    // 查找第一个输入设备作为麦克风源
+
     if (type === 'input') {
-      for (const line of lines) {
-        if (line.includes('name:')) {
-          const nameMatch = line.match(/name:\s*<([^>]+)>/);
-          if (nameMatch) {
-            const name = nameMatch[1];
-            // 排除 monitor 设备
-            if (!name.includes('.monitor') && name.includes('input')) {
-              return name;
-            }
-          }
-        }
-      }
+      return selected.microphone || 'default';
     }
-    
-    return defaultSource || 'default';
+
+    return 'default';
   } catch (error) {
       safeWarn('Failed to get default PulseAudio device:', error.message);
     return 'default';
@@ -413,7 +380,7 @@ async function getDefaultPulseAudioDevice(type = 'output') {
 }
 
 // 在 Linux 下使用 ffmpeg 开始录制系统音频
-ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device = null }) => {
+ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device = null, microphoneDevice: preferredMicrophoneDevice = null }) => {
   if (!isLinux) {
     return { success: false, error: 'FFmpeg system audio recording is only supported on Linux' };
   }
@@ -425,29 +392,59 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       ffmpegSystemAudioProcess = null;
     }
 
-    // 如果没有指定设备，自动检测
-    if (!device) {
-      device = await getDefaultPulseAudioDevice('output');
-      safeLog('Auto-detected system audio device:', device);
+    const { stdout } = await execAsync('pactl list sources short');
+    const sources = parsePulseSourceList(stdout);
+    const selected = chooseRecordingSources(sources);
+
+    const monitorDevice = device
+      ? (device.endsWith('.monitor') ? device : `${device}.monitor`)
+      : selected.monitor;
+    const microphoneDevice = preferredMicrophoneDevice || selected.microphone;
+
+    let args = null;
+
+    if (microphoneDevice && monitorDevice) {
+      args = [
+        '-f', 'pulse',
+        '-i', microphoneDevice,
+        '-f', 'pulse',
+        '-i', monitorDevice,
+        '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]',
+        '-map', '[aout]',
+        '-acodec', 'libopus',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '2',
+        '-y',
+        outputPath
+      ];
+    } else if (microphoneDevice) {
+      args = [
+        '-f', 'pulse',
+        '-i', microphoneDevice,
+        '-af', 'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level',
+        '-acodec', 'libopus',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '1',
+        '-y',
+        outputPath
+      ];
+    } else if (monitorDevice) {
+      args = [
+        '-f', 'pulse',
+        '-i', monitorDevice,
+        '-af', 'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level',
+        '-acodec', 'libopus',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '2',
+        '-y',
+        outputPath
+      ];
+    } else {
+      throw new Error('未检测到可用的 PulseAudio 输入源或 monitor 源');
     }
-
-    const microphoneDevice = await getDefaultPulseAudioDevice('input');
-    const monitorDevice = device.endsWith('.monitor') ? device : `${device}.monitor`;
-
-    const args = [
-      '-f', 'pulse',
-      '-i', microphoneDevice,
-      '-f', 'pulse',
-      '-i', monitorDevice,
-      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]',
-      '-map', '[aout]',
-      '-acodec', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
-      '-ac', '2',
-      '-y',
-      outputPath
-    ];
 
     safeLog('Starting ffmpeg mixed audio recording:', args.join(' '));
 
@@ -648,29 +645,78 @@ ipcMain.handle('get-pulseaudio-sources', async () => {
   }
 
   try {
-    const { stdout } = await execAsync('pacmd list-sources | grep -E "name:|device.description:"');
-    const lines = stdout.split('\n');
-    const sources = [];
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.includes('name:')) {
-        const nameMatch = line.match(/name:\s*<([^>]+)>/);
-        const descMatch = lines[i + 1] && lines[i + 1].match(/device\.description\s*=\s*"([^"]+)"/);
-        
-        if (nameMatch) {
-          sources.push({
-            name: nameMatch[1],
-            description: descMatch ? descMatch[1] : nameMatch[1]
-          });
-        }
-      }
-    }
+    const { stdout } = await execAsync('pactl list sources short');
+    const sources = parsePulseSourceList(stdout).map(source => ({
+      name: source.name,
+      description: source.name,
+      driver: source.driver,
+      state: source.state
+    }));
 
-    return { success: true, sources };
+    return { success: true, sources, selected: chooseRecordingSources(parsePulseSourceList(stdout)) };
   } catch (error) {
     safeWarn('Failed to get PulseAudio sources:', error.message);
     return { success: true, sources: [], error: error.message };
+  }
+});
+
+ipcMain.handle('get-audio-source-options', async () => {
+  if (!isLinux) {
+    return {
+      success: true,
+      platform: process.platform,
+      microphoneSources: [],
+      systemSources: [],
+      recommendedMicSource: null,
+      recommendedSystemSource: null
+    };
+  }
+
+  try {
+    const { stdout } = await execAsync('pactl list sources short');
+    const parsedSources = parsePulseSourceList(stdout);
+    const selected = chooseRecordingSources(parsedSources);
+
+    const microphoneSources = parsedSources
+      .filter(source => source.name && !source.name.includes('.monitor'))
+      .map(source => ({
+        id: source.name,
+        label: source.name,
+        description: source.name,
+        driver: source.driver,
+        state: source.state
+      }));
+
+    const systemSources = parsedSources
+      .filter(source => source.name && source.name.includes('.monitor'))
+      .map(source => ({
+        id: source.name,
+        label: source.name,
+        description: source.name,
+        driver: source.driver,
+        state: source.state
+      }));
+
+    const preferredSystem = systemSources.find(source => !source.id.includes('echo-cancel.monitor')) || systemSources[0] || null;
+
+    return {
+      success: true,
+      platform: process.platform,
+      microphoneSources,
+      systemSources,
+      recommendedMicSource: selected.microphone,
+      recommendedSystemSource: preferredSystem ? preferredSystem.id : selected.monitor
+    };
+  } catch (error) {
+    return {
+      success: true,
+      platform: process.platform,
+      microphoneSources: [],
+      systemSources: [],
+      recommendedMicSource: null,
+      recommendedSystemSource: null,
+      error: error.message
+    };
   }
 });
 
@@ -712,6 +758,12 @@ ipcMain.handle('fix-pulseaudio-input', async (event, { device = 'hw:0', sourceNa
   }
 
   try {
+    const { stdout: sourceOutput } = await execAsync('pactl list sources short');
+    const selected = chooseRecordingSources(parsePulseSourceList(sourceOutput));
+    if (selected.microphone) {
+      return { success: true, alreadyAvailable: true, sourceName: selected.microphone };
+    }
+
     // 先检查是否已经加载了 module-alsa-source
     const { stdout: listOutput } = await execAsync('pactl list modules short');
     if (listOutput.includes('module-alsa-source')) {
@@ -719,15 +771,25 @@ ipcMain.handle('fix-pulseaudio-input', async (event, { device = 'hw:0', sourceNa
       return { success: true, alreadyLoaded: true };
     }
 
-    // 加载 module-alsa-source
-    const loadCmd = `pactl load-module module-alsa-source device=${device} source_name=${sourceName}`;
-    safeLog('Loading PulseAudio module:', loadCmd);
+    const candidates = [device, ...getAlsaSourceLoadCandidates()]
+      .filter(Boolean)
+      .filter((candidate, index, list) => list.indexOf(candidate) === index);
 
-    const { stdout } = await execAsync(loadCmd);
-    const moduleIndex = stdout.trim();
+    let lastError = null;
 
-    safeLog('Loaded module-alsa-source with index:', moduleIndex);
-    return { success: true, moduleIndex };
+    for (const candidate of candidates) {
+      try {
+        const loadCmd = `pactl load-module module-alsa-source device=${candidate} source_name=${sourceName}`;
+        safeLog('Loading PulseAudio module:', loadCmd);
+        const { stdout } = await execAsync(loadCmd);
+        const moduleIndex = stdout.trim();
+        return { success: true, moduleIndex, device: candidate };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('无法加载 module-alsa-source');
   } catch (error) {
     safeWarn('Failed to fix PulseAudio input:', error.message);
     return { success: false, error: error.message };

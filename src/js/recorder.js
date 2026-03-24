@@ -59,6 +59,28 @@ async function detectPlatform() {
     return { platform: currentPlatform, isLinux: isLinuxPlatform };
 }
 
+function getSavedAudioSourceSelection() {
+    if (typeof window !== 'undefined' && typeof window.getAudioSourceSelection === 'function') {
+        return window.getAudioSourceSelection();
+    }
+
+    return {
+        settings: null,
+        state: null
+    };
+}
+
+function resolvePreferredSourceId(preferredSource, recommendedSource, sources = []) {
+    if (preferredSource && preferredSource !== 'auto' && preferredSource !== 'unavailable') {
+        const matched = sources.find(source => source.id === preferredSource || source.name === preferredSource);
+        if (matched) {
+            return preferredSource;
+        }
+    }
+
+    return recommendedSource || null;
+}
+
 async function startRecording() {
     try {
         if (window.DEBUG_AUDIO) {
@@ -114,6 +136,20 @@ async function startLinuxRecording() {
         linuxRecordingPaths = {
             output: recoveryMeta.tempFile
         };
+
+        const audioSourceSelection = getSavedAudioSourceSelection();
+        const audioSourceState = audioSourceSelection.state || {};
+        const savedSettings = audioSourceSelection.settings || {};
+        const preferredLinuxMicSource = resolvePreferredSourceId(
+            savedSettings.preferredMicSource,
+            audioSourceState.recommendedMicSource,
+            audioSourceState.microphoneSources || []
+        );
+        const preferredLinuxSystemSource = resolvePreferredSourceId(
+            savedSettings.preferredSystemSource,
+            audioSourceState.recommendedSystemSource,
+            audioSourceState.systemSources || []
+        );
         
         console.log('[Recorder] Linux recording paths:', linuxRecordingPaths);
 
@@ -121,7 +157,7 @@ async function startLinuxRecording() {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
         // 1. 检测并修复 PulseAudio 输入设备（ARM Linux 常见问题）
-        if (window.electronAPI && window.electronAPI.checkPulseAudioInput) {
+        if (window.electronAPI && window.electronAPI.checkPulseAudioInput && !preferredLinuxMicSource) {
             const checkResult = await window.electronAPI.checkPulseAudioInput();
             if (checkResult.success && !checkResult.hasInput) {
                 console.log('[Recorder] 检测到无 PulseAudio 输入设备，尝试自动修复...');
@@ -200,22 +236,10 @@ async function startLinuxRecording() {
         // 4. 初始化波形可视化（使用合并后的音频流）
         await initWaveform(visualizerStream);
         
-        const sourcesResult = await window.electronAPI.getPulseAudioSources();
-        
-        let systemDevice = 'default';
-        if (sourcesResult.success && sourcesResult.sources.length > 0) {
-            // 查找系统音频 monitor（通常是输出设备的 monitor）
-            const monitorSource = sourcesResult.sources.find(s => 
-                s.name.includes('.monitor') || s.description.toLowerCase().includes('monitor')
-            );
-            if (monitorSource) {
-                systemDevice = monitorSource.name.replace('.monitor', '');
-            }
-        }
-        
         const sysResult = await window.electronAPI.startFFmpegSystemAudio(
             linuxRecordingPaths.output,
-            systemDevice
+            preferredLinuxSystemSource,
+            preferredLinuxMicSource
         );
         if (!sysResult.success) {
             throw new Error('启动 Linux 录音失败: ' + sysResult.error);
@@ -240,15 +264,38 @@ async function startStandardRecording() {
     }
     
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const audioSourceSelection = getSavedAudioSourceSelection();
+    const savedSettings = audioSourceSelection.settings || {};
+    const preferredMicDeviceId = savedSettings.preferredMicSource &&
+        savedSettings.preferredMicSource !== 'auto' &&
+        savedSettings.preferredMicSource !== 'unavailable'
+        ? savedSettings.preferredMicSource
+        : null;
+
+    const microphoneConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+    };
 
     // 获取麦克风音频
-    microphoneStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
+    try {
+        microphoneStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                ...microphoneConstraints,
+                ...(preferredMicDeviceId ? { deviceId: { exact: preferredMicDeviceId } } : {})
+            }
+        });
+    } catch (error) {
+        if (!preferredMicDeviceId) {
+            throw error;
         }
-    });
+
+        console.warn('[Recorder] Preferred microphone device unavailable, fallback to default:', preferredMicDeviceId);
+        microphoneStream = await navigator.mediaDevices.getUserMedia({
+            audio: microphoneConstraints
+        });
+    }
 
     // 获取系统音频（通过 Electron desktopCapturer）
     let systemAudioStream;

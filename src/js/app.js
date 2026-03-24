@@ -1,6 +1,7 @@
 let currentSettings = null;
 let currentMeetingId = null;
 let currentAudioBlob = null;
+let currentAudioSourceState = null;
 
 const TRANSCRIPT_STATUS = {
     PENDING: 'pending',
@@ -8,6 +9,28 @@ const TRANSCRIPT_STATUS = {
     COMPLETED: 'completed',
     FAILED: 'failed'
 };
+
+function getAudioSourceHelper() {
+    if (typeof window !== 'undefined' && window.audioSourceSettings) {
+        return window.audioSourceSettings;
+    }
+
+    return {
+        AUDIO_SOURCE_AUTO: 'auto',
+        AUDIO_SOURCE_UNAVAILABLE: 'unavailable',
+        getDefaultAudioSourceSettings: () => ({
+            preferredMicSource: 'auto',
+            preferredSystemSource: 'auto'
+        }),
+        resolvePreferredAudioSource: ({ preferredSource, recommendedSource }) => preferredSource || recommendedSource || 'auto',
+        buildLinuxAudioSourceState: () => ({
+            microphoneSources: [],
+            systemSources: [],
+            recommendedMicSource: null,
+            recommendedSystemSource: null
+        })
+    };
+}
 
 async function initApp() {
     try {
@@ -43,6 +66,9 @@ async function initApp() {
             currentSettings = await getSettings();
         }
         
+        const { getDefaultAudioSourceSettings } = getAudioSourceHelper();
+        const defaultAudioSourceSettings = getDefaultAudioSourceSettings(currentSettings || {});
+        
         if (!currentSettings) {
             currentSettings = {
                 sttApiUrl: '',
@@ -51,7 +77,8 @@ async function initApp() {
                 summaryApiUrl: '',
                 summaryApiKey: '',
                 summaryModel: 'gpt-3.5-turbo',
-                summaryTemplate: DEFAULT_TEMPLATE
+                summaryTemplate: DEFAULT_TEMPLATE,
+                ...defaultAudioSourceSettings
             };
             await saveSettings(currentSettings);
             
@@ -59,10 +86,16 @@ async function initApp() {
             if (typeof window !== 'undefined' && window.electronAPI) {
                 await saveConfigToFile(currentSettings);
             }
+        } else {
+            currentSettings = {
+                ...currentSettings,
+                ...defaultAudioSourceSettings
+            };
         }
         
         loadSettings(currentSettings);
         loadDefaultTemplate();
+        await refreshAudioSourceOptions({ silent: true });
         
         // 初始化侧边栏导航
         initNavigation();
@@ -137,6 +170,144 @@ async function loadAppVersion() {
     }
 }
 
+function buildOptionList(baseOptions, options = []) {
+    const seen = new Set();
+    const merged = [];
+
+    [...baseOptions, ...options].forEach(option => {
+        if (!option || !option.id || seen.has(option.id)) {
+            return;
+        }
+        seen.add(option.id);
+        merged.push(option);
+    });
+
+    return merged;
+}
+
+function buildAudioSourceStatusText(platform, micSources, systemSources) {
+    if (platform === 'linux') {
+        return `已检测到 ${micSources.length} 个麦克风源 / ${systemSources.length} 个系统音频源`;
+    }
+
+    if (systemSources.some(source => source.id === 'unavailable')) {
+        return `已检测到 ${micSources.length} 个麦克风源；系统音频源当前由系统自动选择`;
+    }
+
+    return `已检测到 ${micSources.length} 个麦克风源 / ${systemSources.length} 个系统音频源`;
+}
+
+async function getBrowserMicrophoneSources() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+        return [];
+    }
+
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices
+            .filter(device => device.kind === 'audioinput')
+            .map((device, index) => ({
+                id: device.deviceId,
+                label: device.label || `麦克风 ${index + 1}`,
+                description: device.label || `麦克风 ${index + 1}`
+            }));
+    } catch (error) {
+        console.error('Failed to enumerate browser microphone devices:', error);
+        return [];
+    }
+}
+
+async function refreshAudioSourceOptions({ silent = false } = {}) {
+    const {
+        AUDIO_SOURCE_AUTO,
+        AUDIO_SOURCE_UNAVAILABLE,
+        resolvePreferredAudioSource,
+        buildLinuxAudioSourceState
+    } = getAudioSourceHelper();
+
+    let platform = 'unknown';
+    let microphoneSources = [];
+    let systemSources = [];
+    let recommendedMicSource = null;
+    let recommendedSystemSource = null;
+
+    if (window.electronAPI && window.electronAPI.getPlatform) {
+        const platformResult = await window.electronAPI.getPlatform();
+        if (platformResult.success) {
+            platform = platformResult.platform;
+        }
+    }
+
+    if (platform === 'linux' && window.electronAPI && window.electronAPI.getAudioSourceOptions) {
+        const sourceResult = await window.electronAPI.getAudioSourceOptions();
+        const linuxState = buildLinuxAudioSourceState([
+            ...(sourceResult.microphoneSources || []).map(source => ({
+                name: source.id,
+                description: source.description || source.label || source.id,
+                driver: source.driver || ''
+            })),
+            ...(sourceResult.systemSources || []).map(source => ({
+                name: source.id,
+                description: source.description || source.label || source.id,
+                driver: source.driver || ''
+            }))
+        ]);
+
+        microphoneSources = linuxState.microphoneSources;
+        systemSources = linuxState.systemSources;
+        recommendedMicSource = sourceResult.recommendedMicSource || linuxState.recommendedMicSource;
+        recommendedSystemSource = sourceResult.recommendedSystemSource || linuxState.recommendedSystemSource;
+    } else {
+        microphoneSources = await getBrowserMicrophoneSources();
+    }
+
+    const micOptions = buildOptionList(
+        [{ id: AUDIO_SOURCE_AUTO, label: '自动选择（推荐）' }],
+        microphoneSources
+    );
+    const systemBaseOptions = [{ id: AUDIO_SOURCE_AUTO, label: '自动选择（推荐）' }];
+    const systemUnavailableOptions = systemSources.length === 0
+        ? [{ id: AUDIO_SOURCE_UNAVAILABLE, label: '当前不可用' }]
+        : [];
+    const systemOptions = buildOptionList(systemBaseOptions, [...systemSources, ...systemUnavailableOptions]);
+
+    const selectedMicSource = resolvePreferredAudioSource({
+        preferredSource: currentSettings?.preferredMicSource || AUDIO_SOURCE_AUTO,
+        sources: micOptions,
+        recommendedSource: recommendedMicSource
+    });
+    const selectedSystemSource = resolvePreferredAudioSource({
+        preferredSource: currentSettings?.preferredSystemSource || AUDIO_SOURCE_AUTO,
+        sources: systemOptions,
+        recommendedSource: recommendedSystemSource
+    });
+    const statusText = buildAudioSourceStatusText(platform, microphoneSources, systemSources);
+
+    currentAudioSourceState = {
+        platform,
+        microphoneSources,
+        systemSources,
+        micOptions,
+        systemOptions,
+        recommendedMicSource,
+        recommendedSystemSource,
+        selectedMicSource,
+        selectedSystemSource
+    };
+
+    renderAudioSourceOptions({
+        microphoneSources: micOptions,
+        systemSources: systemOptions,
+        selectedMicSource,
+        selectedSystemSource,
+        statusText
+    });
+
+    if (!silent) {
+        showToast('音频源列表已刷新', 'success');
+    }
+}
+
 function showDependencyModal(missingDeps) {
     const modal = document.getElementById('dependencyModal');
     if (!modal) {
@@ -188,6 +359,8 @@ function setupEventListeners() {
     document.getElementById('btnTestSttApi').addEventListener('click', handleTestSttApi);
     document.getElementById('btnTestSummaryApi').addEventListener('click', handleTestSummaryApi);
     document.getElementById('btnSaveTemplate').addEventListener('click', handleSaveTemplate);
+    document.getElementById('btnRefreshAudioSources').addEventListener('click', () => refreshAudioSourceOptions());
+    document.getElementById('btnSaveAudioSources').addEventListener('click', handleSaveAudioSources);
 }
 
 let isRecordingWorkflowBusy = false;
@@ -598,6 +771,29 @@ async function handleSaveTemplate() {
     } catch (error) {
         console.error('Failed to save template:', error);
         showToast('保存模板失败', 'error');
+    }
+}
+
+async function handleSaveAudioSources() {
+    try {
+        const settings = getSettingsFromUI();
+        currentSettings = {
+            ...currentSettings,
+            preferredMicSource: settings.preferredMicSource,
+            preferredSystemSource: settings.preferredSystemSource
+        };
+
+        await saveSettings(currentSettings);
+
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            await saveConfigToFile(currentSettings);
+        }
+
+        await refreshAudioSourceOptions({ silent: true });
+        showToast('音频源设置已保存', 'success');
+    } catch (error) {
+        console.error('Failed to save audio source settings:', error);
+        showToast('保存音频源设置失败', 'error');
     }
 }
 
@@ -1101,6 +1297,15 @@ function showExitConfirmModal() {
     if (btnClose) btnClose.onclick = closeModal;
     if (overlay) overlay.onclick = closeModal;
     if (btnConfirm) btnConfirm.onclick = handleConfirm;
+}
+
+if (typeof window !== 'undefined') {
+    window.getAudioSourceSelection = function getAudioSourceSelection() {
+        return {
+            settings: currentSettings,
+            state: currentAudioSourceState
+        };
+    };
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

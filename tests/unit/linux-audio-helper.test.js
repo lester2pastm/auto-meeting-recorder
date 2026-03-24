@@ -1,4 +1,11 @@
-const { detectAudioSystem, checkLinuxDependencies, resetDependencyCheck } = require('../../electron/linux-audio-helper');
+const {
+  detectAudioSystem,
+  checkLinuxDependencies,
+  resetDependencyCheck,
+  parsePulseSourceList,
+  chooseRecordingSources,
+  getAlsaSourceLoadCandidates
+} = require('../../electron/linux-audio-helper');
 
 describe('Linux 音频系统检测', () => {
   let mockStore;
@@ -194,6 +201,81 @@ describe('Linux 音频系统检测', () => {
       const result = await resetDependencyCheck(mockStore);
 
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('parsePulseSourceList', () => {
+    it('应解析 pactl list sources short 输出', () => {
+      const stdout = [
+        '0\talsa_output.platform-sound.stereo-fallback.monitor\tmodule-alsa-card.c\ts16le 2ch 44100Hz\tSUSPENDED',
+        '1\tnoiseReduceSource\tmodule-echo-cancel.c\tfloat32le 1ch 48000Hz\tRUNNING'
+      ].join('\n');
+
+      expect(parsePulseSourceList(stdout)).toEqual([
+        {
+          id: '0',
+          name: 'alsa_output.platform-sound.stereo-fallback.monitor',
+          driver: 'module-alsa-card.c',
+          sampleSpec: 's16le 2ch 44100Hz',
+          state: 'SUSPENDED'
+        },
+        {
+          id: '1',
+          name: 'noiseReduceSource',
+          driver: 'module-echo-cancel.c',
+          sampleSpec: 'float32le 1ch 48000Hz',
+          state: 'RUNNING'
+        }
+      ]);
+    });
+  });
+
+  describe('chooseRecordingSources', () => {
+    it('应在标准 PulseAudio 环境中选择麦克风和 monitor', () => {
+      const sources = [
+        { id: '0', name: 'alsa_output.pci-0000_00_1f.3.analog-stereo.monitor', driver: 'module-alsa-card.c' },
+        { id: '1', name: 'alsa_input.pci-0000_00_1f.3.analog-stereo', driver: 'module-alsa-card.c' }
+      ];
+
+      expect(chooseRecordingSources(sources)).toEqual({
+        microphone: 'alsa_input.pci-0000_00_1f.3.analog-stereo',
+        monitor: 'alsa_output.pci-0000_00_1f.3.analog-stereo.monitor'
+      });
+    });
+
+    it('应在 ARM 回声消除场景下回退到虚拟输入源和 monitor', () => {
+      const sources = [
+        { id: '0', name: 'alsa_output.platform-PHYT0006_00.stereo-fallback.monitor', driver: 'module-alsa-card.c' },
+        { id: '1', name: 'noiseReduceSource', driver: 'module-echo-cancel.c' }
+      ];
+
+      expect(chooseRecordingSources(sources)).toEqual({
+        microphone: 'noiseReduceSource',
+        monitor: 'alsa_output.platform-PHYT0006_00.stereo-fallback.monitor'
+      });
+    });
+
+    it('当没有 monitor 时应允许仅录制输入源', () => {
+      const sources = [
+        { id: '1', name: 'noiseReduceSource', driver: 'module-echo-cancel.c' }
+      ];
+
+      expect(chooseRecordingSources(sources)).toEqual({
+        microphone: 'noiseReduceSource',
+        monitor: null
+      });
+    });
+  });
+
+  describe('getAlsaSourceLoadCandidates', () => {
+    it('应优先尝试 ARM 常见 ALSA 设备编号', () => {
+      expect(getAlsaSourceLoadCandidates()).toEqual([
+        'hw:0,0',
+        'hw:1,0',
+        'hw:0',
+        'hw:1',
+        'default'
+      ]);
     });
   });
 });

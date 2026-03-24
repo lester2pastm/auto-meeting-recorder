@@ -3,6 +3,49 @@ const util = require('util');
 
 const execPromise = util.promisify(exec);
 
+function parsePulseSourceList(stdout = '') {
+  return stdout
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split('\t');
+      return {
+        id: parts[0] || '',
+        name: parts[1] || '',
+        driver: parts[2] || '',
+        sampleSpec: parts[3] || '',
+        state: parts[4] || ''
+      };
+    })
+    .filter(source => source.name);
+}
+
+function chooseRecordingSources(sources = []) {
+  const usableSources = sources.filter(source => source && source.name);
+  const monitor = usableSources.find(source => source.name.includes('.monitor')) || null;
+
+  const physicalMic = usableSources.find(source =>
+    !source.name.includes('.monitor') &&
+    (source.name.includes('alsa_input') || source.name.includes('.input'))
+  ) || null;
+
+  const virtualMic = usableSources.find(source =>
+    !source.name.includes('.monitor') &&
+    !source.name.startsWith('auto_null') &&
+    !source.name.startsWith('default')
+  ) || null;
+
+  return {
+    microphone: (physicalMic || virtualMic || null)?.name || null,
+    monitor: monitor ? monitor.name : null
+  };
+}
+
+function getAlsaSourceLoadCandidates() {
+  return ['hw:0,0', 'hw:1,0', 'hw:0', 'hw:1', 'default'];
+}
+
 async function detectAudioSystem() {
   if (process.platform !== 'linux') {
     return { type: 'other', available: false };
@@ -88,5 +131,8 @@ async function resetDependencyCheck(store) {
 module.exports = {
   detectAudioSystem,
   checkLinuxDependencies,
-  resetDependencyCheck
+  resetDependencyCheck,
+  parsePulseSourceList,
+  chooseRecordingSources,
+  getAlsaSourceLoadCandidates
 };

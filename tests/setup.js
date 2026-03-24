@@ -10,7 +10,9 @@ global.window.electronAPI = {
   getAudioDirectory: jest.fn(),
   saveConfig: jest.fn(),
   loadConfig: jest.fn(),
-  getDesktopCapturerSources: jest.fn()
+  getDesktopCapturerSources: jest.fn(),
+  getAudioSourceOptions: jest.fn(),
+  getPlatform: jest.fn()
 };
 
 // 模拟 IndexedDB
@@ -31,7 +33,8 @@ global.localStorage = mockLocalStorage;
 // 模拟 navigator.mediaDevices
 global.navigator.mediaDevices = {
   getUserMedia: jest.fn(),
-  getDisplayMedia: jest.fn()
+  getDisplayMedia: jest.fn(),
+  enumerateDevices: jest.fn().mockResolvedValue([])
 };
 
 // 模拟 AudioContext
