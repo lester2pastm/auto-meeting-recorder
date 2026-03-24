@@ -360,16 +360,28 @@
                         <div class="settings-form">
                             <div class="form-field">
                                 <label for="preferredMicSource">麦克风源</label>
-                                <select id="preferredMicSource">
-                                    <option value="auto">自动选择（推荐）</option>
-                                </select>
+                                <div class="custom-select" data-custom-select="preferredMicSource">
+                                    <select id="preferredMicSource" class="custom-select-native">
+                                        <option value="auto">自动选择（推荐）</option>
+                                    </select>
+                                    <button type="button" class="custom-select-trigger" data-select-trigger="preferredMicSource" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="custom-select-label">自动选择（推荐）</span>
+                                    </button>
+                                    <div class="custom-select-menu" data-select-menu="preferredMicSource" role="listbox"></div>
+                                </div>
                             </div>
                             <div class="form-field">
                                 <label for="preferredSystemSource">系统音频源</label>
-                                <select id="preferredSystemSource">
-                                    <option value="auto">自动选择（推荐）</option>
-                                    <option value="unavailable">当前不可用</option>
-                                </select>
+                                <div class="custom-select" data-custom-select="preferredSystemSource">
+                                    <select id="preferredSystemSource" class="custom-select-native">
+                                        <option value="auto">自动选择（推荐）</option>
+                                        <option value="unavailable">当前不可用</option>
+                                    </select>
+                                    <button type="button" class="custom-select-trigger" data-select-trigger="preferredSystemSource" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="custom-select-label">自动选择（推荐）</span>
+                                    </button>
+                                    <div class="custom-select-menu" data-select-menu="preferredSystemSource" role="listbox"></div>
+                                </div>
                             </div>
                             <div class="form-field">
                                 <div id="audioSourceStatus" class="form-help">正在检测音频源...</div>

@@ -613,6 +613,8 @@ function renderAudioSourceOptions({
         if (!options.some(option => option.id === selectedValue) && options.length > 0) {
             selectEl.value = options[0].id;
         }
+
+        renderCustomSelect(selectEl, options, selectEl.value);
     };
 
     renderOptions(micSelect, microphoneSources, selectedMicSource);
@@ -621,6 +623,106 @@ function renderAudioSourceOptions({
     if (statusEl) {
         statusEl.textContent = statusText;
     }
+}
+
+function closeAllCustomSelects(exceptSelectId = null) {
+    document.querySelectorAll('.custom-select.is-open').forEach(wrapper => {
+        const selectId = wrapper.dataset.customSelect;
+        if (exceptSelectId && selectId === exceptSelectId) {
+            return;
+        }
+
+        wrapper.classList.remove('is-open');
+        const trigger = wrapper.querySelector('.custom-select-trigger');
+        if (trigger) {
+            trigger.setAttribute('aria-expanded', 'false');
+        }
+    });
+}
+
+function ensureCustomSelectGlobalHandlers() {
+    if (document.body.dataset.customSelectGlobalBound === 'true') {
+        return;
+    }
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.custom-select')) {
+            closeAllCustomSelects();
+        }
+    });
+
+    document.body.dataset.customSelectGlobalBound = 'true';
+}
+
+function renderCustomSelect(selectEl, options, selectedValue) {
+    if (!selectEl) {
+        return;
+    }
+
+    const wrapper = selectEl.closest('.custom-select');
+    if (!wrapper) {
+        return;
+    }
+
+    const trigger = wrapper.querySelector('.custom-select-trigger');
+    const label = wrapper.querySelector('.custom-select-label');
+    const menu = wrapper.querySelector('.custom-select-menu');
+    const selectedOption = options.find(option => option.id === selectedValue) || options[0] || null;
+
+    if (label && selectedOption) {
+        label.textContent = selectedOption.label;
+    }
+
+    if (menu) {
+        menu.innerHTML = options.map(option => `
+            <button
+                type="button"
+                class="custom-select-option${option.id === selectedValue ? ' is-selected' : ''}"
+                data-select-option="${option.id}"
+                role="option"
+                aria-selected="${option.id === selectedValue ? 'true' : 'false'}"
+            >${option.label}</button>
+        `).join('');
+
+        menu.querySelectorAll('.custom-select-option').forEach(optionButton => {
+            optionButton.addEventListener('click', () => {
+                selectEl.value = optionButton.dataset.selectOption;
+                selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                renderCustomSelect(selectEl, options, selectEl.value);
+                closeAllCustomSelects();
+            });
+        });
+    }
+
+    if (!trigger || trigger.dataset.customSelectBound === 'true') {
+        return;
+    }
+
+    ensureCustomSelectGlobalHandlers();
+
+    trigger.addEventListener('click', () => {
+        const willOpen = !wrapper.classList.contains('is-open');
+        closeAllCustomSelects(willOpen ? selectEl.id : null);
+        wrapper.classList.toggle('is-open', willOpen);
+        trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+
+    trigger.addEventListener('blur', () => {
+        requestAnimationFrame(() => {
+            if (!wrapper.contains(document.activeElement)) {
+                closeAllCustomSelects();
+            }
+        });
+    });
+
+    wrapper.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeAllCustomSelects();
+            trigger.focus();
+        }
+    });
+
+    trigger.dataset.customSelectBound = 'true';
 }
 
 const DEFAULT_TEMPLATE = `# 会议纪要
@@ -661,7 +763,9 @@ if (typeof module !== 'undefined' && module.exports) {
         updateRecordingButtons,
         loadSettings,
         getSettingsFromUI,
-        renderAudioSourceOptions
+        renderAudioSourceOptions,
+        renderCustomSelect,
+        closeAllCustomSelects
     };
 }
 

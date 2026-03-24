@@ -71,4 +71,46 @@ describe('UI audio source settings', () => {
       preferredSystemSource: 'unavailable'
     });
   });
+
+  test('should open custom dropdown and close it after selecting an option', () => {
+    document.body.innerHTML = `
+      <div class="custom-select" id="selectField" data-custom-select="preferredMicSource">
+        <select id="preferredMicSource" class="custom-select-native">
+          <option value="auto">自动选择（推荐）</option>
+          <option value="mic-1">Mic 1</option>
+        </select>
+        <button type="button" class="custom-select-trigger" data-select-trigger="preferredMicSource">
+          <span class="custom-select-label">自动选择（推荐）</span>
+        </button>
+        <div class="custom-select-menu" data-select-menu="preferredMicSource"></div>
+      </div>
+      <select id="preferredSystemSource"></select>
+      <div id="audioSourceStatus"></div>
+    `;
+
+    const wrapper = document.getElementById('selectField');
+    const trigger = wrapper.querySelector('.custom-select-trigger');
+    const select = document.getElementById('preferredMicSource');
+
+    renderAudioSourceOptions({
+      microphoneSources: [
+        { id: 'auto', label: '自动选择（推荐）' },
+        { id: 'mic-1', label: 'Mic 1' }
+      ],
+      systemSources: [],
+      selectedMicSource: 'auto',
+      selectedSystemSource: 'auto',
+      statusText: ''
+    });
+
+    trigger.click();
+    expect(wrapper.classList.contains('is-open')).toBe(true);
+
+    const option = wrapper.querySelector('[data-select-option="mic-1"]');
+    option.click();
+
+    expect(select.value).toBe('mic-1');
+    expect(wrapper.classList.contains('is-open')).toBe(false);
+    expect(wrapper.querySelector('.custom-select-label').textContent).toBe('Mic 1');
+  });
 });
