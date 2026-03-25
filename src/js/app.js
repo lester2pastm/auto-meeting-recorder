@@ -576,8 +576,6 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
 
         updateSubtitleContent(result.text);
         hideRetryTranscriptionButton();
-        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowPreparingSummary') : '正在整理转写内容...', { transcript: false, summary: true });
-        showToast(i18n ? i18n.get('toastTranscriptionComplete') : '转写完成，正在生成纪要...', 'info');
 
         // 保存当前转写文本，用于刷新纪要
         currentTranscript = result.text;
@@ -588,7 +586,21 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
         });
 
-        await generateMeetingSummary(result.text, audioBlob, meetingId);
+        // 检查转写内容是否为空，空内容不生成纪要
+        console.log('[DEBUG] result.text length:', (result.text || '').length, 'content:', JSON.stringify(result.text));
+        if (!result.text || result.text.trim().length === 0) {
+            console.log('[DEBUG] Empty transcript branch entered');
+            if (typeof updateSummaryContent === 'function') {
+                updateSummaryContent('');
+            }
+            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowCompleted') : '处理完成', { transcript: false, summary: false });
+            // 保存记录（纪要为空白）
+            await saveMeetingRecord(result.text || '', '', audioBlob, meetingId);
+        } else {
+            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowPreparingSummary') : '正在整理转写内容...', { transcript: false, summary: true });
+            showToast(i18n ? i18n.get('toastTranscriptionComplete') : '转写完成，正在生成纪要...', 'info');
+            await generateMeetingSummary(result.text, audioBlob, meetingId);
+        }
     } catch (error) {
         console.error('Failed to process recording:', error);
         // 异常时更新状态为 failed
@@ -608,6 +620,17 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
 
     try {
         updateRecordingWorkflowState(true, i18n ? i18n.get('workflowGeneratingSummary') : '正在生成会议纪要...', { transcript: false, summary: true });
+
+        // 检查转写内容是否为空
+        if (!transcript || transcript.trim().length === 0) {
+            console.log('[App] Transcript is empty, skipping summary generation');
+            if (typeof updateSummaryContent === 'function') {
+                updateSummaryContent('');
+            }
+            // 仍然保存记录（纪要为空白）
+            await saveMeetingRecord(transcript || '', '', audioBlob, meetingId);
+            return;
+        }
 
         if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
             console.log('[App] Summary API not configured, skipping summary generation');
@@ -681,7 +704,12 @@ async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = nul
             await saveMeeting(meeting);
             console.log('[App] saveMeeting completed successfully');
         }
-        showToast('会议记录已保存', 'success');
+        const hasTranscript = !!(transcript && transcript.trim());
+        if (hasTranscript) {
+            showToast('会议记录已保存', 'success');
+        } else {
+            showToast('未识别到有效语音，会议记录已保存', 'warning');
+        }
     } catch (error) {
         console.error('[App] Failed to save meeting:', error);
         showToast('保存会议记录失败: ' + error.message, 'error');

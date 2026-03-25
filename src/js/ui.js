@@ -1,16 +1,25 @@
+let toastTimer = null;
+
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     
     const icons = {
         success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><polyline points="20 6 9 17 4 12"/></svg>',
         error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+        warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>'
     };
+    const normalizedType = icons[type] ? type : 'info';
+    const iconMarkup = icons[normalizedType];
     
-    toast.innerHTML = icons[type] + '<span>' + message + '</span>';
-    toast.className = `toast ${type} show`;
+    toast.innerHTML = iconMarkup + '<span>' + message + '</span>';
+    toast.className = `toast ${normalizedType} show`;
+
+    if (toastTimer) {
+        clearTimeout(toastTimer);
+    }
     
-    setTimeout(() => {
+    toastTimer = setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
 }
@@ -766,6 +775,7 @@ function loadDefaultTemplate() {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+        showToast,
         copyToClipboard,
         renderMeetingDetail,
         updateSubtitleContent,

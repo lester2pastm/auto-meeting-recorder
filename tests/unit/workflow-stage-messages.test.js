@@ -223,6 +223,53 @@ describe('Workflow stage messages', () => {
     expect(updateSubtitleContent).toHaveBeenCalledWith('这是转写结果');
   });
 
+  it('processRecording should clear summary loading when transcript is empty', async () => {
+    const showLoading = jest.fn();
+    const hideLoading = jest.fn();
+    const updateMeeting = jest.fn().mockResolvedValue(undefined);
+    const transcribeAudio = jest.fn().mockResolvedValue({
+      success: true,
+      text: ''
+    });
+    const updateSubtitleContent = jest.fn();
+    const updateSummaryContent = jest.fn();
+    const updateRecordingButtons = jest.fn();
+    const getRecordingState = jest.fn(() => ({ isRecording: false }));
+    const generateMeetingSummary = jest.fn().mockResolvedValue(undefined);
+    const showToast = jest.fn();
+
+    const app = loadAppModule({
+      i18n: mockI18n,
+      showLoading,
+      hideLoading,
+      updateMeeting,
+      transcribeAudio,
+      updateSubtitleContent,
+      updateSummaryContent,
+      updateRecordingButtons,
+      getRecordingState,
+      showToast
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: 'https://stt.example.com',
+      sttApiKey: 'stt-key',
+      sttModel: 'whisper-1',
+      summaryApiUrl: 'https://summary.example.com',
+      summaryApiKey: 'summary-key',
+      summaryModel: 'gpt-4o',
+      summaryTemplate: 'template'
+    });
+    app.__setGenerateMeetingSummary(generateMeetingSummary);
+
+    await app.processRecording(new Blob(['audio'], { type: 'audio/webm' }), 'meeting-empty');
+
+    expect(updateSubtitleContent).toHaveBeenCalledWith('');
+    expect(updateSummaryContent).toHaveBeenCalledWith('');
+    expect(generateMeetingSummary).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith('未识别到有效语音，会议记录已保存', 'warning');
+  });
+
   it('generateMeetingSummary should target the summary loading message only', async () => {
     const showLoading = jest.fn();
     const generateSummary = jest.fn().mockResolvedValue({

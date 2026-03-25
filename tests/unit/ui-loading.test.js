@@ -1,6 +1,7 @@
 describe('UI loading state targeting', () => {
   beforeEach(() => {
     jest.resetModules();
+    jest.useFakeTimers();
     document.body.innerHTML = `
       <div id="toast"></div>
       <div id="detailContent"></div>
@@ -22,6 +23,10 @@ describe('UI loading state targeting', () => {
         writeText: jest.fn().mockResolvedValue(undefined)
       }
     });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test('summary-only loading should not overwrite transcript content', () => {
@@ -46,6 +51,36 @@ describe('UI loading state targeting', () => {
 
     expect(document.getElementById('subtitleContent').textContent).toContain('正在识别录音内容');
     expect(document.getElementById('summaryContent').textContent).toContain('转写完成后自动生成纪要');
+  });
+
+  test('showToast should reset the auto-hide timer for consecutive messages', () => {
+    const ui = require('../../src/js/ui');
+
+    expect(typeof ui.showToast).toBe('function');
+
+    ui.showToast('第一条提示', 'info');
+    jest.advanceTimersByTime(2000);
+    ui.showToast('第二条提示', 'success');
+
+    jest.advanceTimersByTime(1500);
+
+    const toast = document.getElementById('toast');
+    expect(toast.classList.contains('show')).toBe(true);
+    expect(toast.textContent).toContain('第二条提示');
+
+    jest.advanceTimersByTime(1500);
+    expect(toast.classList.contains('show')).toBe(false);
+  });
+
+  test('showToast should support warning messages without rendering undefined', () => {
+    const ui = require('../../src/js/ui');
+
+    ui.showToast('未识别到有效语音，会议记录已保存', 'warning');
+
+    const toast = document.getElementById('toast');
+    expect(toast.textContent).toContain('未识别到有效语音，会议记录已保存');
+    expect(toast.innerHTML).not.toContain('undefined');
+    expect(toast.classList.contains('warning')).toBe(true);
   });
 
   test('copyToClipboard should prefer Electron clipboard bridge when available', async () => {
