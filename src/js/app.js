@@ -1,6 +1,7 @@
 let currentSettings = null;
 let currentMeetingId = null;
 let currentAudioBlob = null;
+let currentAudioFilePath = null;
 let currentAudioSourceState = null;
 
 const TRANSCRIPT_STATUS = {
@@ -568,6 +569,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             // 保存音频blob和meetingId用于重试
             currentAudioBlob = audioBlob;
             currentMeetingId = meetingId;
+            currentAudioFilePath = audioFilePath;
             showRetryTranscriptionButton();
             
             showToast('转写失败: ' + result.message, 'error');
@@ -944,7 +946,7 @@ async function handleRefreshTranscriptInDetail(meetingId) {
         showToast('正在重新转写...', 'info');
 
         // 调用重试转写
-        const retryResult = await retryTranscription(meetingId, audioBlob);
+        const retryResult = await retryTranscription(meetingId, audioBlob, meeting.audioFilename || null);
         if (!retryResult || retryResult.allowed === false) {
             return;
         }
@@ -1115,7 +1117,13 @@ async function handleRetryTranscription() {
         showLoading(i18n ? i18n.get('audioTranscribing') : '正在重新转写...');
         hideRetryTranscriptionButton();
         
-        const result = await transcribeAudio(currentAudioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel);
+        const result = await transcribeAudio(
+            currentAudioBlob,
+            currentSettings.sttApiUrl,
+            currentSettings.sttApiKey,
+            currentSettings.sttModel,
+            currentAudioFilePath
+        );
         
         if (!result.success) {
             showRetryTranscriptionButton();
@@ -1152,6 +1160,7 @@ async function processAudioFile(file) {
         // 将 File 对象转换为 Blob
         const audioBlob = new Blob([await file.arrayBuffer()], { type: file.type });
         currentAudioBlob = audioBlob;
+        currentAudioFilePath = file.path || null;
         
         // 为上传的文件设置一个标识性的 duration
         setLastRecordingDuration('上传音频');
@@ -1209,7 +1218,7 @@ const transcriptionManager = new TranscriptionManager();
  * @param {Blob} audioBlob - 音频数据
  * @returns {Promise<{allowed: boolean}>} - 是否允许转写
  */
-async function retryTranscription(meetingId, audioBlob) {
+async function retryTranscription(meetingId, audioBlob, audioFilePath = null) {
     if (!transcriptionManager.canTranscribe(meetingId)) {
         showToast('请等待10秒后再试', 'warning');
         return { allowed: false };
@@ -1224,7 +1233,7 @@ async function retryTranscription(meetingId, audioBlob) {
     });
     
     // 重新转写
-    await processRecording(audioBlob, meetingId);
+    await processRecording(audioBlob, meetingId, audioFilePath);
     
     return { allowed: true };
 }

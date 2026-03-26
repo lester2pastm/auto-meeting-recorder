@@ -205,31 +205,22 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
     try {
         console.log('开始转写音频:', { apiUrl, model, blobSize: audioBlob.size, blobType: audioBlob.type });
 
-        // 检查是否需要分段转写（SiliconFlow 限制：时长 ≤1小时，文件 ≤50MB）
+        const sizeMB = audioBlob.size / (1024 * 1024);
         const isSiliconFlow = apiUrl.includes('siliconflow.cn') || apiUrl.includes('siliconflow.ai');
-        
+
+        // 超长音频统一走分段转写，避免不同服务商路径分叉导致大文件直传失败
+        if (sizeMB > 50) {
+            console.log('文件大小超过 50MB 限制，使用分段转写...');
+            return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
+        }
+
+        const durationMinutes = (await getAudioDuration(audioBlob)) / 60;
+        if (durationMinutes > 60) {
+            console.log('音频时长超过 60 分钟限制，使用分段转写...');
+            return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
+        }
+
         if (isSiliconFlow) {
-            // 直接使用原始 blob，不需要转换为 WAV
-            const sizeMB = audioBlob.size / (1024 * 1024);
-            
-            // 检查是否超过限制
-            if (sizeMB > 50) {
-                console.log('文件大小超过 50MB 限制，使用分段转写...');
-                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
-            }
-            
-            // 获取音频时长
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const arrayBuffer = await audioBlob.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            const durationMinutes = audioBuffer.duration / 60;
-            await audioContext.close();
-            
-            if (durationMinutes > 60) {
-                console.log('音频时长超过 60 分钟限制，使用分段转写...');
-                return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
-            }
-            
             // 不超过限制，直接使用原始 webm 格式
             console.log('使用原始 webm 格式转写');
             return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model);

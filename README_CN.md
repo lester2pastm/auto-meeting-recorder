@@ -1,7 +1,7 @@
 # 自动会议纪要
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.7-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.6.9-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">

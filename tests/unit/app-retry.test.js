@@ -25,7 +25,7 @@ describe('retryTranscription', () => {
     let mockAudioBlob;
     
     // 模拟 retryTranscription 函数
-    async function retryTranscription(meetingId, audioBlob) {
+    async function retryTranscription(meetingId, audioBlob, audioFilePath = null) {
         if (!transcriptionManager.canTranscribe(meetingId)) {
             showToast('请等待10秒后再试', 'warning');
             return { allowed: false };
@@ -40,7 +40,7 @@ describe('retryTranscription', () => {
         });
         
         // 重新转写
-        await processRecording(audioBlob, meetingId);
+        await processRecording(audioBlob, meetingId, audioFilePath);
         
         return { allowed: true };
     }
@@ -59,7 +59,7 @@ describe('retryTranscription', () => {
             transcriptStatus: 'pending',
             transcript: ''
         });
-        expect(mockProcessRecording).toHaveBeenCalledWith(mockAudioBlob, 'meeting-1');
+        expect(mockProcessRecording).toHaveBeenCalledWith(mockAudioBlob, 'meeting-1', null);
     });
     
     test('10秒内不能重试', async () => {
@@ -118,6 +118,16 @@ describe('retryTranscription', () => {
         await retryTranscription('meeting-5', mockAudioBlob);
         
         expect(mockProcessRecording).toHaveBeenCalledTimes(1);
-        expect(mockProcessRecording).toHaveBeenCalledWith(mockAudioBlob, 'meeting-5');
+        expect(mockProcessRecording).toHaveBeenCalledWith(mockAudioBlob, 'meeting-5', null);
+    });
+
+    test('重新转写时应透传原始音频文件路径', async () => {
+        await retryTranscription('meeting-6', mockAudioBlob, '/tmp/meeting-6.webm');
+
+        expect(mockProcessRecording).toHaveBeenCalledWith(
+            mockAudioBlob,
+            'meeting-6',
+            '/tmp/meeting-6.webm'
+        );
     });
 });

@@ -137,4 +137,43 @@ describe('transcribeAudioSegments reliability', () => {
     expect(result).toEqual({ success: false, message: '自定义转写网络失败提示' });
     expect(fetch).toHaveBeenCalledTimes(3);
   });
+
+  test('routes oversized non-SiliconFlow audio through segmented transcription', async () => {
+    const originalAudio = global.Audio;
+
+    global.Audio = class MockLongAudio {
+      constructor() {
+        this.duration = 61 * 60;
+        this.onloadedmetadata = null;
+        this.onerror = null;
+      }
+
+      set src(value) {
+        this._src = value;
+        if (this.onloadedmetadata) {
+          this.onloadedmetadata();
+        }
+      }
+    };
+
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: '分段转写成功' })
+    });
+
+    const result = await api.transcribeAudio(
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'https://api.openai.com/v1/audio/transcriptions',
+      'test-key',
+      'whisper-1',
+      '/tmp/audio.webm'
+    );
+
+    expect(result).toEqual({ success: true, text: '分段转写成功' });
+    expect(global.window.electronAPI.splitAudioFile).toHaveBeenCalledWith('/tmp/audio.webm', expect.any(Object));
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    global.Audio = originalAudio;
+  });
 });
