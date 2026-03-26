@@ -10,6 +10,10 @@ const {
   chooseRecordingSources,
   getAlsaSourceLoadCandidates
 } = require('./linux-audio-helper');
+const {
+  resolveManagedAudioPath,
+  createManagedSplitOutputDir
+} = require('./managed-paths');
 
 // 初始化配置存储
 const store = new Store();
@@ -201,7 +205,7 @@ ipcMain.handle('save-audio', async (event, { blob, filename }) => {
       fs.mkdirSync(AUDIO_DIR, { recursive: true });
     }
     
-    const filePath = path.join(AUDIO_DIR, filename);
+    const filePath = resolveManagedAudioPath(AUDIO_DIR, filename);
     safeLog('[Main] Saving to:', filePath);
     
     const buffer = normalizeBinaryPayload(blob);
@@ -220,8 +224,7 @@ ipcMain.handle('save-audio', async (event, { blob, filename }) => {
 // IPC 处理器：获取音频文件
 ipcMain.handle('get-audio', async (event, filePathOrName) => {
   try {
-    // 支持完整路径或文件名
-    const filePath = path.isAbsolute(filePathOrName) ? filePathOrName : path.join(AUDIO_DIR, filePathOrName);
+    const filePath = resolveManagedAudioPath(AUDIO_DIR, filePathOrName);
     if (fs.existsSync(filePath)) {
       const buffer = fs.readFileSync(filePath);
       return { success: true, data: new Uint8Array(buffer) };
@@ -235,8 +238,7 @@ ipcMain.handle('get-audio', async (event, filePathOrName) => {
 // IPC 处理器：删除音频文件
 ipcMain.handle('delete-audio', async (event, filePathOrName) => {
   try {
-    // 支持完整路径或文件名
-    const filePath = path.isAbsolute(filePathOrName) ? filePathOrName : path.join(AUDIO_DIR, filePathOrName);
+    const filePath = resolveManagedAudioPath(AUDIO_DIR, filePathOrName);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
@@ -269,7 +271,7 @@ ipcMain.handle('load-config', async () => {
 // IPC 处理器：导出音频文件
 ipcMain.handle('export-audio', async (event, { filename, defaultPath }) => {
   try {
-    const sourcePath = path.join(AUDIO_DIR, filename);
+    const sourcePath = resolveManagedAudioPath(AUDIO_DIR, filename);
     if (!fs.existsSync(sourcePath)) {
       return { success: false, error: 'Source file not found' };
     }
@@ -799,17 +801,15 @@ ipcMain.handle('fix-pulseaudio-input', async (event, { device = 'hw:0', sourceNa
 // 读取音频文件（用于渲染进程获取录制完成的音频）
 ipcMain.handle('read-audio-file', async (event, filePath) => {
   try {
-    if (!filePath) {
-      return { success: false, error: 'Invalid file path' };
-    }
-    
+    const managedFilePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
+
     try {
-      await fs.promises.access(filePath);
+      await fs.promises.access(managedFilePath);
     } catch {
-      return { success: false, error: 'File not found: ' + filePath };
+      return { success: false, error: 'File not found: ' + managedFilePath };
     }
     
-    const buffer = await fs.promises.readFile(filePath);
+    const buffer = await fs.promises.readFile(managedFilePath);
     return { success: true, data: new Uint8Array(buffer) };
   } catch (error) {
     safeError('Error reading audio file:', error);
@@ -819,21 +819,22 @@ ipcMain.handle('read-audio-file', async (event, filePath) => {
 
 ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => {
   try {
-    if (!fs.existsSync(filePath)) {
-      return { success: false, error: 'File not found: ' + filePath };
+    const managedSourcePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
+
+    if (!fs.existsSync(managedSourcePath)) {
+      return { success: false, error: 'File not found: ' + managedSourcePath };
     }
 
     const segmentCount = Math.max(1, options.segmentCount || 1);
     const segmentDuration = Math.max(1, Math.ceil(options.segmentDuration || 1));
-    const sourceDir = path.dirname(filePath);
-    const sourceName = path.basename(filePath, path.extname(filePath));
-    const targetDir = path.join(sourceDir, `${sourceName}_segments_${Date.now()}`);
+    const sourceName = path.basename(managedSourcePath, path.extname(managedSourcePath));
+    const targetDir = createManagedSplitOutputDir(AUDIO_DIR, managedSourcePath);
 
     fs.mkdirSync(targetDir, { recursive: true });
 
     const outputPattern = path.join(targetDir, `${sourceName}_%03d.webm`);
     const args = [
-      '-i', filePath,
+      '-i', managedSourcePath,
       '-vn',
       '-c:a', 'libopus',
       '-b:a', '128k',
@@ -887,15 +888,16 @@ ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => 
 // 保存音频数据到指定路径（Linux 混合录制使用）
 ipcMain.handle('save-audio-to-path', async (event, { data, filePath }) => {
   try {
+    const managedFilePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
     // 确保目录存在
-    const dir = path.dirname(filePath);
+    const dir = path.dirname(managedFilePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     
     const buffer = normalizeBinaryPayload(data);
-    fs.writeFileSync(filePath, buffer);
-    return { success: true, filePath };
+    fs.writeFileSync(managedFilePath, buffer);
+    return { success: true, filePath: managedFilePath };
   } catch (error) {
     safeError('Error saving audio to path:', error);
     return { success: false, error: error.message };
@@ -905,16 +907,17 @@ ipcMain.handle('save-audio-to-path', async (event, { data, filePath }) => {
 // 追加音频数据到指定路径（增量保存）
 ipcMain.handle('append-audio-to-path', async (event, { data, filePath }) => {
   try {
+    const managedFilePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
     // 确保目录存在
-    const dir = path.dirname(filePath);
+    const dir = path.dirname(managedFilePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     
     const buffer = normalizeBinaryPayload(data);
     // 使用追加模式写入文件
-    fs.appendFileSync(filePath, buffer);
-    return { success: true, filePath };
+    fs.appendFileSync(managedFilePath, buffer);
+    return { success: true, filePath: managedFilePath };
   } catch (error) {
     safeError('Error appending audio to path:', error);
     return { success: false, error: error.message };
@@ -966,7 +969,8 @@ ipcMain.handle('delete-recovery-meta', async () => {
 // IPC: 检查文件是否存在
 ipcMain.handle('file-exists', async (event, filePath) => {
   try {
-    const exists = fs.existsSync(filePath);
+    const managedFilePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
+    const exists = fs.existsSync(managedFilePath);
     return { success: true, exists };
   } catch (error) {
     return { success: false, error: error.message };
@@ -976,8 +980,9 @@ ipcMain.handle('file-exists', async (event, filePath) => {
 // IPC: 删除文件
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    const managedFilePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
+    if (fs.existsSync(managedFilePath)) {
+      fs.unlinkSync(managedFilePath);
     }
     return { success: true };
   } catch (error) {

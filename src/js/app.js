@@ -1173,7 +1173,7 @@ async function processAudioFile(file) {
         // 将 File 对象转换为 Blob
         const audioBlob = new Blob([await file.arrayBuffer()], { type: file.type });
         currentAudioBlob = audioBlob;
-        currentAudioFilePath = file.path || null;
+        currentAudioFilePath = null;
         
         // 为上传的文件设置一个标识性的 duration
         setLastRecordingDuration('上传音频');
@@ -1185,7 +1185,7 @@ async function processAudioFile(file) {
             apiUrl: currentSettings.sttApiUrl 
         });
 
-        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel, file.path || null);
+        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel, null);
 
         console.log('转写结果:', result);
 
