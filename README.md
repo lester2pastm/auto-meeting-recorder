@@ -1,7 +1,7 @@
 # Auto Meeting Recorder
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.9-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.6.10-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">

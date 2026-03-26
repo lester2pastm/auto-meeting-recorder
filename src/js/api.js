@@ -223,17 +223,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
         if (isSiliconFlow) {
             // 不超过限制，直接使用原始 webm 格式
             console.log('使用原始 webm 格式转写');
-            return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model);
-        }
-
-        // 继续原有逻辑（不分段）
-        // 将音频转换为 WAV 格式以确保兼容性
-        let processedBlob = audioBlob;
-        try {
-            processedBlob = await convertToWav(audioBlob);
-            console.log('音频已转换为 WAV 格式:', { size: processedBlob.size, type: processedBlob.type });
-        } catch (convertError) {
-            console.warn('音频转换失败，使用原始格式:', convertError.message);
+            return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, 600000);
         }
 
         // 判断是否为阿里云百炼 API
@@ -242,9 +232,10 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
         // isSiliconFlow 已在上面检查过
 
         let response;
+        const audioFormat = detectAudioFormat(audioBlob);
 
         if (isBailian) {
-            const base64Audio = await blobToBase64(processedBlob);
+            const base64Audio = await blobToBase64(audioBlob);
 
             const requestBody = {
                 model: model,
@@ -253,7 +244,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
                 },
                 parameters: {
                     sample_rate: 16000,
-                    format: 'wav',
+                    format: audioFormat,
                     language_hints: ['zh', 'en']
                 }
             };
@@ -271,7 +262,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             const audioEndpoint = apiUrl.replace('/chat/completions', '/audio/transcriptions');
             
             const formData = new FormData();
-            formData.append('file', processedBlob, 'recording.wav');
+            formData.append('file', audioBlob, `recording.${audioFormat}`);
             formData.append('model', model || 'whisper-1');
 
             console.log('发送 DashScope 兼容请求:', { url: audioEndpoint, model });
@@ -289,7 +280,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             }
             
             const formData = new FormData();
-            formData.append('file', processedBlob, 'recording.wav');
+            formData.append('file', audioBlob, `recording.${audioFormat}`);
             formData.append('model', model || 'whisper-1');
 
             console.log('发送 SiliconFlow 请求:', { url: audioEndpoint, model });
@@ -302,7 +293,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             });
         } else {
             const formData = new FormData();
-            formData.append('file', processedBlob, 'recording.wav');
+            formData.append('file', audioBlob, `recording.${audioFormat}`);
             formData.append('model', model);
 
             console.log('发送 OpenAI 请求:', { url: apiUrl, model });
@@ -373,6 +364,18 @@ function calculateSegmentCount(sizeMB, durationMinutes, maxSizeMB = 45, maxDurat
     const sizeSegments = Math.max(1, Math.ceil(sizeMB / maxSizeMB));
     const durationSegments = Math.max(1, Math.ceil(durationMinutes / maxDurationMinutes));
     return Math.max(sizeSegments, durationSegments);
+}
+
+function detectAudioFormat(audioBlob) {
+    const mimeType = (audioBlob && audioBlob.type ? audioBlob.type : '').toLowerCase();
+
+    if (mimeType.includes('wav')) return 'wav';
+    if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return 'mp3';
+    if (mimeType.includes('mp4') || mimeType.includes('m4a')) return 'mp4';
+    if (mimeType.includes('ogg')) return 'ogg';
+    if (mimeType.includes('webm')) return 'webm';
+
+    return 'webm';
 }
 
 // 辅助函数：将 Blob 转换为 Base64
@@ -542,51 +545,9 @@ async function audioBufferToWebm(audioBuffer) {
     });
 }
 
-// 将 AudioBuffer 转换为 WAV Blob
-// 将 AudioBuffer 转换为 WAV Blob
-async function audioBufferToWav(audioBuffer) {
-    const numberOfChannels = audioBuffer.numberOfChannels;
-    const sampleRate = audioBuffer.sampleRate;
-    const length = audioBuffer.length;
-    
-    const wavBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-    const view = new DataView(wavBuffer);
-    
-    const writeString = (offset, string) => {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
-    };
-    
-    writeString(0, 'RIFF');
-    view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, numberOfChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-    view.setUint16(32, numberOfChannels * 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, 'data');
-    view.setUint32(40, length * numberOfChannels * 2, true);
-    
-    let offset = 44;
-    for (let i = 0; i < length; i++) {
-        for (let channel = 0; channel < numberOfChannels; channel++) {
-            const sample = audioBuffer.getChannelData(channel)[i];
-            const clamped = Math.max(-1, Math.min(1, sample));
-            view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF, true);
-            offset += 2;
-        }
-    }
-    
-    return new Blob([wavBuffer], { type: 'audio/wav' });
-}
-
 // 分段转写音频
 async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null, onProgress = null) {
+    const requestTimeout = 600000;
     // 直接使用原始 webm，不需要转换为 WAV
     const sizeMB = audioBlob.size / (1024 * 1024);
     
@@ -596,15 +557,14 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     console.log(`音频信息: ${durationMinutes.toFixed(2)}分钟, ${sizeMB.toFixed(2)}MB`);
     
-    const calculatedTimeout = Math.max(600000, Math.ceil(durationMinutes * 60 * 1000));
-    console.log(`转写超时时间: ${(calculatedTimeout / 1000 / 60).toFixed(1)}分钟`);
+    console.log(`转写超时时间: ${(requestTimeout / 1000 / 60).toFixed(1)}分钟`);
     
     // 检查是否需要分割
     const needsSplit = sizeMB > 50 || durationMinutes > 60;
     
     if (!needsSplit) {
         // 不需要分割，直接转写
-        return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, calculatedTimeout);
+        return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, requestTimeout);
     }
     
     // 需要分割
@@ -633,7 +593,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
         console.log(`转写片段 ${i + 1}/${totalSegments}...`);
         const segmentBlob = segmentPaths.length > 0 ? await createBlobFromFilePath(segmentPaths[i]) : segments[i];
         
-        let result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, calculatedTimeout);
+        let result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout);
         
         let retryCount = 0;
         const maxRetries = 2;
@@ -644,7 +604,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
                 onProgress(getTranscriptionRetryProgressMessage(result, retryCount + 1, maxRetries + 1));
             }
             await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
-            result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, calculatedTimeout * 2);
+            result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout);
         }
         
         if (result.success) {
@@ -717,7 +677,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout
             const requestBody = {
                 model: model,
                 input: { audio: base64Audio },
-                parameters: { sample_rate: 16000, format: 'wav', language_hints: ['zh', 'en'] }
+                parameters: { sample_rate: 16000, format: detectAudioFormat(audioBlob), language_hints: ['zh', 'en'] }
             };
             
             response = await fetchWithTimeout(apiUrl, {
@@ -878,54 +838,6 @@ ${transcript}
         }
         return { success: false, message: userMessage };
     }
-}
-
-async function convertToWav(audioBlob) {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    
-    const numberOfChannels = audioBuffer.numberOfChannels;
-    const sampleRate = audioBuffer.sampleRate;
-    const length = audioBuffer.length;
-    
-    const wavBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-    const view = new DataView(wavBuffer);
-    
-    const writeString = (offset, string) => {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
-    };
-    
-    writeString(0, 'RIFF');
-    view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, numberOfChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-    view.setUint16(32, numberOfChannels * 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, 'data');
-    view.setUint32(40, length * numberOfChannels * 2, true);
-    
-    let offset = 44;
-    for (let i = 0; i < length; i++) {
-        for (let channel = 0; channel < numberOfChannels; channel++) {
-            const sample = audioBuffer.getChannelData(channel)[i];
-            const clamped = Math.max(-1, Math.min(1, sample));
-            view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF, true);
-            offset += 2;
-        }
-    }
-    
-    await audioContext.close();
-    
-    return new Blob([wavBuffer], { type: 'audio/wav' });
 }
 
 if (typeof module !== 'undefined' && module.exports) {

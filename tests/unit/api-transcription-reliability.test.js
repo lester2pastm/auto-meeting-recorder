@@ -176,4 +176,86 @@ describe('transcribeAudioSegments reliability', () => {
 
     global.Audio = originalAudio;
   });
+
+  test('uploads original webm for standard OpenAI transcription without converting to wav', async () => {
+    const originalAudioContext = global.AudioContext;
+    const originalWebkitAudioContext = global.webkitAudioContext;
+
+    global.AudioContext = jest.fn().mockImplementation(() => ({
+      decodeAudioData: jest.fn().mockRejectedValue(new Error('should not decode for wav conversion')),
+      close: jest.fn().mockResolvedValue(undefined)
+    }));
+    global.webkitAudioContext = global.AudioContext;
+
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: '原始 webm 转写成功' })
+    });
+
+    const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+    const result = await api.transcribeAudio(
+      audioBlob,
+      'https://api.openai.com/v1/audio/transcriptions',
+      'test-key',
+      'whisper-1'
+    );
+
+    expect(result).toEqual({ success: true, text: '原始 webm 转写成功' });
+
+    const [, requestOptions] = fetch.mock.calls[0];
+    expect(requestOptions.body.get('file').name).toBe('recording.webm');
+    expect(requestOptions.body.get('file').type).toBe('audio/webm');
+    expect(requestOptions.body.get('model')).toBe('whisper-1');
+
+    global.AudioContext = originalAudioContext;
+    global.webkitAudioContext = originalWebkitAudioContext;
+  });
+
+  test('uses a fixed 10 minute timeout for each segmented transcription attempt', async () => {
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
+      realSetTimeout(fn, 0, ...args)
+    ));
+
+    const originalAudio = global.Audio;
+    global.Audio = class MockLongAudio {
+      constructor() {
+        this.duration = 3 * 60 * 60;
+        this.onloadedmetadata = null;
+        this.onerror = null;
+      }
+
+      set src(value) {
+        this._src = value;
+        if (this.onloadedmetadata) {
+          this.onloadedmetadata();
+        }
+      }
+    };
+
+    fetch
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ text: '固定超时重试成功' })
+      });
+
+    const result = await api.transcribeAudioSegments(
+      createLargeAudioBlob(),
+      'https://api.openai.com/v1/audio/transcriptions',
+      'test-key',
+      'whisper-1',
+      '/tmp/audio.webm'
+    );
+
+    expect(result).toEqual({ success: true, text: '固定超时重试成功' });
+
+    const timeoutDelays = setTimeout.mock.calls.map((call) => call[1]);
+    expect(timeoutDelays).toContain(600000);
+    expect(timeoutDelays).not.toContain(10800000);
+    expect(timeoutDelays).not.toContain(21600000);
+
+    global.Audio = originalAudio;
+  });
 });
