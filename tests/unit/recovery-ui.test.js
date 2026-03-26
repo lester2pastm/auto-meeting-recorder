@@ -3,6 +3,10 @@
  * 测试恢复对话框的显示、交互和格式化功能
  */
 
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
 // 创建 mock 元素工厂函数
 function createMockElement() {
   return {
@@ -55,6 +59,47 @@ global.console = {
   error: jest.fn(),
   warn: jest.fn()
 };
+
+function loadRecoveryUiModule(overrides = {}) {
+  const recoveryUiPath = path.resolve(__dirname, '../../src/js/recovery-ui.js');
+  const recoveryUiSource = fs.readFileSync(recoveryUiPath, 'utf8');
+  const module = { exports: {} };
+
+  const context = vm.createContext({
+    module,
+    exports: module.exports,
+    require,
+    console,
+    document,
+    window,
+    Blob,
+    Date,
+    setTimeout,
+    clearTimeout,
+    showToast,
+    getRecoveryMeta,
+    recoverAudioBlob,
+    clearRecoveryData,
+    processRecording,
+    setLastRecordingDuration,
+    saveEmptyMeetingRecord: jest.fn(),
+    closeRecoveryModal: jest.fn(),
+    formatDuration: (ms) => `${ms}`,
+    ...overrides
+  });
+
+  const script = new vm.Script(`${recoveryUiSource}
+module.exports = {
+  handleTranscribeNow
+};`);
+
+  script.runInContext(context);
+
+  return {
+    exported: module.exports,
+    context
+  };
+}
 
 describe('Recovery UI 模块测试', () => {
   let recoveryModal = null;
@@ -221,6 +266,54 @@ describe('Recovery UI 模块测试', () => {
       }
 
       expect(() => closeRecoveryModal()).not.toThrow();
+    });
+  });
+
+  describe('立即转写恢复录音', () => {
+    it('应该先保存为会议记录，再清理恢复数据并进入转写流程', async () => {
+      const mockMeta = {
+        id: 'recovery-1',
+        duration: 61000
+      };
+      const mockBlob = new Blob(['audio'], { type: 'audio/webm' });
+      const saveEmptyMeetingRecord = jest.fn().mockResolvedValue({
+        id: 'meeting-1',
+        audioFilename: '/tmp/recovered.webm'
+      });
+      const clearRecoveryData = jest.fn().mockResolvedValue(undefined);
+      const processRecording = jest.fn().mockResolvedValue(undefined);
+      const callOrder = [];
+
+      const { exported } = loadRecoveryUiModule({
+        getRecoveryMeta: jest.fn(() => mockMeta),
+        recoverAudioBlob: jest.fn().mockResolvedValue(mockBlob),
+        setLastRecordingDuration: jest.fn(),
+        saveEmptyMeetingRecord: jest.fn(async (blob) => {
+          callOrder.push('save');
+          return saveEmptyMeetingRecord(blob);
+        }),
+        clearRecoveryData: jest.fn(async () => {
+          callOrder.push('clear');
+          return clearRecoveryData();
+        }),
+        processRecording: jest.fn(async (...args) => {
+          callOrder.push('process');
+          return processRecording(...args);
+        }),
+        closeRecoveryModal: jest.fn(),
+        showToast: jest.fn()
+      });
+
+      await exported.handleTranscribeNow();
+
+      expect(saveEmptyMeetingRecord).toHaveBeenCalledWith(mockBlob);
+      expect(clearRecoveryData).toHaveBeenCalledTimes(1);
+      expect(processRecording).toHaveBeenCalledWith(
+        mockBlob,
+        'meeting-1',
+        '/tmp/recovered.webm'
+      );
+      expect(callOrder).toEqual(['save', 'clear', 'process']);
     });
   });
 

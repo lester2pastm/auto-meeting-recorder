@@ -1,4 +1,46 @@
 
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+function loadAppModule(overrides = {}) {
+    const appPath = path.resolve(__dirname, '../../src/js/app.js');
+    const appSource = fs.readFileSync(appPath, 'utf8');
+    const module = { exports: {} };
+
+    const context = vm.createContext({
+        module,
+        exports: module.exports,
+        require,
+        console,
+        document,
+        window,
+        Blob,
+        Date,
+        setTimeout,
+        clearTimeout,
+        localStorage: window.localStorage,
+        TranscriptionManager: class {
+            canTranscribe() {
+                return true;
+            }
+
+            recordTranscriptionTime() {}
+        },
+        ...overrides
+    });
+
+    const script = new vm.Script(`${appSource}
+module.exports = {
+  setupAppControl,
+  updateRecordingWorkflowState
+};`);
+
+    script.runInContext(context);
+
+    return module.exports;
+}
+
 // const { describe, it, expect, beforeEach } = require('@jest/globals');
 
 describe('Exit Protection Logic', () => {
@@ -155,5 +197,27 @@ describe('Exit Protection Logic', () => {
         expect(mockElectronAPI.forceClose).toHaveBeenCalled();
         const modal = document.getElementById('exitConfirmModal');
         expect(modal.classList.contains('active')).toBe(false);
+    });
+
+    it('should show modal while workflow is still processing after recording stops', () => {
+        isRecording = false;
+        const updateRecordingButtons = jest.fn();
+        const app = loadAppModule({
+            getRecordingState: jest.fn(() => ({ isRecording: false })),
+            updateRecordingButtons,
+            showLoading: jest.fn(),
+            hideLoading: jest.fn(),
+            showToast: jest.fn()
+        });
+
+        app.updateRecordingWorkflowState(true, '正在整理录音...');
+        app.setupAppControl();
+
+        const callback = mockElectronAPI.onCheckRecordingStatus.mock.calls[0][0];
+        callback();
+
+        expect(mockElectronAPI.forceClose).not.toHaveBeenCalled();
+        const modal = document.getElementById('exitConfirmModal');
+        expect(modal.classList.contains('active')).toBe(true);
     });
 });

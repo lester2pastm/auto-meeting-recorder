@@ -91,13 +91,23 @@ async function handleTranscribeNow() {
         
         // 设置录音时长
         setLastRecordingDuration(formatDuration(meta.duration));
-        
-        // 清除恢复数据
+
+        let meeting = null;
+        if (typeof saveEmptyMeetingRecord === 'function') {
+            meeting = await saveEmptyMeetingRecord(audioBlob);
+        }
+
+        // 在转写前先清理恢复标记，避免下次启动重复提示
+        // 此时录音已经有持久化记录，即使后续转写失败也不会丢失音频
         await clearRecoveryData();
-        
+
         // 进入处理流程
         showToast('录音已恢复，开始转写...', 'info');
-        await processRecording(audioBlob);
+        await processRecording(
+            audioBlob,
+            meeting ? meeting.id : null,
+            meeting ? (meeting.audioFilename || null) : null
+        );
         
     } catch (error) {
         console.error('[RecoveryUI] Error transcribing:', error);

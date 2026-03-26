@@ -386,6 +386,19 @@ function clearRecordingWorkflowState() {
     }
 }
 
+function isExitProtectionActive() {
+    let isRecordingActive = false;
+
+    if (typeof getRecordingState === 'function') {
+        const state = getRecordingState();
+        isRecordingActive = !!(state && state.isRecording);
+    } else if (typeof window.isRecording !== 'undefined') {
+        isRecordingActive = !!window.isRecording;
+    }
+
+    return isRecordingActive || isRecordingWorkflowBusy;
+}
+
 async function loadHistoryList() {
     try {
         const meetings = await getAllMeetings();
@@ -1290,16 +1303,7 @@ async function handleRefreshSummary() {
 function setupAppControl() {
     if (window.electronAPI && window.electronAPI.onCheckRecordingStatus) {
         window.electronAPI.onCheckRecordingStatus(() => {
-            let isRecording = false;
-            // 尝试获取录音状态
-            if (typeof getRecordingState === 'function') {
-                const state = getRecordingState();
-                isRecording = state.isRecording;
-            } else if (typeof window.isRecording !== 'undefined') {
-                 isRecording = window.isRecording;
-            }
-
-            if (isRecording) {
+            if (isExitProtectionActive()) {
                 showExitConfirmModal();
             } else {
                 window.electronAPI.forceClose();
