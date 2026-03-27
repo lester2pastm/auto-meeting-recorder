@@ -233,14 +233,36 @@ function deleteMeeting(id) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([STORE_NAME], 'readwrite');
         const objectStore = transaction.objectStore(STORE_NAME);
-        const request = objectStore.delete(id);
+        const getRequest = objectStore.get(id);
 
-        request.onsuccess = () => {
-            resolve();
+        getRequest.onsuccess = async () => {
+            const meeting = getRequest.result;
+
+            try {
+                if (meeting && meeting.audioFilename && isElectron()) {
+                    const deleteAudioResult = await deleteAudioFile(meeting.audioFilename);
+                    if (!deleteAudioResult.success) {
+                        reject(new Error('Failed to delete audio file: ' + deleteAudioResult.error));
+                        return;
+                    }
+                }
+
+                const deleteRequest = objectStore.delete(id);
+
+                deleteRequest.onsuccess = () => {
+                    resolve();
+                };
+
+                deleteRequest.onerror = () => {
+                    reject(new Error('Failed to delete meeting'));
+                };
+            } catch (error) {
+                reject(error);
+            }
         };
 
-        request.onerror = () => {
-            reject(new Error('Failed to delete meeting'));
+        getRequest.onerror = () => {
+            reject(new Error('Failed to get meeting'));
         };
     });
 }

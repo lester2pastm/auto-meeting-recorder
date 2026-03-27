@@ -3,7 +3,7 @@
  * 测试 IndexedDB 操作、音频文件管理和配置存储功能
  */
 
-const { saveMeeting, getMeeting, updateMeeting, saveAudioFile } = require('../../src/js/storage');
+const { saveMeeting, getMeeting, updateMeeting, saveAudioFile, deleteMeeting } = require('../../src/js/storage');
 
 // 模拟 storage.js 的依赖
 const mockDB = {
@@ -291,6 +291,59 @@ describe('Storage 模块测试', () => {
       mockGetRequest.onsuccess();
       
       await expect(updatePromise).rejects.toThrow('Meeting not found');
+    });
+  });
+
+  describe('deleteMeeting', () => {
+    test('应在删除会议记录时同步删除对应的音频文件', async () => {
+      window.electronAPI.deleteAudio.mockResolvedValue({ success: true });
+
+      const mockExistingMeeting = {
+        id: 'meeting-with-audio',
+        audioFilename: '/tmp/meeting-with-audio.webm'
+      };
+
+      const mockDeleteRequest = {
+        onsuccess: null,
+        onerror: null
+      };
+
+      const mockGetRequest = {
+        onsuccess: null,
+        onerror: null,
+        result: mockExistingMeeting
+      };
+
+      const mockObjectStore = {
+        get: jest.fn().mockReturnValue(mockGetRequest),
+        delete: jest.fn().mockReturnValue(mockDeleteRequest)
+      };
+
+      const mockTransaction = {
+        objectStore: jest.fn().mockReturnValue(mockObjectStore)
+      };
+
+      const mockDb = {
+        transaction: jest.fn().mockReturnValue(mockTransaction)
+      };
+
+      const storage = require('../../src/js/storage');
+      const initPromise = storage.initDB();
+      const mockOpenRequest = indexedDB.open.mock.results[0].value;
+      mockOpenRequest.onsuccess({ target: { result: mockDb } });
+      await initPromise;
+
+      const deletePromise = storage.deleteMeeting('meeting-with-audio');
+
+      mockGetRequest.onsuccess();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      mockDeleteRequest.onsuccess();
+
+      await deletePromise;
+
+      expect(mockObjectStore.get).toHaveBeenCalledWith('meeting-with-audio');
+      expect(window.electronAPI.deleteAudio).toHaveBeenCalledWith('/tmp/meeting-with-audio.webm');
+      expect(mockObjectStore.delete).toHaveBeenCalledWith('meeting-with-audio');
     });
   });
 });
