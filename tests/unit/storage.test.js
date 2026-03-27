@@ -295,7 +295,7 @@ describe('Storage 模块测试', () => {
   });
 
   describe('deleteMeeting', () => {
-    test('应在删除会议记录时同步删除对应的音频文件', async () => {
+    test('应使用独立事务读取并删除会议记录，同时同步删除对应的音频文件', async () => {
       window.electronAPI.deleteAudio.mockResolvedValue({ success: true });
 
       const mockExistingMeeting = {
@@ -319,12 +319,22 @@ describe('Storage 模块测试', () => {
         delete: jest.fn().mockReturnValue(mockDeleteRequest)
       };
 
-      const mockTransaction = {
-        objectStore: jest.fn().mockReturnValue(mockObjectStore)
+      const mockReadTransaction = {
+        objectStore: jest.fn().mockReturnValue({
+          get: mockObjectStore.get
+        })
+      };
+
+      const mockDeleteTransaction = {
+        objectStore: jest.fn().mockReturnValue({
+          delete: mockObjectStore.delete
+        })
       };
 
       const mockDb = {
-        transaction: jest.fn().mockReturnValue(mockTransaction)
+        transaction: jest.fn()
+          .mockReturnValueOnce(mockReadTransaction)
+          .mockReturnValueOnce(mockDeleteTransaction)
       };
 
       const storage = require('../../src/js/storage');
@@ -341,6 +351,8 @@ describe('Storage 模块测试', () => {
 
       await deletePromise;
 
+      expect(mockDb.transaction).toHaveBeenNthCalledWith(1, ['meetings'], 'readonly');
+      expect(mockDb.transaction).toHaveBeenNthCalledWith(2, ['meetings'], 'readwrite');
       expect(mockObjectStore.get).toHaveBeenCalledWith('meeting-with-audio');
       expect(window.electronAPI.deleteAudio).toHaveBeenCalledWith('/tmp/meeting-with-audio.webm');
       expect(mockObjectStore.delete).toHaveBeenCalledWith('meeting-with-audio');
