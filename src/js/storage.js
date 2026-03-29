@@ -152,23 +152,21 @@ async function saveMeeting(meeting) {
     console.log('[Storage] saveMeeting called, meeting id:', meeting.id);
     return new Promise(async (resolve, reject) => {
         try {
-            // 如果有音频文件且是 Blob，保存到文件系统
             if (meeting.audioFile && meeting.audioFile instanceof Blob && isElectron()) {
                 console.log('[Storage] Meeting has audioFile Blob, saving to filesystem...');
                 const audioResult = await saveAudioFile(meeting.audioFile);
                 console.log('[Storage] Audio save result:', audioResult);
+                
                 if (audioResult.success) {
-                    // 保存完整文件路径
                     meeting.audioFilename = audioResult.filePath;
+                    delete meeting.audioFile;
                     console.log('[Storage] Audio saved, filepath:', meeting.audioFilename);
                 } else {
-                    console.error('[Storage] Failed to save audio file:', audioResult.error);
+                    meeting.audioSaveError = audioResult.error;
+                    console.error('[Storage] Failed to save audio file, Blob preserved:', audioResult.error);
                 }
-                // 无论成功与否，都删除 Blob 以避免 IndexedDB 存储问题
-                delete meeting.audioFile;
             } else if (meeting.audioFile && meeting.audioFile instanceof Blob) {
                 console.log('[Storage] Non-electron environment, removing audioFile Blob');
-                // 非 Electron 环境，删除 Blob 以避免 IndexedDB 存储问题
                 delete meeting.audioFile;
             }
 

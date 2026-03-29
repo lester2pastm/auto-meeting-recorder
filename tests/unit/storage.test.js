@@ -358,4 +358,112 @@ describe('Storage 模块测试', () => {
       expect(mockObjectStore.delete).toHaveBeenCalledWith('meeting-with-audio');
     });
   });
+
+  describe('saveMeeting audio save failure handling', () => {
+    test('should preserve audioFile Blob when save fails', async () => {
+      const mockBlob = new Blob(['test audio'], { type: 'audio/webm' });
+      
+      let putOnsuccessHandler = null;
+      
+      const mockPutRequest = {};
+      Object.defineProperty(mockPutRequest, 'onsuccess', {
+        set: (handler) => { putOnsuccessHandler = handler; },
+        get: () => putOnsuccessHandler
+      });
+      
+      const mockObjectStore = {
+        put: jest.fn().mockReturnValue(mockPutRequest)
+      };
+      
+      const mockTransaction = {
+        objectStore: jest.fn().mockReturnValue(mockObjectStore)
+      };
+      
+      const mockDb = {
+        transaction: jest.fn().mockReturnValue(mockTransaction)
+      };
+      
+      window.electronAPI.saveAudio.mockResolvedValue({ success: false, error: 'Disk full' });
+      
+      const storage = require('../../src/js/storage');
+      const initPromise = storage.initDB();
+      const mockOpenRequest = indexedDB.open.mock.results[0].value;
+      mockOpenRequest.onsuccess({ target: { result: mockDb } });
+      await initPromise;
+      
+      const meeting = {
+        id: 'test-id-fail',
+        date: new Date().toISOString(),
+        audioFile: mockBlob,
+        transcript: 'test'
+      };
+      
+      const savePromise = storage.saveMeeting(meeting);
+      
+      await new Promise(resolve => setTimeout(resolve, 20));
+      
+      if (putOnsuccessHandler) {
+        putOnsuccessHandler({ target: { result: meeting } });
+      }
+      
+      const result = await savePromise;
+      
+      expect(result.audioFile).toBeInstanceOf(Blob);
+      expect(result.audioSaveError).toBe('Disk full');
+      expect(result.audioFilename).toBeUndefined();
+    });
+
+    test('should delete Blob and set filename when save succeeds', async () => {
+      const mockBlob = new Blob(['test audio'], { type: 'audio/webm' });
+      
+      let putOnsuccessHandler = null;
+      
+      const mockPutRequest = {};
+      Object.defineProperty(mockPutRequest, 'onsuccess', {
+        set: (handler) => { putOnsuccessHandler = handler; },
+        get: () => putOnsuccessHandler
+      });
+      
+      const mockObjectStore = {
+        put: jest.fn().mockReturnValue(mockPutRequest)
+      };
+      
+      const mockTransaction = {
+        objectStore: jest.fn().mockReturnValue(mockObjectStore)
+      };
+      
+      const mockDb = {
+        transaction: jest.fn().mockReturnValue(mockTransaction)
+      };
+      
+      window.electronAPI.saveAudio.mockResolvedValue({ success: true, filePath: '/saved/audio.webm' });
+      
+      const storage = require('../../src/js/storage');
+      const initPromise = storage.initDB();
+      const mockOpenRequest = indexedDB.open.mock.results[0].value;
+      mockOpenRequest.onsuccess({ target: { result: mockDb } });
+      await initPromise;
+      
+      const meeting = {
+        id: 'test-id-success',
+        date: new Date().toISOString(),
+        audioFile: mockBlob,
+        transcript: 'test'
+      };
+      
+      const savePromise = storage.saveMeeting(meeting);
+      
+      await new Promise(resolve => setTimeout(resolve, 20));
+      
+      if (putOnsuccessHandler) {
+        putOnsuccessHandler({ target: { result: meeting } });
+      }
+      
+      const result = await savePromise;
+      
+      expect(result.audioFile).toBeUndefined();
+      expect(result.audioFilename).toBe('/saved/audio.webm');
+      expect(result.audioSaveError).toBeUndefined();
+    });
+  });
 });
