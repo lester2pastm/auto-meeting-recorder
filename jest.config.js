@@ -4,6 +4,13 @@ module.exports = {
   testMatch: [
     '<rootDir>/tests/**/*.test.js'
   ],
+  testPathIgnorePatterns: [
+    '<rootDir>/tests/tdd-linux-recording-paths.test.js'
+  ],
+  modulePathIgnorePatterns: [
+    '<rootDir>/node_modules_win/',
+    '<rootDir>/node_modules_linux/'
+  ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'
   },

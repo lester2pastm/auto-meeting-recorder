@@ -539,6 +539,11 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
 
         if (!currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
             console.error('API 未配置:', { url: currentSettings.sttApiUrl, key: currentSettings.sttApiKey ? '已设置' : '未设置' });
+            if (meetingId) {
+                await updateMeeting(meetingId, {
+                    transcriptStatus: TRANSCRIPT_STATUS.FAILED
+                });
+            }
             showToast('请先配置语音识别API', 'error');
             return;
         }
@@ -870,6 +875,10 @@ function closeDetailModal() {
         modal.classList.remove('active');
         document.body.style.overflow = '';
     }
+
+    if (typeof cleanupDetailAudioPreview === 'function') {
+        cleanupDetailAudioPreview();
+    }
 }
 
 async function handleDeleteMeeting(id) {
@@ -1129,7 +1138,21 @@ async function handleRetryTranscription() {
     try {
         showLoading(i18n ? i18n.get('audioTranscribing') : '正在重新转写...');
         hideRetryTranscriptionButton();
-        
+
+        if (currentMeetingId) {
+            const retryResult = await retryTranscription(
+                currentMeetingId,
+                currentAudioBlob,
+                currentAudioFilePath
+            );
+
+            if (!retryResult || retryResult.allowed === false) {
+                showRetryTranscriptionButton();
+            }
+
+            return;
+        }
+
         const result = await transcribeAudio(
             currentAudioBlob,
             currentSettings.sttApiUrl,
@@ -1137,20 +1160,21 @@ async function handleRetryTranscription() {
             currentSettings.sttModel,
             currentAudioFilePath
         );
-        
+
         if (!result.success) {
             showRetryTranscriptionButton();
             showToast((i18n ? i18n.get('testFailed') : '转写失败') + ': ' + result.message, 'error');
-            hideLoading();
             return;
         }
-        
+
         hideRetryTranscriptionButton();
         updateSubtitleContent(result.text);
-        showToast(i18n ? i18n.get('toastTranscriptionComplete') : '转写完成', 'success');
+        currentTranscript = result.text;
+        await generateMeetingSummary(result.text, currentAudioBlob, null);
     } catch (error) {
         showRetryTranscriptionButton();
         showToast('重新转写失败: ' + error.message, 'error');
+    } finally {
         hideLoading();
     }
 }
@@ -1287,6 +1311,11 @@ async function handleRefreshSummary() {
         }
 
         updateSummaryContent(result.summary);
+        if (currentMeetingId) {
+            await updateMeeting(currentMeetingId, {
+                summary: result.summary
+            });
+        }
         showToast(i18n ? i18n.get('summaryRefreshed') : '会议纪要已更新', 'success');
     } catch (error) {
         console.error('Failed to refresh summary:', error);

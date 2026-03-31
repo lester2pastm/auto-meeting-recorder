@@ -143,6 +143,54 @@ describe('UI loading state targeting', () => {
     expect(refreshBtn.classList.contains('btn-loading')).toBe(true);
   });
 
+  test('meeting detail should revoke the previous audio object URL before rendering a new one', async () => {
+    const ui = require('../../src/js/ui');
+    global.URL.createObjectURL = jest
+      .fn()
+      .mockReturnValueOnce('blob:first-audio')
+      .mockReturnValueOnce('blob:second-audio');
+    global.URL.revokeObjectURL = jest.fn();
+
+    await ui.renderMeetingDetail({
+      id: 'meeting-3',
+      date: '2026-03-18T12:00:00.000Z',
+      duration: '00:05:00',
+      audioFile: new Blob(['audio-1'], { type: 'audio/webm' }),
+      transcript: '第一次',
+      summary: '第一次纪要'
+    });
+
+    await ui.renderMeetingDetail({
+      id: 'meeting-4',
+      date: '2026-03-18T12:05:00.000Z',
+      duration: '00:03:00',
+      audioFile: new Blob(['audio-2'], { type: 'audio/webm' }),
+      transcript: '第二次',
+      summary: '第二次纪要'
+    });
+
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:first-audio');
+  });
+
+  test('cleanupDetailAudioPreview should revoke the active detail audio object URL', async () => {
+    const ui = require('../../src/js/ui');
+    global.URL.createObjectURL = jest.fn(() => 'blob:active-audio');
+    global.URL.revokeObjectURL = jest.fn();
+
+    await ui.renderMeetingDetail({
+      id: 'meeting-5',
+      date: '2026-03-18T12:10:00.000Z',
+      duration: '00:02:00',
+      audioFile: new Blob(['audio-3'], { type: 'audio/webm' }),
+      transcript: '关闭前',
+      summary: '关闭前纪要'
+    });
+
+    ui.cleanupDetailAudioPreview();
+
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:active-audio');
+  });
+
   test('updateRecordingButtons should hide pause and resume controls on Linux while recording', () => {
     document.body.innerHTML = `
       <button id="btnStartRecording" style="display: inline-flex;"></button>

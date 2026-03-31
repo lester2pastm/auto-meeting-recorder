@@ -1,4 +1,12 @@
 let toastTimer = null;
+let currentDetailAudioUrl = null;
+
+function cleanupDetailAudioPreview() {
+    if (currentDetailAudioUrl) {
+        URL.revokeObjectURL(currentDetailAudioUrl);
+        currentDetailAudioUrl = null;
+    }
+}
 
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -295,6 +303,8 @@ async function renderMeetingDetail(meeting) {
     const detailContent = document.getElementById('detailContent');
     if (!detailContent) return;
 
+    cleanupDetailAudioPreview();
+
     // 处理音频文件
     let audioUrl = '';
     let hasAudioFile = false;
@@ -302,6 +312,7 @@ async function renderMeetingDetail(meeting) {
     if (meeting.audioFile && meeting.audioFile instanceof Blob) {
         // 使用内存中的 Blob
         audioUrl = URL.createObjectURL(meeting.audioFile);
+        currentDetailAudioUrl = audioUrl;
         hasAudioFile = true;
     } else if (meeting.audioFilename && typeof window !== 'undefined' && window.electronAPI) {
         // 从文件系统加载音频
@@ -309,6 +320,7 @@ async function renderMeetingDetail(meeting) {
             const result = await getAudioFile(meeting.audioFilename);
             if (result.success && result.blob) {
                 audioUrl = URL.createObjectURL(result.blob);
+                currentDetailAudioUrl = audioUrl;
                 hasAudioFile = true;
             }
         } catch (error) {
@@ -778,6 +790,7 @@ if (typeof module !== 'undefined' && module.exports) {
         showToast,
         copyToClipboard,
         renderMeetingDetail,
+        cleanupDetailAudioPreview,
         updateSubtitleContent,
         updateSummaryContent,
         showLoading,
