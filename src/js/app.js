@@ -399,6 +399,10 @@ function isExitProtectionActive() {
     return isRecordingActive || isRecordingWorkflowBusy;
 }
 
+function clearCurrentMeetingContext() {
+    currentMeetingId = null;
+}
+
 async function loadHistoryList() {
     try {
         const meetings = await getAllMeetings();
@@ -412,6 +416,7 @@ async function loadHistoryList() {
 
 async function handleStartRecording() {
     try {
+        clearCurrentMeetingContext();
         await startRecording();
         updateRecordingButtons(getRecordingState());
         showToast('录音已开始', 'success');
@@ -874,6 +879,8 @@ function closeDetailModal() {
         document.body.style.overflow = '';
     }
 
+    clearCurrentMeetingContext();
+
     if (typeof cleanupDetailAudioPreview === 'function') {
         cleanupDetailAudioPreview();
     }
@@ -1182,6 +1189,8 @@ async function processAudioFile(file) {
         hasSttUrl: !!currentSettings.sttApiUrl, 
         hasSttKey: !!currentSettings.sttApiKey 
     } : 'null');
+
+    clearCurrentMeetingContext();
     
     if (!currentSettings || !currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
         console.log('[App] API not configured, showing error');

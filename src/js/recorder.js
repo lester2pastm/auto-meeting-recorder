@@ -92,7 +92,10 @@ async function startRecording() {
         
         // 启动恢复跟踪
         if (typeof startRecoveryTracking === 'function') {
-            await startRecoveryTracking(currentPlatform, isLinuxPlatform);
+            const recoveryState = await startRecoveryTracking(currentPlatform, isLinuxPlatform);
+            if (!recoveryState || !recoveryState.tempFile) {
+                throw new Error('恢复录音初始化失败，请检查音频目录权限后重试');
+            }
         }
         
         // Linux 平台使用 FFmpeg 录制（已在应用启动时检测依赖）

@@ -35,6 +35,7 @@ module.exports = {
   handleTestSummaryApi,
   handleRetryTranscription,
   handleRefreshSummary,
+  closeDetailModal,
   processRecording,
   __setCurrentSettings: (settings) => { currentSettings = settings; },
   __setRetryTranscription: (fn) => { retryTranscription = fn; },
@@ -141,6 +142,50 @@ describe('App critical path regressions', () => {
     expect(updateMeeting).toHaveBeenCalledWith('meeting-9', {
       summary: '新的会议纪要'
     });
+  });
+
+  test('closeDetailModal should clear stale meeting context so main summary refresh does not overwrite an older meeting', async () => {
+    document.body.innerHTML = `
+      <div id="detailModal" class="active"></div>
+      <div id="subtitleContent">主页面新转写</div>
+      <div id="summaryContent"></div>
+      <button id="btnRefreshSummary"></button>
+    `;
+
+    const generateSummary = jest.fn().mockResolvedValue({
+      success: true,
+      summary: '主页面新纪要'
+    });
+    const updateSummaryContent = jest.fn();
+    const updateMeeting = jest.fn().mockResolvedValue(undefined);
+    const showToast = jest.fn();
+
+    const app = loadAppModule({
+      generateSummary,
+      updateSummaryContent,
+      updateMeeting,
+      showToast,
+      cleanupDetailAudioPreview: jest.fn(),
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      summaryApiUrl: 'https://summary.example.com',
+      summaryApiKey: 'key',
+      summaryModel: 'gpt-4o',
+      summaryTemplate: 'template'
+    });
+    app.__setRetryState({
+      meetingId: 'stale-meeting-id',
+      audioBlob: null,
+      audioFilePath: null
+    });
+
+    app.closeDetailModal();
+    await app.handleRefreshSummary();
+
+    expect(updateSummaryContent).toHaveBeenCalledWith('主页面新纪要');
+    expect(updateMeeting).not.toHaveBeenCalled();
   });
 
   test('processRecording should not leave meeting in pending when stt config is missing', async () => {
