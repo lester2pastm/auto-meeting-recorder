@@ -754,6 +754,14 @@ function handleCopySummary() {
     }
 }
 
+async function persistSettings(settings) {
+    await saveSettings(settings);
+
+    if (typeof window !== 'undefined' && window.electronAPI) {
+        await saveConfigToFile(settings);
+    }
+}
+
 async function handleTestSttApi() {
     const apiUrl = document.getElementById('sttApiUrl').value.trim();
     const apiKey = document.getElementById('sttApiKey').value.trim();
@@ -772,7 +780,7 @@ async function handleTestSttApi() {
         currentSettings.sttApiUrl = apiUrl;
         currentSettings.sttApiKey = apiKey;
         currentSettings.sttModel = model;
-        await saveSettings(currentSettings);
+        await persistSettings(currentSettings);
         showToast(result.message + '，设置已自动保存', 'success');
     } else {
         showToast(result.message, 'error');
@@ -797,7 +805,7 @@ async function handleTestSummaryApi() {
         currentSettings.summaryApiUrl = apiUrl;
         currentSettings.summaryApiKey = apiKey;
         currentSettings.summaryModel = model;
-        await saveSettings(currentSettings);
+        await persistSettings(currentSettings);
         showToast(result.message + '，设置已自动保存', 'success');
     } else {
         showToast(result.message, 'error');
@@ -807,14 +815,8 @@ async function handleTestSummaryApi() {
 async function handleSaveTemplate() {
     try {
         const settings = getSettingsFromUI();
-        await saveSettings(settings);
+        await persistSettings(settings);
         currentSettings = settings;
-        
-        // 同时保存到文件系统（Electron 环境）
-        if (typeof window !== 'undefined' && window.electronAPI) {
-            await saveConfigToFile(settings);
-        }
-        
         showToast('模板已保存', 'success');
     } catch (error) {
         console.error('Failed to save template:', error);
@@ -831,11 +833,7 @@ async function handleSaveAudioSources() {
             preferredSystemSource: settings.preferredSystemSource
         };
 
-        await saveSettings(currentSettings);
-
-        if (typeof window !== 'undefined' && window.electronAPI) {
-            await saveConfigToFile(currentSettings);
-        }
+        await persistSettings(currentSettings);
 
         await refreshAudioSourceOptions({ silent: true });
         showToast('音频源设置已保存', 'success');

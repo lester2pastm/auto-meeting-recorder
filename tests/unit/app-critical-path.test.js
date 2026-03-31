@@ -31,6 +31,8 @@ function loadAppModule(overrides = {}) {
 
   const script = new vm.Script(`${appSource}
 module.exports = {
+  handleTestSttApi,
+  handleTestSummaryApi,
   handleRetryTranscription,
   handleRefreshSummary,
   processRecording,
@@ -168,5 +170,87 @@ describe('App critical path regressions', () => {
     expect(updateMeeting).toHaveBeenCalledWith('meeting-pending', {
       transcriptStatus: 'failed'
     });
+  });
+
+  test('handleTestSttApi should persist settings to IndexedDB and file config after a successful test', async () => {
+    document.body.innerHTML = `
+      <input id="sttApiUrl" value="https://stt.example.com" />
+      <input id="sttApiKey" value="stt-key" />
+      <input id="sttModel" value="whisper-1" />
+    `;
+
+    const testSttApi = jest.fn().mockResolvedValue({ success: true, message: '连接成功' });
+    const saveSettings = jest.fn().mockResolvedValue(undefined);
+    const saveConfigToFile = jest.fn().mockResolvedValue(undefined);
+    const showToast = jest.fn();
+    window.electronAPI = {};
+
+    const app = loadAppModule({
+      testSttApi,
+      saveSettings,
+      saveConfigToFile,
+      showToast,
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: '',
+      sttApiKey: '',
+      sttModel: 'whisper-1'
+    });
+
+    await app.handleTestSttApi();
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      sttApiUrl: 'https://stt.example.com',
+      sttApiKey: 'stt-key',
+      sttModel: 'whisper-1'
+    }));
+    expect(saveConfigToFile).toHaveBeenCalledWith(expect.objectContaining({
+      sttApiUrl: 'https://stt.example.com',
+      sttApiKey: 'stt-key',
+      sttModel: 'whisper-1'
+    }));
+  });
+
+  test('handleTestSummaryApi should persist settings to IndexedDB and file config after a successful test', async () => {
+    document.body.innerHTML = `
+      <input id="summaryApiUrl" value="https://summary.example.com" />
+      <input id="summaryApiKey" value="summary-key" />
+      <input id="summaryModel" value="gpt-4o" />
+    `;
+
+    const testSummaryApi = jest.fn().mockResolvedValue({ success: true, message: '连接成功' });
+    const saveSettings = jest.fn().mockResolvedValue(undefined);
+    const saveConfigToFile = jest.fn().mockResolvedValue(undefined);
+    const showToast = jest.fn();
+    window.electronAPI = {};
+
+    const app = loadAppModule({
+      testSummaryApi,
+      saveSettings,
+      saveConfigToFile,
+      showToast,
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      summaryApiUrl: '',
+      summaryApiKey: '',
+      summaryModel: 'gpt-3.5-turbo'
+    });
+
+    await app.handleTestSummaryApi();
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      summaryApiUrl: 'https://summary.example.com',
+      summaryApiKey: 'summary-key',
+      summaryModel: 'gpt-4o'
+    }));
+    expect(saveConfigToFile).toHaveBeenCalledWith(expect.objectContaining({
+      summaryApiUrl: 'https://summary.example.com',
+      summaryApiKey: 'summary-key',
+      summaryModel: 'gpt-4o'
+    }));
   });
 });
