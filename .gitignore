@@ -46,4 +46,5 @@ config.json
 
 # Local AI / internal collaboration notes
 CLAUDE.md
+.codex
 docs/plans/
