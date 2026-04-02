@@ -36,6 +36,7 @@ function getAudioSourceHelper() {
 async function initApp() {
     try {
         await initDB();
+        await recoverInterruptedMeetingStates();
         
         // 初始化国际化
         if (typeof i18n !== 'undefined') {
@@ -403,6 +404,70 @@ function clearCurrentMeetingContext() {
     currentMeetingId = null;
 }
 
+async function recoverInterruptedMeetingStates() {
+    if (typeof getAllMeetings !== 'function' || typeof updateMeeting !== 'function') {
+        return;
+    }
+
+    const meetings = await getAllMeetings();
+    const recoveryTasks = [];
+
+    meetings.forEach((meeting) => {
+        if (!meeting || !meeting.id) {
+            return;
+        }
+
+        if (meeting.transcriptStatus === TRANSCRIPT_STATUS.TRANSCRIBING) {
+            recoveryTasks.push(updateMeeting(meeting.id, {
+                transcriptStatus: TRANSCRIPT_STATUS.FAILED
+            }));
+        }
+
+        if (meeting.summaryStatus === 'generating') {
+            recoveryTasks.push(updateMeeting(meeting.id, {
+                summaryStatus: ''
+            }));
+        }
+    });
+
+    if (recoveryTasks.length > 0) {
+        await Promise.all(recoveryTasks);
+    }
+}
+
+function getUploadAudioExtension(file) {
+    if (file && typeof file.name === 'string') {
+        const filename = file.name.trim();
+        const lastDotIndex = filename.lastIndexOf('.');
+        if (lastDotIndex > -1 && lastDotIndex < filename.length - 1) {
+            return filename.slice(lastDotIndex);
+        }
+    }
+
+    return '.webm';
+}
+
+async function persistUploadedAudioForTranscription(file, arrayBuffer) {
+    if (
+        typeof window === 'undefined' ||
+        !window.electronAPI ||
+        typeof window.electronAPI.saveAudio !== 'function'
+    ) {
+        return null;
+    }
+
+    const extension = getUploadAudioExtension(file);
+    const uploadFilename = `upload_${Date.now()}${extension}`;
+    const binaryData = new Uint8Array(arrayBuffer);
+    const result = await window.electronAPI.saveAudio(binaryData, uploadFilename);
+
+    if (!result || !result.success || !result.filePath) {
+        throw new Error(result && result.error ? result.error : '保存上传音频失败');
+    }
+
+    return result.filePath;
+}
+
 async function loadHistoryList() {
     try {
         const meetings = await getAllMeetings();
@@ -720,11 +785,16 @@ async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = nul
                 id: Date.now().toString(),
                 date: new Date().toISOString(),
                 duration: lastRecordingDuration,
-                audioFile: audioBlob,
                 transcript: transcript,
                 summary: summary,
                 transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
             };
+            if (currentAudioFilePath) {
+                meeting.audioFilename = currentAudioFilePath;
+                meeting.audioStorageStatus = 'saved';
+            } else {
+                meeting.audioFile = audioBlob;
+            }
             console.log('[App] Created new meeting object, has audioFile:', !!meeting.audioFile);
             await saveMeeting(meeting);
             console.log('[App] saveMeeting completed successfully');
@@ -1201,10 +1271,13 @@ async function processAudioFile(file) {
     showLoading(i18n ? i18n.get('audioTranscribing') : '正在转写音频文件...');
 
     try {
+        const audioArrayBuffer = await file.arrayBuffer();
+        const managedAudioFilePath = await persistUploadedAudioForTranscription(file, audioArrayBuffer);
+
         // 将 File 对象转换为 Blob
-        const audioBlob = new Blob([await file.arrayBuffer()], { type: file.type });
+        const audioBlob = new Blob([audioArrayBuffer], { type: file.type });
         currentAudioBlob = audioBlob;
-        currentAudioFilePath = null;
+        currentAudioFilePath = managedAudioFilePath;
         
         // 为上传的文件设置一个标识性的 duration
         setLastRecordingDuration('上传音频');
@@ -1216,12 +1289,19 @@ async function processAudioFile(file) {
             apiUrl: currentSettings.sttApiUrl 
         });
 
-        const result = await transcribeAudio(audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel, null);
+        const result = await transcribeAudio(
+            audioBlob,
+            currentSettings.sttApiUrl,
+            currentSettings.sttApiKey,
+            currentSettings.sttModel,
+            managedAudioFilePath
+        );
 
         console.log('转写结果:', result);
 
         if (!result.success) {
             // 转写失败，显示重试按钮
+            updateSubtitleContent('转写失败，请重新转写');
             showRetryTranscriptionButton();
             showToast((i18n ? i18n.get('testFailed') : '转写失败') + ': ' + result.message, 'error');
             hideLoading();
@@ -1240,6 +1320,7 @@ async function processAudioFile(file) {
         await generateMeetingSummary(result.text, audioBlob);
     } catch (error) {
         console.error('Failed to process audio file:', error);
+        updateSubtitleContent('处理音频文件失败，请重试');
         showToast((i18n ? i18n.get('saveFailed') : '处理音频文件失败') + ': ' + error.message, 'error');
     } finally {
         hideLoading();

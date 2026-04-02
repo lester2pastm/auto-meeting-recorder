@@ -37,6 +37,8 @@ module.exports = {
   handleRefreshSummary,
   closeDetailModal,
   processRecording,
+  processAudioFile,
+  recoverInterruptedMeetingStates,
   __setCurrentSettings: (settings) => { currentSettings = settings; },
   __setRetryTranscription: (fn) => { retryTranscription = fn; },
   __setRetryState: ({ meetingId, audioBlob, audioFilePath }) => {
@@ -215,6 +217,155 @@ describe('App critical path regressions', () => {
     expect(updateMeeting).toHaveBeenCalledWith('meeting-pending', {
       transcriptStatus: 'failed'
     });
+  });
+
+  test('recoverInterruptedMeetingStates should convert stale processing records into recoverable states', async () => {
+    const getAllMeetings = jest.fn().mockResolvedValue([
+      {
+        id: 'meeting-transcribing',
+        transcriptStatus: 'transcribing',
+        transcript: ''
+      },
+      {
+        id: 'meeting-summary',
+        transcriptStatus: 'completed',
+        summaryStatus: 'generating'
+      },
+      {
+        id: 'meeting-idle',
+        transcriptStatus: 'completed',
+        summaryStatus: ''
+      }
+    ]);
+    const updateMeeting = jest.fn().mockResolvedValue(undefined);
+
+    const app = loadAppModule({
+      getAllMeetings,
+      updateMeeting,
+      i18n: null
+    });
+
+    await app.recoverInterruptedMeetingStates();
+
+    expect(updateMeeting).toHaveBeenCalledTimes(2);
+    expect(updateMeeting).toHaveBeenCalledWith('meeting-transcribing', {
+      transcriptStatus: 'failed'
+    });
+    expect(updateMeeting).toHaveBeenCalledWith('meeting-summary', {
+      summaryStatus: ''
+    });
+  });
+
+  test('processAudioFile should save uploaded audio via electron and pass file path to transcription', async () => {
+    const transcribeAudio = jest.fn().mockResolvedValue({
+      success: true,
+      text: '上传音频转写成功'
+    });
+    const generateMeetingSummary = jest.fn().mockResolvedValue(undefined);
+    const hideRetryTranscriptionButton = jest.fn();
+    const showLoading = jest.fn();
+    const hideLoading = jest.fn();
+    const showToast = jest.fn();
+    const updateSubtitleContent = jest.fn();
+    const saveMeeting = jest.fn().mockResolvedValue(undefined);
+    const saveAudio = jest.fn().mockResolvedValue({
+      success: true,
+      filePath: '/managed/uploaded-audio.webm'
+    });
+
+    window.electronAPI = {
+      ...window.electronAPI,
+      saveAudio
+    };
+
+    const app = loadAppModule({
+      transcribeAudio,
+      generateMeetingSummary,
+      hideRetryTranscriptionButton,
+      showLoading,
+      hideLoading,
+      showToast,
+      updateSubtitleContent,
+      saveMeeting,
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: 'https://stt.example.com',
+      sttApiKey: 'key',
+      sttModel: 'whisper-1'
+    });
+
+    const file = {
+      name: 'meeting.webm',
+      type: 'audio/webm',
+      size: 4,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
+    };
+
+    await app.processAudioFile(file);
+
+    expect(saveAudio).toHaveBeenCalledTimes(1);
+    expect(Array.from(saveAudio.mock.calls[0][0])).toEqual([1, 2, 3, 4]);
+    expect(saveAudio.mock.calls[0][1]).toMatch(/\.webm$/);
+    expect(transcribeAudio).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'https://stt.example.com',
+      'key',
+      'whisper-1',
+      '/managed/uploaded-audio.webm'
+    );
+  });
+
+  test('processAudioFile should replace upload loading text with a failure hint when transcription fails', async () => {
+    const transcribeAudio = jest.fn().mockResolvedValue({
+      success: false,
+      message: '分段失败'
+    });
+    const showLoading = jest.fn((message) => {
+      document.getElementById('subtitleContent').textContent = message;
+    });
+    const hideLoading = jest.fn();
+    const showToast = jest.fn();
+    const updateSubtitleContent = jest.fn((text) => {
+      document.getElementById('subtitleContent').textContent = text;
+    });
+
+    window.electronAPI = {
+      ...window.electronAPI,
+      saveAudio: jest.fn().mockResolvedValue({
+        success: true,
+        filePath: '/managed/uploaded-audio.webm'
+      })
+    };
+
+    const app = loadAppModule({
+      transcribeAudio,
+      showLoading,
+      hideLoading,
+      showToast,
+      updateSubtitleContent,
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: 'https://stt.example.com',
+      sttApiKey: 'key',
+      sttModel: 'whisper-1'
+    });
+
+    const file = {
+      name: 'meeting.webm',
+      type: 'audio/webm',
+      size: 4,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
+    };
+
+    await app.processAudioFile(file);
+
+    expect(document.getElementById('btnRetryTranscription').style.display).toBe('inline-flex');
+    expect(updateSubtitleContent).toHaveBeenCalledWith('转写失败，请重新转写');
+    expect(document.getElementById('subtitleContent').textContent).toBe('转写失败，请重新转写');
   });
 
   test('handleTestSttApi should persist settings to IndexedDB and file config after a successful test', async () => {
