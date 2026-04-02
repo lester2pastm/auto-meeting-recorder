@@ -207,6 +207,38 @@ describe('generateSummary reliability', () => {
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
+  test('uses a longer summary timeout for longer transcripts', async () => {
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
+      realSetTimeout(fn, 0, ...args)
+    ));
+
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: '最终纪要'
+          }
+        }]
+      })
+    });
+
+    const transcript = '会议转录'.repeat(2000);
+
+    const result = await api.generateSummary(
+      transcript,
+      '# 模板',
+      'https://api.openai.com/v1/chat/completions',
+      'test-key'
+    );
+
+    const timeoutDelays = setTimeout.mock.calls.map((call) => call[1]);
+
+    expect(result).toEqual({ success: true, summary: '最终纪要' });
+    expect(timeoutDelays).toContain(55000);
+  });
+
   test('returns i18n-backed network exhausted message after retries are exhausted', async () => {
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
       realSetTimeout(fn, 0, ...args)

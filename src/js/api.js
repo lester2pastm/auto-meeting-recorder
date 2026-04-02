@@ -24,6 +24,20 @@ function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getSummaryRequestTimeout(transcript) {
+    const baseTimeout = 15000;
+    const maxTimeout = 120000;
+    const transcriptLength = typeof transcript === 'string' ? transcript.trim().length : 0;
+
+    if (transcriptLength === 0) {
+        return baseTimeout;
+    }
+
+    // Give longer transcripts more time to complete without letting requests hang indefinitely.
+    const extraTimeout = Math.ceil(transcriptLength / 1000) * 5000;
+    return Math.min(baseTimeout + extraTimeout, maxTimeout);
+}
+
 function isRetryableSummaryStatus(status) {
     return status === 429 || status >= 500;
 }
@@ -771,7 +785,7 @@ ${transcript}
 请严格按照模板格式输出会议纪要，保持Markdown格式。`;
 
         const maxAttempts = 3;
-        const requestTimeout = 15000;
+        const requestTimeout = getSummaryRequestTimeout(transcript);
         const maxBackoff = 2000;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
