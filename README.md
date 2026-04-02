@@ -1,409 +1,276 @@
 # Auto Meeting Recorder
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.11-blue.svg" alt="Version">
+  <img src="Auto Meeting Recorder App Icon.png" alt="Auto Meeting Recorder Icon" width="120">
+</p>
+
+<h1 align="center">Auto Meeting Recorder</h1>
+
+<p align="center">
+  Record meetings, transcribe audio, generate summaries, and keep the whole workflow on your machine.
+</p>
+
+<p align="center">
+  <a href="README_CN.md">中文文档</a> ·
+  <a href="#highlights">Highlights</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#development">Development</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-2.6.15-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
-  <img src="https://img.shields.io/badge/Node.js-16+-339933?logo=node.js&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/Node.js-18%20recommended-339933?logo=node.js&logoColor=white" alt="Node.js">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/lester2pastm/auto-meeting-recorder?style=social" alt="GitHub Stars">
-  <img src="https://img.shields.io/github/forks/lester2pastm/auto-meeting-recorder?style=social" alt="GitHub Forks">
+  An Electron desktop app for teams and individuals who want a practical local-first meeting workflow:
+  capture audio, send it to your own STT and LLM endpoints, then keep transcripts, summaries, and audio history locally.
 </p>
 
 <p align="center">
-  <b>🎙️ Record · 📝 Transcribe · 🤖 Summarize</b>
-</p>
-
-<p align="center">
-  A cross-platform desktop application for automatic meeting minutes generation with AI-powered transcription and summarization.
-</p>
-
-<p align="center">
-  <a href="README_CN.md">中文文档</a> •
-  <a href="#features">Features</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#usage">Usage</a> •
-  <a href="#screenshots">Screenshots</a>
+  <img src="docs/screenshots/recording.png" alt="Recording Interface" width="88%">
 </p>
 
 ---
 
-## ✨ Features
+## Highlights
 
-<table>
-<tr>
-<td width="50%">
+| | |
+|---|---|
+| Recovery-first workflow | Detects interrupted recordings on next launch and lets you continue, transcribe, or discard them |
+| Local-first storage | Audio, settings, transcript history, and summaries stay on device by default |
+| Flexible AI backends | Works with OpenAI-compatible STT and chat-style summary endpoints you configure yourself |
+| Built for desktop recording | Windows, macOS, and Linux support with a dedicated Linux FFmpeg path |
+| History that stays useful | Re-open meetings, replay audio, copy transcript, and refresh summaries later |
 
-### 🎙️ **Audio Recording**
-- Record meeting audio with microphone and system audio support
-- Real-time audio visualization with animated waveform
-- Pause and resume recording on Windows and macOS
-- Linux currently supports start/stop recording only
-- High-quality audio capture in WebM format
-- Upload and process existing audio files
+### Why this version matters
 
-</td>
-<td width="50%">
-
-### 📝 **Speech-to-Text**
-- Transcribe audio using OpenAI-compatible APIs
-- Support for multiple providers (SiliconFlow, OpenAI, Alibaba Cloud)
-- Real-time transcription display
-- Multi-language support
-- Test API connectivity before recording
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🤖 **AI Summary Generation**
-- Automatically generate meeting minutes using LLM APIs
-- Customizable templates with Markdown support
-- Structured output (overview, topics, decisions, action items)
-- Support for DeepSeek, GPT-4, Claude, and other models
-- Regenerate summary with one click
-
-</td>
-<td width="50%">
-
-### 🔒 **Privacy-First**
-- All data stored locally on your device
-- No cloud dependency for core functionality
-- No analytics or telemetry
-- Your API keys stay on your device
-- Encrypted storage for sensitive settings
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 📚 **History Management**
-- Save and manage all meeting records
-- View detailed meeting information
-- Copy transcript and summary to clipboard
-- Export audio files from past meetings
-- Delete old records to free up space
-
-</td>
-<td width="50%">
-
-### 💻 **Cross-Platform**
-- Windows, macOS, and Linux support
-- Desktop app built with Electron
-- Web version for browser use
-- Consistent experience across platforms
-- Automatic platform detection
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🎨 **Modern UI**
-- Clean and intuitive interface design
-- Tab-based navigation for content switching
-- Responsive layout adapts to window size
-- Real-time recording timer and visualizer
-- Toast notifications for user feedback
-
-</td>
-<td width="50%">
-
-### 🌐 **Internationalization**
-- Multi-language support (English, Chinese)
-- Easy to add more languages
-- Language auto-detection
-- Localized UI elements and messages
-
-</td>
-</tr>
-</table>
+- Current app version: `2.6.15`
+- Recent work focused on recovery, retry-flow correctness, persistence consistency, and Linux recording resilience
+- `src/index.html` is still useful for UI development and browser-based E2E checks, but the full product experience depends on Electron IPC
 
 ---
 
-## 📸 Screenshots
+## Feature Overview
 
-### 🎙️ Recording Interface
-<p align="center">
-  <img src="docs/screenshots/recording.png" alt="Recording Interface" width="80%">
-</p>
-<p align="center"><i>Main recording interface with audio visualization and timer</i></p>
+### Capture
 
-<!-- 
-### 📝 Transcription View
-![Transcription](docs/screenshots/transcription.png)
+- Record from microphone and system audio
+- Upload existing audio files for processing
+- Choose preferred microphone and system audio sources
+- Use Linux FFmpeg recording when available
 
-### 📊 Meeting Minutes
-![Meeting Minutes](docs/screenshots/minutes.png)
+### Process
 
-### ⚙️ Settings Page
-![Settings](docs/screenshots/settings.png)
--->
+- Send audio to your configured STT endpoint
+- Automatically continue into summary generation after transcription
+- Retry failed transcription jobs
+- Segment long audio or files larger than `50 MB`
+
+### Review
+
+- Switch between transcript and summary views
+- Re-open past meetings from history
+- Replay saved audio from meeting detail
+- Refresh summaries for the current meeting or from history
+
+### Store
+
+- Keep audio files inside the managed app audio directory
+- Persist settings locally through Electron store and renderer-side IndexedDB sync
+- Maintain recovery metadata for interrupted sessions
+- Guard managed audio paths against traversal outside the app directory
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### Prerequisites
+### Download
 
-- **Node.js 16+** (for development)
-- **Modern browser** (Chrome, Firefox, Edge) for web version
-- **API keys** for speech recognition and summary generation
+For normal use, download the latest packaged build directly from the [Releases](https://github.com/lester2pastm/auto-meeting-recorder/releases) page.
 
-### Installation
+### Build from source
 
-#### Option 1: Desktop App (Recommended)
+- Node.js `18` recommended for development
+- `npm`
+- A speech-to-text API endpoint, key, and model
+- A summary-generation API endpoint, key, and model
 
-**Download Pre-built Binaries**
-
-| Platform | Download |
-|----------|----------|
-| Windows | [AutoMeetingRecorder-2.6.7-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-2.6.7-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-2.6.7-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-
-**Build from Source**
+### Install dependencies
 
 ```bash
-# Clone the repository
 git clone https://github.com/lester2pastm/auto-meeting-recorder.git
 cd auto-meeting-recorder
-
-# Install dependencies
 npm install
-
-# Run in development mode
-npm run dev
-
-# Build for production
-npm run build        # All platforms
-npm run build:win    # Windows only
-npm run build:mac    # macOS only
-npm run build:linux  # Linux only
 ```
 
-#### Option 2: Web Version
-
-Simply open `src/index.html` in your browser or serve it with any static file server:
+### Run locally
 
 ```bash
-npx serve src
+npm run dev
 ```
+
+### Build packages manually
+
+```bash
+npm run build
+npm run build:win
+npm run build:mac
+npm run build:linux
+```
+
+Build artifacts are generated in `dist/` and use the current package version in the file name.
 
 ---
 
-## ⚙️ Configuration
+## Typical Flow
 
-### API Setup
+1. Open the desktop app.
+2. Configure STT and summary APIs in Settings.
+3. Optionally test both connections.
+4. Pick preferred audio sources if you want manual control.
+5. Start recording or upload an audio file.
+6. Wait for transcript generation.
+7. Review the generated meeting summary.
+8. Revisit the result later from History.
 
-The app requires API keys for speech recognition and meeting summary generation.
+### If the app was interrupted
 
-#### Recommended: Speech-to-Text API
+On startup, the app can detect unfinished recording metadata and offer to:
 
-| Provider | API URL | Model |
-|----------|---------|-------|
-| **SiliconFlow** | `https://api.siliconflow.cn/v1/audio/transcriptions` | `TeleAI/TeleSpeechASR` |
-| OpenAI | `https://api.openai.com/v1/audio/transcriptions` | `whisper-1` |
-| Alibaba Cloud | `https://dashscope.aliyuncs.com/api/v1/audio/transcriptions` | `whisper-v3` |
-
-#### Recommended: Summary Generation API
-
-| Provider | API URL | Model |
-|----------|---------|-------|
-| **DeepSeek** | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` |
-| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4`, `gpt-3.5-turbo` |
-| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-3-opus`, `claude-3-sonnet` |
-| Alibaba Cloud | `https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation` | `qwen-max`, `qwen-plus` |
-
-### Meeting Minutes Template
-
-Customize your meeting minutes template using Markdown:
-
-```markdown
-# Meeting Minutes - {{date}}
-
-## Overview
-- **Date:** {{date}}
-- **Duration:** {{duration}}
-- **Participants:** {{participants}}
-
-## Main Topics
-{{topics}}
-
-## Discussion Points
-{{discussion}}
-
-## Decisions
-{{decisions}}
-
-## Action Items
-{{action_items}}
-
-## Other Notes
-{{notes}}
-```
+- continue recording
+- transcribe immediately
+- delete the recovery data
 
 ---
 
-## 📖 Usage Guide
+## Platform Notes
 
-### First Time Setup
+### Windows and macOS
 
-1. Open the app and navigate to **Settings**
-2. Configure your Speech-to-Text API credentials (SiliconFlow recommended)
-3. Configure your Summary Generation API credentials (DeepSeek recommended)
-4. Customize your meeting template (optional)
-5. Test both API configurations
+- Use the standard desktop recording path
+- Pause and resume support is more complete here than on Linux
 
-### Recording a Meeting
+### Linux
 
-1. Click **"Start Recording"** to begin capturing audio
-2. Use the **Pause** button during breaks on Windows and macOS
-3. On Linux, recording currently supports **Start** and **Stop** only
-4. Click **"Stop Recording"** when the meeting ends
-5. Wait for transcription and summary generation
-6. Switch between **Meeting Transcript** and **Meeting Minutes** tabs
-7. Copy content to clipboard or export as needed
+- The app checks Linux audio dependencies at startup
+- FFmpeg is used for the Linux recording path when available
+- PulseAudio sources are detected for microphone and monitor-device capture
+- Missing dependencies trigger a user-visible dependency prompt instead of silent failure
 
-### Managing History
+### Dual environment setup
 
-- Access all past meetings in the **History** page
-- View detailed meeting information including audio playback
-- Copy transcript or summary from any past meeting
-- Export audio files from previous recordings
-- Delete old records to free up space
+This repository includes platform-switch scripts for filesystems that do not handle symlinks well:
 
-### Uploading Audio Files
+```bash
+npm run use:linux
+npm run use:win
+```
 
-You can also upload existing audio files instead of recording:
-
-1. Click the **Upload** button in the transcript tab
-2. Select an audio file (supports common formats)
-3. Wait for transcription and summary generation
+If you maintain both `node_modules_linux/` and `node_modules_win/`, see [DUAL_ENV_SETUP.md](DUAL_ENV_SETUP.md).
 
 ---
 
-## 🏗️ Project Structure
+## Configuration
 
+### Speech-to-text settings
+
+- API URL
+- API key
+- Model name
+
+Common compatible endpoint styles:
+
+- OpenAI-style `/v1/audio/transcriptions`
+- SiliconFlow transcription endpoints
+- DashScope / Bailian-compatible transcription endpoints
+
+### Summary settings
+
+- API URL
+- API key
+- Model name
+- Custom markdown summary template
+
+Common compatible endpoint styles:
+
+- OpenAI-style `/v1/chat/completions`
+- DeepSeek-compatible chat endpoints
+- Other gateways that accept standard chat payloads
+
+### Template editing
+
+The built-in meeting summary template is markdown-based and can be customized in Settings to match your preferred structure.
+
+---
+
+## Development
+
+### Scripts
+
+```bash
+npm run dev
+npm run dev:linux
+npm run use:linux
+npm run use:win
+npm run install:linux
+npm run install:win
+npm run test
+npm run test:unit
+npm run test:integration
+npm run test:e2e
+npm run test:coverage
 ```
+
+`npm run dev:win` is intentionally a guard message that reminds you to switch to the Windows dependency environment first.
+
+### Project structure
+
+```text
 auto-meeting-recorder/
-├── 📁 electron/              # Electron main process
-│   ├── main.js              # Main entry point
-│   └── preload.js           # Preload script for security
-│
-├── 📁 src/                   # Application source code
-│   ├── 📁 css/              # Stylesheets
-│   │   └── style.css        # Main stylesheet
-│   ├── 📁 js/               # JavaScript modules
-│   │   ├── app.js           # Main application logic
-│   │   ├── api.js           # API integrations (STT & LLM)
-│   │   ├── recorder.js      # Audio recording functionality
-│   │   ├── storage.js       # Data persistence (IndexedDB/FileSystem)
-│   │   ├── ui.js            # UI interactions and rendering
-│   │   └── i18n.js          # Internationalization
-│   └── index.html           # Main HTML file
-│
-├── 📁 docs/                  # Documentation
-│   └── 📁 plans/            # Development plans
-│
-├── 📁 .github/               # GitHub configurations
-│   └── 📁 workflows/        # CI/CD workflows
-│
-├── package.json             # Project configuration
-├── LICENSE                  # MIT License
-└── README.md                # This file
+├── electron/                 # Electron main process and IPC handlers
+├── src/
+│   ├── css/                  # Application styles
+│   ├── js/                   # Renderer logic
+│   └── index.html            # Main UI entry
+├── tests/
+│   ├── unit/                 # Jest unit tests
+│   ├── integration/          # Jest integration tests
+│   └── e2e/                  # Playwright E2E tests
+├── docs/                     # Audits and project documentation
+├── scripts/                  # Environment-switch and setup scripts
+├── DUAL_ENV_SETUP.md         # Dual-platform dependency workflow
+└── README.md
 ```
 
----
+### Test coverage today
 
-## 🌐 Browser Compatibility
+- Jest unit tests for app flow, storage, API handling, recovery, UI behavior, and Linux audio helpers
+- Integration tests for recorder and recovery flows
+- Playwright coverage for navigation, recorder UI, and responsive behavior
 
-| Browser | Minimum Version | Status |
-|---------|----------------|--------|
-| Chrome | 90+ | ✅ Fully Supported |
-| Firefox | 88+ | ✅ Fully Supported |
-| Edge | 90+ | ✅ Fully Supported |
-| Safari | 14+ | ⚠️ Limited Support |
+For browser-based E2E checks, serve `src/` locally and point Playwright at that environment.
 
 ---
 
-## 💾 Data Storage
+## Data and Privacy
 
-All data is stored locally on your device:
-
-| Data Type | Desktop | Web |
-|-----------|---------|-----|
-| Audio Recordings | Local filesystem | IndexedDB |
-| Transcriptions | Electron Store | IndexedDB |
-| Meeting Minutes | Electron Store | IndexedDB |
-| API Settings | Encrypted store | LocalStorage |
+- Audio, transcripts, summaries, and settings are stored locally by default
+- AI processing is not offline: audio and text are sent to the endpoints you configure
+- The main app flow does not include analytics or telemetry logic
+- API keys are stored locally; if you need stricter secret handling, review the code and your deployment environment carefully
 
 ---
 
-## 🔐 Privacy & Security
+## Contributing
 
-- ✅ All data stored locally on your device
-- ✅ API keys are never shared or transmitted except to your configured endpoints
-- ✅ No analytics, telemetry, or tracking
-- ✅ No cloud services required
-- ✅ Open source - audit the code yourself
+Issues and pull requests are welcome. If you change user-facing behavior, please update tests and keep `README.md` and `README_CN.md` aligned.
 
 ---
 
-## 🤝 Contributing
+## License
 
-We welcome contributions! Please follow these steps:
-
-1. **Fork** the repository
-2. **Create** your feature branch: `git checkout -b feature/AmazingFeature`
-3. **Commit** your changes: `git commit -m 'Add some AmazingFeature'`
-4. **Push** to the branch: `git push origin feature/AmazingFeature`
-5. **Open** a Pull Request
-
-Please read our [Contributing Guide](CONTRIBUTING.md) for more details.
-
-### Contributors
-
-<a href="https://github.com/lester2pastm/auto-meeting-recorder/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=lester2pastm/auto-meeting-recorder" alt="Contributors" />
-</a>
-
----
-
-## 📜 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Built with [Electron](https://www.electronjs.org/) - Cross-platform desktop apps
-- Speech recognition powered by [OpenAI Whisper](https://openai.com/research/whisper) and compatible APIs
-- Meeting summaries generated by Large Language Models
-- Icons by [Heroicons](https://heroicons.com/)
-
----
-
-## 💬 Support
-
-<p align="center">
-  <b>If you find this project helpful, please give it a ⭐ on GitHub!</b>
-</p>
-
-<p align="center">
-  <a href="https://github.com/lester2pastm/auto-meeting-recorder/issues">🐛 Report Bug</a> •
-  <a href="https://github.com/lester2pastm/auto-meeting-recorder/issues">✨ Request Feature</a> •
-  <a href="https://github.com/lester2pastm/auto-meeting-recorder/discussions">💬 Discussions</a>
-</p>
-
----
-
-<p align="center">
-  Made with ❤️ by <a href="https://github.com/lester2pastm">Lester</a>
-</p>
+This project is licensed under the [MIT License](LICENSE).

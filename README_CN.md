@@ -1,409 +1,276 @@
 # 自动会议纪要
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.11-blue.svg" alt="版本">
+  <img src="Auto Meeting Recorder App Icon.png" alt="Auto Meeting Recorder Icon" width="120">
+</p>
+
+<h1 align="center">自动会议纪要</h1>
+
+<p align="center">
+  录音、转写、生成纪要，并把整个会议处理流程尽量留在你的本机。
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> ·
+  <a href="#亮点">亮点</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#开发说明">开发说明</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-2.6.15-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
-  <img src="https://img.shields.io/badge/Node.js-16+-339933?logo=node.js&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/Node.js-18%20recommended-339933?logo=node.js&logoColor=white" alt="Node.js">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/lester2pastm/auto-meeting-recorder?style=social" alt="GitHub Stars">
-  <img src="https://img.shields.io/github/forks/lester2pastm/auto-meeting-recorder?style=social" alt="GitHub Forks">
+  一个基于 Electron 的桌面应用，适合希望把会议录音、语音转写、纪要生成和历史留存在本地的用户。
+  你可以接入自己配置的 STT 和 LLM 接口，而不是绑定单一服务商。
 </p>
 
 <p align="center">
-  <b>🎙️ 录音 · 📝 转写 · 🤖 总结</b>
-</p>
-
-<p align="center">
-  一款跨平台的桌面应用程序，利用 AI 技术实现语音转文字和智能会议纪要生成。
-</p>
-
-<p align="center">
-  <a href="README.md">English</a> •
-  <a href="#功能特性">功能特性</a> •
-  <a href="#安装">安装</a> •
-  <a href="#使用指南">使用指南</a> •
-  <a href="#截图">截图</a>
+  <img src="docs/screenshots/recording.png" alt="录音界面" width="88%">
 </p>
 
 ---
 
-## ✨ 功能特性
+## 亮点
 
-<table>
-<tr>
-<td width="50%">
+| | |
+|---|---|
+| 恢复优先 | 启动时自动检测中断录音，并允许继续录制、立即转写或丢弃 |
+| 本地优先 | 音频、设置、历史记录和纪要默认保存在本机 |
+| 接口灵活 | 支持你自行配置的 OpenAI 兼容转写接口和聊天式纪要接口 |
+| 面向桌面录音 | 支持 Windows、macOS、Linux，并为 Linux 提供 FFmpeg 录音路径 |
+| 历史可复用 | 可以重新打开历史会议、回放音频、复制全文，并重新生成纪要 |
 
-### 🎙️ **音频录制**
+### 为什么当前版本值得关注
+
+- 当前版本：`2.6.15`
+- 最近的工作重点是录音恢复、失败重试正确性、持久化一致性，以及 Linux 录音稳定性
+- `src/index.html` 仍适合 UI 开发和浏览器 E2E 检查，但完整产品能力依赖 Electron IPC
+
+---
+
+## 功能概览
+
+### 采集
+
 - 支持麦克风和系统音频录制
-- 实时音频可视化效果，动态波形展示
-- Windows 和 macOS 支持暂停和继续录制
-- Linux 当前仅支持开始和停止录制
-- WebM 格式高质量音频采集
-- 支持上传现有音频文件进行转写
+- 支持上传已有音频文件
+- 支持保存首选麦克风和系统音频源
+- Linux 在可用时走 FFmpeg 录音链路
 
-</td>
-<td width="50%">
+### 处理
 
-### 📝 **语音转文字**
-- 基于 OpenAI 兼容 API 的语音转录
-- 支持多家服务商（SiliconFlow、OpenAI、阿里云）
-- 实时转录文本显示
-- 多语言支持
-- 录音前可测试 API 连通性
+- 将音频发送到你配置的 STT 接口
+- 转写完成后自动进入纪要生成
+- 支持失败后重新转写
+- 对超长音频或大于 `50 MB` 的文件自动分段处理
 
-</td>
-</tr>
-<tr>
-<td width="50%">
+### 查看
 
-### 🤖 **AI 智能总结**
-- 使用大语言模型 API 自动生成会议纪要
-- 支持 Markdown 自定义模板
-- 结构化输出（会议概述、议题、决策、待办事项）
-- 支持 DeepSeek、GPT-4、Claude 等主流模型
-- 一键重新生成会议纪要
+- 可在全文和纪要视图之间切换
+- 可从历史记录重新打开过去的会议
+- 可在会议详情中回放保存的音频
+- 可在当前会议和历史会议中重新生成纪要
 
-</td>
-<td width="50%">
+### 存储
 
-### 🔒 **隐私优先**
-- 所有数据本地存储
-- 核心功能无需依赖云服务
-- 无分析统计和遥测
-- API 密钥仅保存在本地设备
-- 敏感设置加密存储
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 📚 **历史记录管理**
-- 保存和管理所有会议记录
-- 查看详细的会议信息
-- 复制转录文本和纪要到剪贴板
-- 从历史记录导出音频文件
-- 删除旧记录释放存储空间
-
-</td>
-<td width="50%">
-
-### 💻 **跨平台支持**
-- 支持 Windows、macOS 和 Linux
-- 基于 Electron 的桌面应用
-- 浏览器网页版本
-- 各平台体验一致
-- 自动检测运行平台
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🎨 **现代化界面**
-- 简洁直观的界面设计
-- 标签页式内容切换导航
-- 响应式布局，自适应窗口大小
-- 实时录音计时器和可视化效果
-- Toast 通知提示用户操作反馈
-
-</td>
-<td width="50%">
-
-### 🌐 **国际化支持**
-- 多语言支持（中文、英文）
-- 易于添加更多语言
-- 自动检测系统语言
-- 界面元素和消息本地化
-
-</td>
-</tr>
-</table>
+- 音频文件统一保存在应用受控目录
+- 设置通过 Electron Store 保存，并同步到渲染层 IndexedDB
+- 为中断录音维护恢复元数据
+- 对受管音频路径做越界访问保护
 
 ---
 
-## 📸 截图
+## 快速开始
 
-### 🎙️ 录音界面
-<p align="center">
-  <img src="docs/screenshots/recording.png" alt="录音界面" width="80%">
-</p>
-<p align="center"><i>主录音界面，包含音频可视化和计时器</i></p>
+### 下载
 
-<!-- 
-### 📝 转写视图
-![转写视图](docs/screenshots/transcription.png)
+普通使用场景下，直接从 [Releases](https://github.com/lester2pastm/auto-meeting-recorder/releases) 页面下载最新安装包即可。
 
-### 📊 会议纪要
-![会议纪要](docs/screenshots/minutes.png)
+### 从源码构建
 
-### ⚙️ 设置页面
-![设置页面](docs/screenshots/settings.png)
--->
+- 开发环境建议使用 Node.js `18`
+- `npm`
+- 一个语音转写 API 地址、密钥和模型
+- 一个纪要生成 API 地址、密钥和模型
 
----
-
-## 🚀 快速开始
-
-### 环境要求
-
-- **Node.js 16+**（开发环境）
-- **现代浏览器**（Chrome、Firefox、Edge）用于网页版本
-- **API 密钥**（语音识别和纪要生成）
-
-### 安装
-
-#### 方案一：桌面应用（推荐）
-
-**下载预编译版本**
-
-| 平台 | 下载链接 |
-|------|----------|
-| Windows | [AutoMeetingRecorder-2.6.7-win.exe](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| macOS | [AutoMeetingRecorder-2.6.7-mac.dmg](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-| Linux | [AutoMeetingRecorder-2.6.7-linux.AppImage](https://github.com/lester2pastm/auto-meeting-recorder/releases) |
-
-**从源码构建**
+### 安装依赖
 
 ```bash
-# 克隆仓库
 git clone https://github.com/lester2pastm/auto-meeting-recorder.git
 cd auto-meeting-recorder
-
-# 安装依赖
 npm install
-
-# 开发模式运行
-npm run dev
-
-# 构建生产版本
-npm run build        # 所有平台
-npm run build:win    # 仅 Windows
-npm run build:mac    # 仅 macOS
-npm run build:linux  # 仅 Linux
 ```
 
-#### 方案二：网页版本
-
-直接用浏览器打开 `src/index.html` 文件，或使用静态文件服务器：
+### 本地运行
 
 ```bash
-npx serve src
+npm run dev
 ```
+
+### 手动构建安装包
+
+```bash
+npm run build
+npm run build:win
+npm run build:mac
+npm run build:linux
+```
+
+构建产物会输出到 `dist/`，并带上当前包版本号。
 
 ---
 
-## ⚙️ 配置说明
+## 典型使用流程
 
-### API 设置
+1. 打开桌面应用。
+2. 在设置页配置转写和纪要 API。
+3. 按需测试两个接口的连通性。
+4. 如果需要，选择首选音频源。
+5. 开始录音，或者直接上传音频文件。
+6. 等待全文生成。
+7. 查看自动生成的会议纪要。
+8. 之后可在历史记录中再次打开和处理。
 
-应用需要配置 API 密钥用于语音识别和会议纪要生成。
+### 如果应用中途被打断
 
-#### 推荐：语音识别 API
+应用启动时会检测未完成录音，并提供以下操作：
 
-| 服务商 | API 地址 | 模型 |
-|--------|----------|------|
-| **SiliconFlow** | `https://api.siliconflow.cn/v1/audio/transcriptions` | `TeleAI/TeleSpeechASR` |
-| OpenAI | `https://api.openai.com/v1/audio/transcriptions` | `whisper-1` |
-| 阿里云 | `https://dashscope.aliyuncs.com/api/v1/audio/transcriptions` | `whisper-v3` |
-
-#### 推荐：纪要生成 API
-
-| 服务商 | API 地址 | 模型 |
-|--------|----------|------|
-| **DeepSeek** | `https://api.deepseek.com/v1/chat/completions` | `deepseek-chat` |
-| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4`, `gpt-3.5-turbo` |
-| Anthropic | `https://api.anthropic.com/v1/messages` | `claude-3-opus`, `claude-3-sonnet` |
-| 阿里云 | `https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation` | `qwen-max`, `qwen-plus` |
-
-### 会议纪要模板
-
-使用 Markdown 自定义会议纪要模板：
-
-```markdown
-# 会议纪要 - {{date}}
-
-## 会议信息
-- **日期：** {{date}}
-- **时长：** {{duration}}
-- **参会人员：** {{participants}}
-
-## 主要议题
-{{topics}}
-
-## 讨论要点
-{{discussion}}
-
-## 决策事项
-{{decisions}}
-
-## 待办事项
-{{action_items}}
-
-## 其他备注
-{{notes}}
-```
+- 继续录制
+- 立即转写
+- 删除恢复数据
 
 ---
 
-## 📖 使用指南
+## 平台说明
 
-### 首次设置
+### Windows 和 macOS
 
-1. 打开应用，进入**设置**页面
-2. 配置语音识别 API 凭证（推荐使用 SiliconFlow）
-3. 配置纪要生成 API 凭证（推荐使用 DeepSeek）
-4. 自定义会议纪要模板（可选）
-5. 测试两个 API 配置是否正常工作
+- 使用标准桌面录音路径
+- 暂停和继续支持相对更完整
 
-### 录制会议
+### Linux
 
-1. 点击**"开始录音"**开始捕获音频
-2. Windows 和 macOS 可在休息时使用**暂停**按钮
-3. Linux 当前仅支持**开始录音**和**停止录音**
-4. 会议结束后点击**"停止录音"**
-5. 等待转录和纪要生成完成
-6. 在**会议全文**和**会议纪要**标签页之间切换查看
-7. 复制内容到剪贴板或按需导出
+- 应用启动时会检查 Linux 音频依赖
+- Linux 录音在可用时使用 FFmpeg
+- 会检测 PulseAudio 的麦克风源和 monitor 系统音频源
+- 如果缺少依赖，会弹出可见提示，而不是静默失败
 
-### 管理历史记录
+### 双环境切换
 
-- 在**历史**页面查看所有会议记录
-- 查看详细的会议信息，包括音频回放
-- 从任何历史会议复制转录文本或纪要
-- 从之前的录音导出音频文件
-- 删除旧记录释放存储空间
+仓库内置了适合无符号链接文件系统的切换脚本：
 
-### 上传音频文件
+```bash
+npm run use:linux
+npm run use:win
+```
 
-你也可以上传现有音频文件代替实时录音：
-
-1. 在转写标签页点击**上传**按钮
-2. 选择音频文件（支持常见格式）
-3. 等待转录和纪要生成完成
+如果你同时维护 `node_modules_linux/` 和 `node_modules_win/`，请查看 [DUAL_ENV_SETUP.md](DUAL_ENV_SETUP.md)。
 
 ---
 
-## 🏗️ 项目结构
+## 配置说明
 
+### 语音转写设置
+
+- API 地址
+- API Key
+- 模型名称
+
+常见兼容形式：
+
+- OpenAI 风格的 `/v1/audio/transcriptions`
+- SiliconFlow 转写接口
+- DashScope / 百炼兼容转写接口
+
+### 纪要生成设置
+
+- API 地址
+- API Key
+- 模型名称
+- 自定义 Markdown 模板
+
+常见兼容形式：
+
+- OpenAI 风格的 `/v1/chat/completions`
+- DeepSeek 兼容聊天接口
+- 其他接受标准 chat payload 的兼容网关
+
+### 模板编辑
+
+内置会议纪要模板基于 Markdown，可以在设置页按你的结构偏好自行修改。
+
+---
+
+## 开发说明
+
+### 脚本
+
+```bash
+npm run dev
+npm run dev:linux
+npm run use:linux
+npm run use:win
+npm run install:linux
+npm run install:win
+npm run test
+npm run test:unit
+npm run test:integration
+npm run test:e2e
+npm run test:coverage
 ```
+
+`npm run dev:win` 当前是一个保护性提示脚本，用来提醒你先切换到 Windows 依赖环境。
+
+### 项目结构
+
+```text
 auto-meeting-recorder/
-├── 📁 electron/              # Electron 主进程
-│   ├── main.js              # 主入口
-│   └── preload.js           # 预加载脚本（安全）
-│
-├── 📁 src/                   # 应用源代码
-│   ├── 📁 css/              # 样式表
-│   │   └── style.css        # 主样式文件
-│   ├── 📁 js/               # JavaScript 模块
-│   │   ├── app.js           # 主应用逻辑
-│   │   ├── api.js           # API 集成（语音识别和大语言模型）
-│   │   ├── recorder.js      # 音频录制功能
-│   │   ├── storage.js       # 数据持久化（IndexedDB/文件系统）
-│   │   ├── ui.js            # UI 交互和渲染
-│   │   └── i18n.js          # 国际化
-│   └── index.html           # 主 HTML 文件
-│
-├── 📁 docs/                  # 文档
-│   └── 📁 plans/            # 开发计划
-│
-├── 📁 .github/               # GitHub 配置
-│   └── 📁 workflows/        # CI/CD 工作流
-│
-├── package.json             # 项目配置
-├── LICENSE                  # MIT 许可证
-└── README_CN.md             # 本文件
+├── electron/                 # Electron 主进程和 IPC
+├── src/
+│   ├── css/                  # 样式
+│   ├── js/                   # 渲染层逻辑
+│   └── index.html            # 主界面入口
+├── tests/
+│   ├── unit/                 # Jest 单元测试
+│   ├── integration/          # Jest 集成测试
+│   └── e2e/                  # Playwright 端到端测试
+├── docs/                     # 审计与项目文档
+├── scripts/                  # 环境切换和初始化脚本
+├── DUAL_ENV_SETUP.md         # 双平台依赖工作流
+└── README_CN.md
 ```
 
----
+### 当前测试覆盖
 
-## 🌐 浏览器兼容性
+- 针对应用流程、存储、API、恢复、UI 和 Linux 音频辅助逻辑的 Jest 单元测试
+- 针对录音和恢复流程的集成测试
+- 针对导航、录音界面和响应式行为的 Playwright E2E 测试
 
-| 浏览器 | 最低版本 | 支持状态 |
-|--------|----------|----------|
-| Chrome | 90+ | ✅ 完全支持 |
-| Firefox | 88+ | ✅ 完全支持 |
-| Edge | 90+ | ✅ 完全支持 |
-| Safari | 14+ | ⚠️ 有限支持 |
+如果要做浏览器环境的 E2E 检查，可以先把 `src/` 作为静态目录启动，再让 Playwright 指向该环境。
 
 ---
 
-## 💾 数据存储
+## 数据与隐私
 
-所有数据均在本地存储：
-
-| 数据类型 | 桌面版 | 网页版 |
-|----------|--------|--------|
-| 录音文件 | 本地文件系统 | IndexedDB |
-| 转录文本 | Electron Store | IndexedDB |
-| 会议纪要 | Electron Store | IndexedDB |
-| API 设置 | 加密存储 | LocalStorage |
+- 音频、全文、纪要和设置默认保存在本地
+- AI 处理不是离线完成的，音频和文本会发送到你配置的接口
+- 主应用流程中没有分析统计或遥测逻辑
+- API Key 保存在本地；如果你需要更严格的密钥管理，建议结合运行环境进一步审查
 
 ---
 
-## 🔐 隐私与安全
+## 参与贡献
 
-- ✅ 所有数据存储在本地设备
-- ✅ API 密钥仅用于访问配置的端点，不会被共享
-- ✅ 无分析统计、遥测或追踪
-- ✅ 无需依赖云服务
-- ✅ 开源代码，可自行审计
+欢迎提交 Issue 和 Pull Request。涉及用户可见行为时，请同步更新测试，并保持 `README.md` 与 `README_CN.md` 一致。
 
 ---
 
-## 🤝 参与贡献
+## 许可证
 
-欢迎参与贡献！请按以下步骤操作：
-
-1. **Fork** 本仓库
-2. **创建** 功能分支：`git checkout -b feature/AmazingFeature`
-3. **提交** 更改：`git commit -m 'Add some AmazingFeature'`
-4. **推送** 到分支：`git push origin feature/AmazingFeature`
-5. **创建** Pull Request
-
-详细说明请阅读 [贡献指南](CONTRIBUTING.md)。
-
-### 贡献者
-
-<a href="https://github.com/lester2pastm/auto-meeting-recorder/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=lester2pastm/auto-meeting-recorder" alt="贡献者" />
-</a>
-
----
-
-## 📜 许可证
-
-本项目采用 **MIT 许可证** - 查看 [LICENSE](LICENSE) 文件了解详情。
-
----
-
-## 🙏 致谢
-
-- 基于 [Electron](https://www.electronjs.org/) 构建 - 跨平台桌面应用框架
-- 语音识别由 [OpenAI Whisper](https://openai.com/research/whisper) 及兼容 API 提供支持
-- 会议纪要由大语言模型生成
-- 图标来自 [Heroicons](https://heroicons.com/)
-
----
-
-## 💬 支持
-
-<p align="center">
-  <b>如果这个项目对你有帮助，请在 GitHub 上给它一个 ⭐！</b>
-</p>
-
-<p align="center">
-  <a href="https://github.com/lester2pastm/auto-meeting-recorder/issues">🐛 报告问题</a> •
-  <a href="https://github.com/lester2pastm/auto-meeting-recorder/issues">✨ 功能建议</a> •
-  <a href="https://github.com/lester2pastm/auto-meeting-recorder/discussions">💬 讨论交流</a>
-</p>
-
----
-
-<p align="center">
-  用 ❤️ 制作 by <a href="https://github.com/lester2pastm">Lester</a>
-</p>
+本项目采用 [MIT License](LICENSE)。
