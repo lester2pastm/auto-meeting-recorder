@@ -11,6 +11,34 @@ const TRANSCRIPT_STATUS = {
     FAILED: 'failed'
 };
 
+function containsChineseText(text) {
+    return typeof text === 'string' && /[\u4e00-\u9fff]/.test(text);
+}
+
+function getLocalizedMessage(key, fallbackMessage) {
+    return i18n ? i18n.get(key) : fallbackMessage;
+}
+
+function normalizeUserFacingMessage(message, fallbackMessage) {
+    if (typeof message !== 'string') {
+        return fallbackMessage;
+    }
+
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+        return fallbackMessage;
+    }
+
+    return containsChineseText(trimmedMessage) ? trimmedMessage : fallbackMessage;
+}
+
+function buildUserFacingErrorToast(baseMessage, detailMessage) {
+    const normalizedDetail = normalizeUserFacingMessage(detailMessage, '');
+    return normalizedDetail && normalizedDetail !== baseMessage
+        ? `${baseMessage}: ${normalizedDetail}`
+        : baseMessage;
+}
+
 function getAudioSourceHelper() {
     if (typeof window !== 'undefined' && window.audioSourceSettings) {
         return window.audioSourceSettings;
@@ -487,7 +515,7 @@ async function handleStartRecording() {
         showToast('录音已开始', 'success');
     } catch (error) {
         console.error('Failed to start recording:', error);
-        showToast('录音启动失败: ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(getLocalizedMessage('toastRecordingStartFailed', '录音启动失败'), error.message), 'error');
     }
 }
 
@@ -543,7 +571,7 @@ async function handleStopRecording() {
                     clearRecordingWorkflowState();
                     hideLoading();
                     console.error('异步处理录音文件失败:', error);
-                    showToast('处理录音失败: ' + error.message, 'error');
+                    showToast(buildUserFacingErrorToast(getLocalizedMessage('toastProcessingFailed', '处理录音失败'), error.message), 'error');
                 } finally {
                     if (typeof setAudioFileReadyCallback === 'function') {
                         setAudioFileReadyCallback(null);
@@ -660,7 +688,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             currentAudioFilePath = audioFilePath;
             showRetryTranscriptionButton();
             
-            showToast('转写失败: ' + result.message, 'error');
+            showToast(buildUserFacingErrorToast('转写失败', result.message), 'error');
             return;
         }
 
@@ -737,7 +765,7 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
 
             if (!result.success) {
                 console.log('[App] Summary generation failed:', result.message);
-                showToast('生成纪要失败: ' + result.message, 'error');
+                showToast(buildUserFacingErrorToast('生成纪要失败', result.message), 'error');
             } else {
                 summary = result.summary;
                 updateSummaryContent(summary);
@@ -807,7 +835,7 @@ async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = nul
         }
     } catch (error) {
         console.error('[App] Failed to save meeting:', error);
-        showToast('保存会议记录失败: ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(getLocalizedMessage('toastSaveMeetingFailed', '保存会议记录失败'), error.message), 'error');
     }
 }
 
@@ -856,9 +884,9 @@ async function handleTestSttApi() {
         currentSettings.sttApiKey = apiKey;
         currentSettings.sttModel = model;
         await persistSettings(currentSettings);
-        showToast(result.message + '，设置已自动保存', 'success');
+        showToast(`${normalizeUserFacingMessage(result.message, getLocalizedMessage('toastConnectionTestSuccess', '连接测试成功'))}，设置已自动保存`, 'success');
     } else {
-        showToast(result.message, 'error');
+        showToast(normalizeUserFacingMessage(result.message, getLocalizedMessage('toastConnectionTestFailed', '连接测试失败')), 'error');
     }
 }
 
@@ -881,9 +909,9 @@ async function handleTestSummaryApi() {
         currentSettings.summaryApiKey = apiKey;
         currentSettings.summaryModel = model;
         await persistSettings(currentSettings);
-        showToast(result.message + '，设置已自动保存', 'success');
+        showToast(`${normalizeUserFacingMessage(result.message, getLocalizedMessage('toastConnectionTestSuccess', '连接测试成功'))}，设置已自动保存`, 'success');
     } else {
-        showToast(result.message, 'error');
+        showToast(normalizeUserFacingMessage(result.message, getLocalizedMessage('toastConnectionTestFailed', '连接测试失败')), 'error');
     }
 }
 
@@ -1051,7 +1079,7 @@ async function handleRefreshTranscriptInDetail(meetingId) {
         shouldCheckCompletion = true;
     } catch (error) {
         console.error('Failed to refresh transcript:', error);
-        showToast('重新转写失败: ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(getLocalizedMessage('toastRetryTranscriptionFailed', '重新转写失败'), error.message), 'error');
     } finally {
         const updatedMeeting = await getMeeting(meetingId);
         if (updatedMeeting) {
@@ -1113,7 +1141,7 @@ async function handleRefreshSummaryInDetail(meetingId) {
         );
 
         if (!result.success) {
-            showToast('生成纪要失败: ' + result.message, 'error');
+            showToast(buildUserFacingErrorToast('生成纪要失败', result.message), 'error');
             return;
         }
 
@@ -1124,7 +1152,7 @@ async function handleRefreshSummaryInDetail(meetingId) {
         shouldCheckCompletion = true;
     } catch (error) {
         console.error('Failed to refresh summary:', error);
-        showToast('重新生成纪要失败: ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(getLocalizedMessage('toastRegenerateSummaryFailed', '重新生成纪要失败'), error.message), 'error');
     } finally {
         const updatedMeeting = await getMeeting(meetingId);
         if (updatedMeeting) {
@@ -1182,7 +1210,7 @@ async function handleAudioFileSelect(event) {
         await processAudioFile(file);
     } catch (error) {
         console.error('[App] Failed to process audio file:', error);
-        showToast((i18n ? i18n.get('saveFailed') : '处理音频文件失败') + ': ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(i18n ? i18n.get('saveFailed') : '处理音频文件失败', error.message), 'error');
     } finally {
         // 清空文件输入，允许重复选择同一文件
         event.target.value = '';
@@ -1238,7 +1266,7 @@ async function handleRetryTranscription() {
 
         if (!result.success) {
             showRetryTranscriptionButton();
-            showToast((i18n ? i18n.get('testFailed') : '转写失败') + ': ' + result.message, 'error');
+            showToast(buildUserFacingErrorToast(i18n ? i18n.get('testFailed') : '转写失败', result.message), 'error');
             return;
         }
 
@@ -1248,7 +1276,7 @@ async function handleRetryTranscription() {
         await generateMeetingSummary(result.text, currentAudioBlob, null);
     } catch (error) {
         showRetryTranscriptionButton();
-        showToast('重新转写失败: ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(getLocalizedMessage('toastRetryTranscriptionFailed', '重新转写失败'), error.message), 'error');
     } finally {
         hideLoading();
     }
@@ -1303,7 +1331,7 @@ async function processAudioFile(file) {
             // 转写失败，显示重试按钮
             updateSubtitleContent('转写失败，请重新转写');
             showRetryTranscriptionButton();
-            showToast((i18n ? i18n.get('testFailed') : '转写失败') + ': ' + result.message, 'error');
+            showToast(buildUserFacingErrorToast(i18n ? i18n.get('testFailed') : '转写失败', result.message), 'error');
             hideLoading();
             return;
         }
@@ -1321,7 +1349,7 @@ async function processAudioFile(file) {
     } catch (error) {
         console.error('Failed to process audio file:', error);
         updateSubtitleContent('处理音频文件失败，请重试');
-        showToast((i18n ? i18n.get('saveFailed') : '处理音频文件失败') + ': ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(i18n ? i18n.get('saveFailed') : '处理音频文件失败', error.message), 'error');
     } finally {
         hideLoading();
     }
@@ -1394,7 +1422,7 @@ async function handleRefreshSummary() {
         const result = await generateSummary(transcript, currentSettings.summaryTemplate, currentSettings.summaryApiUrl, currentSettings.summaryApiKey, currentSettings.summaryModel);
 
         if (!result.success) {
-            showToast((i18n ? i18n.get('saveFailed') : '生成纪要失败') + ': ' + result.message, 'error');
+            showToast(buildUserFacingErrorToast(i18n ? i18n.get('saveFailed') : '生成纪要失败', result.message), 'error');
             return;
         }
 
@@ -1407,7 +1435,7 @@ async function handleRefreshSummary() {
         showToast(i18n ? i18n.get('summaryRefreshed') : '会议纪要已更新', 'success');
     } catch (error) {
         console.error('Failed to refresh summary:', error);
-        showToast((i18n ? i18n.get('saveFailed') : '重新生成纪要失败') + ': ' + error.message, 'error');
+        showToast(buildUserFacingErrorToast(getLocalizedMessage('toastRegenerateSummaryFailed', '重新生成纪要失败'), error.message), 'error');
     } finally {
         refreshBtn.classList.remove('spinning');
     }

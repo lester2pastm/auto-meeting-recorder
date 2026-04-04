@@ -332,8 +332,12 @@ async function saveRecoveryToHistory(meta) {
             summary: ''
         };
         
-        // 保存会议记录到 IndexedDB
-        await addMeetingRecord(meetingData);
+        if (typeof saveMeeting !== 'function') {
+            throw new Error('saveMeeting is not available');
+        }
+
+        // 复用统一存储层，避免恢复路径维护独立的 IndexedDB 逻辑
+        await saveMeeting(meetingData);
         
         showToast('录音已保存到历史记录', 'success');
         
@@ -348,66 +352,12 @@ async function saveRecoveryToHistory(meta) {
     }
 }
 
-// 添加会议记录到 IndexedDB 的辅助函数
-async function addMeetingRecord(meetingData) {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open('MeetingMinutesDB', 2);
-        
-        request.onupgradeneeded = (event) => {
-            const database = event.target.result;
-            // 如果 meetings store 不存在，创建它
-            if (!database.objectStoreNames.contains('meetings')) {
-                const objectStore = database.createObjectStore('meetings', { keyPath: 'id' });
-                objectStore.createIndex('date', 'date', { unique: false });
-            }
-        };
-        
-        request.onsuccess = (event) => {
-            const db = event.target.result;
-            
-            // 检查 meetings store 是否存在
-            if (!db.objectStoreNames.contains('meetings')) {
-                reject(new Error('Database object store not found'));
-                return;
-            }
-            
-            const transaction = db.transaction(['meetings'], 'readwrite');
-            const store = transaction.objectStore('meetings');
-            
-            const addRequest = store.add(meetingData);
-            
-            addRequest.onsuccess = () => {
-                resolve();
-            };
-            
-            addRequest.onerror = (error) => {
-                console.error('[RecoveryUI] Error adding meeting record:', error);
-                reject(new Error('Failed to add meeting record'));
-            };
-            
-            transaction.onerror = (error) => {
-                console.error('[RecoveryUI] Transaction error:', error);
-                reject(new Error('Transaction failed'));
-            };
-        };
-        
-        request.onerror = (error) => {
-            console.error('[RecoveryUI] Database open error:', error);
-            reject(new Error('Failed to open database'));
-        };
-        
-        request.onblocked = () => {
-            console.error('[RecoveryUI] Database blocked');
-            reject(new Error('Database is blocked by another connection'));
-        };
-    });
-}
-
 // 导出函数
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         initRecoveryUI,
         showRecoveryDialog,
-        closeRecoveryModal
+        closeRecoveryModal,
+        saveRecoveryToHistory
     };
 }

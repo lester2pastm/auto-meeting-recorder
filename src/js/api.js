@@ -410,63 +410,47 @@ function blobToBase64(blob) {
 // API 限制：文件大小 ≤ 50MB，使用 45MB 作为安全阈值
 async function splitAudio(audioBlob, maxSizeMB = 45, knownDuration = null) {
     console.log('开始分割音频...');
-    
-    let audioBuffer;
-    let totalDuration;
-    let sampleRate;
-    
-    if (knownDuration && knownDuration > 0) {
-        console.log('使用已知的音频时长，避免解码...');
-        const tempAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const decoded = await tempAudioContext.decodeAudioData(arrayBuffer);
-        sampleRate = decoded.sampleRate;
-        totalDuration = knownDuration;
-        await tempAudioContext.close();
-        console.log(`音频总时长: ${totalDuration.toFixed(2)}秒 (${(totalDuration / 60).toFixed(2)}分钟)`);
-    } else {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        
-        sampleRate = audioBuffer.sampleRate;
-        totalDuration = audioBuffer.duration;
-        await audioContext.close();
-        
-        console.log(`音频总时长: ${totalDuration.toFixed(2)}秒 (${(totalDuration / 60).toFixed(2)}分钟)`);
-    }
-    
-    const totalSizeMB = audioBlob.size / (1024 * 1024);
-    console.log(`音频总大小: ${totalSizeMB.toFixed(2)}MB`);
-    
-    const numSegments = Math.ceil(totalSizeMB / maxSizeMB);
-    console.log(`根据大小限制，需要分成 ${numSegments} 个片段`);
-    
-    const segmentDuration = totalDuration / numSegments;
-    
-    console.log('解码音频用于分割...');
+
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    sampleRate = audioBuffer.sampleRate;
-    
-    const segments = [];
-    
-    for (let i = 0; i < numSegments; i++) {
-        const startTime = i * segmentDuration;
-        const endTime = (i === numSegments - 1) ? totalDuration : (i + 1) * segmentDuration;
-        
-        const segmentBlob = await extractAudioSegment(audioBuffer, startTime, endTime, sampleRate);
-        const sizeMB = segmentBlob.size / (1024 * 1024);
-        
-        console.log(`片段 ${i + 1}/${numSegments}: ${((endTime - startTime) / 60).toFixed(2)}分钟, 大小: ${sizeMB.toFixed(2)}MB`);
-        
-        segments.push(segmentBlob);
+
+    try {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const sampleRate = audioBuffer.sampleRate;
+        const totalDuration = knownDuration && knownDuration > 0 ? knownDuration : audioBuffer.duration;
+
+        if (knownDuration && knownDuration > 0) {
+            console.log('使用已知的音频时长，避免重复解码...');
+        }
+
+        console.log(`音频总时长: ${totalDuration.toFixed(2)}秒 (${(totalDuration / 60).toFixed(2)}分钟)`);
+
+        const totalSizeMB = audioBlob.size / (1024 * 1024);
+        console.log(`音频总大小: ${totalSizeMB.toFixed(2)}MB`);
+
+        const numSegments = Math.ceil(totalSizeMB / maxSizeMB);
+        console.log(`根据大小限制，需要分成 ${numSegments} 个片段`);
+
+        const segmentDuration = totalDuration / numSegments;
+        const segments = [];
+
+        for (let i = 0; i < numSegments; i++) {
+            const startTime = i * segmentDuration;
+            const endTime = (i === numSegments - 1) ? totalDuration : (i + 1) * segmentDuration;
+
+            const segmentBlob = await extractAudioSegment(audioBuffer, startTime, endTime, sampleRate);
+            const sizeMB = segmentBlob.size / (1024 * 1024);
+
+            console.log(`片段 ${i + 1}/${numSegments}: ${((endTime - startTime) / 60).toFixed(2)}分钟, 大小: ${sizeMB.toFixed(2)}MB`);
+
+            segments.push(segmentBlob);
+        }
+
+        console.log(`音频已分割为 ${segments.length} 个片段`);
+        return segments;
+    } finally {
+        await audioContext.close();
     }
-    
-    await audioContext.close();
-    console.log(`音频已分割为 ${segments.length} 个片段`);
-    return segments;
 }
 
 async function createBlobFromFilePath(filePath) {
@@ -862,6 +846,7 @@ if (typeof module !== 'undefined' && module.exports) {
         generateSummary,
         calculateSegmentCount,
         getAudioDuration,
+        splitAudio,
         splitAudioByFilePath
     };
 }

@@ -610,15 +610,36 @@ function loadSettings(settings) {
     if (preferredSystemSource && settings.preferredSystemSource) preferredSystemSource.value = settings.preferredSystemSource;
 }
 
+function readInputValue(id) {
+    const element = document.getElementById(id);
+    return element ? element.value.trim() : '';
+}
+
+function validateOptionalUrl(value, label) {
+    if (!value) {
+        return '';
+    }
+
+    try {
+        const parsedUrl = new URL(value);
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+            throw new Error('Unsupported protocol');
+        }
+        return parsedUrl.toString();
+    } catch (error) {
+        throw new Error(`${label} 格式无效`);
+    }
+}
+
 function getSettingsFromUI() {
     return {
-        sttApiUrl: document.getElementById('sttApiUrl').value.trim(),
-        sttApiKey: document.getElementById('sttApiKey').value.trim(),
-        sttModel: document.getElementById('sttModel').value.trim(),
-        summaryApiUrl: document.getElementById('summaryApiUrl').value.trim(),
-        summaryApiKey: document.getElementById('summaryApiKey').value.trim(),
-        summaryModel: document.getElementById('summaryModel').value.trim(),
-        summaryTemplate: document.getElementById('summaryTemplate').value.trim(),
+        sttApiUrl: validateOptionalUrl(readInputValue('sttApiUrl'), 'STT API URL'),
+        sttApiKey: readInputValue('sttApiKey'),
+        sttModel: readInputValue('sttModel'),
+        summaryApiUrl: validateOptionalUrl(readInputValue('summaryApiUrl'), '纪要 API URL'),
+        summaryApiKey: readInputValue('summaryApiKey'),
+        summaryModel: readInputValue('summaryModel'),
+        summaryTemplate: readInputValue('summaryTemplate'),
         preferredMicSource: document.getElementById('preferredMicSource')?.value || 'auto',
         preferredSystemSource: document.getElementById('preferredSystemSource')?.value || 'auto'
     };

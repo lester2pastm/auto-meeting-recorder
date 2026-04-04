@@ -5,6 +5,11 @@
 
 const { test, expect } = require('@playwright/test');
 
+async function openSummaryTab(page) {
+  await page.click('.tab-btn[data-tab="summary"]');
+  await expect(page.locator('#summaryTab')).toHaveClass(/active/);
+}
+
 test.describe('录音功能测试', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('http://localhost:3000');
@@ -62,6 +67,7 @@ test.describe('字幕和摘要功能测试', () => {
   });
 
   test('应该显示摘要内容区域', async ({ page }) => {
+    await openSummaryTab(page);
     const summaryContent = await page.locator('#summaryContent');
     await expect(summaryContent).toBeVisible();
   });
@@ -72,6 +78,7 @@ test.describe('字幕和摘要功能测试', () => {
     await expect(copySubtitleBtn).toBeVisible();
 
     // 检查复制摘要按钮
+    await openSummaryTab(page);
     const copySummaryBtn = await page.locator('#btnCopySummary');
     await expect(copySummaryBtn).toBeVisible();
   });

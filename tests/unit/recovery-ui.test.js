@@ -82,6 +82,7 @@ function loadRecoveryUiModule(overrides = {}) {
     clearRecoveryData,
     processRecording,
     setLastRecordingDuration,
+    saveMeeting: jest.fn(),
     saveEmptyMeetingRecord: jest.fn(),
     closeRecoveryModal: jest.fn(),
     formatDuration: (ms) => `${ms}`,
@@ -90,7 +91,8 @@ function loadRecoveryUiModule(overrides = {}) {
 
   const script = new vm.Script(`${recoveryUiSource}
 module.exports = {
-  handleTranscribeNow
+  handleTranscribeNow,
+  saveRecoveryToHistory
 };`);
 
   script.runInContext(context);
@@ -314,6 +316,35 @@ describe('Recovery UI 模块测试', () => {
         '/tmp/recovered.webm'
       );
       expect(callOrder).toEqual(['save', 'clear', 'process']);
+    });
+
+    it('恢复成功但进入处理流程失败时应该提示错误', async () => {
+      const mockMeta = {
+        id: 'recovery-2',
+        duration: 45000
+      };
+      const mockBlob = new Blob(['audio'], { type: 'audio/webm' });
+      const showToast = jest.fn();
+
+      const { exported } = loadRecoveryUiModule({
+        getRecoveryMeta: jest.fn(() => mockMeta),
+        recoverAudioBlob: jest.fn().mockResolvedValue(mockBlob),
+        setLastRecordingDuration: jest.fn(),
+        saveEmptyMeetingRecord: jest.fn().mockResolvedValue({
+          id: 'meeting-2',
+          audioFilename: '/tmp/recovered-failed.webm'
+        }),
+        clearRecoveryData: jest.fn().mockResolvedValue(undefined),
+        processRecording: jest.fn().mockRejectedValue(new Error('Network request failed')),
+        closeRecoveryModal: jest.fn(),
+        showToast
+      });
+
+      await exported.handleTranscribeNow();
+
+      expect(showToast).toHaveBeenCalledWith('正在恢复录音文件...', 'info');
+      expect(showToast).toHaveBeenCalledWith('录音已恢复，开始转写...', 'info');
+      expect(showToast).toHaveBeenCalledWith('转写失败: Network request failed', 'error');
     });
   });
 
@@ -765,6 +796,42 @@ describe('Recovery UI 模块测试', () => {
 
       global.showToast = jest.fn();
       global.loadHistory = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it('应该复用 saveMeeting 保存恢复出来的会议记录', async () => {
+      const saveMeeting = jest.fn().mockResolvedValue(undefined);
+      const mockArrayBuffer = new ArrayBuffer(10);
+      const { exported } = loadRecoveryUiModule({
+        saveMeeting,
+        recoverAudioBlob: jest.fn().mockResolvedValue({
+          type: 'audio/webm',
+          size: 10,
+          arrayBuffer: jest.fn().mockResolvedValue(mockArrayBuffer)
+        }),
+        window: {
+          electronAPI: {
+            saveAudio: jest.fn().mockResolvedValue({
+              success: true,
+              filePath: 'C:/Users/test/AppData/Roaming/meeting-minutes/audio/2026-02-11_13-47-08_recovered.webm'
+            })
+          }
+        }
+      });
+
+      const meta = {
+        startTime: Date.now(),
+        duration: 851001
+      };
+
+      await exported.saveRecoveryToHistory(meta);
+
+      expect(saveMeeting).toHaveBeenCalledTimes(1);
+      expect(saveMeeting).toHaveBeenCalledWith(expect.objectContaining({
+        audioFilename: expect.stringContaining('_recovered.webm'),
+        duration: '14分钟11秒',
+        transcript: '',
+        summary: ''
+      }));
     });
 
     it('应该调用 saveAudio 而不是 saveAudioFile', async () => {

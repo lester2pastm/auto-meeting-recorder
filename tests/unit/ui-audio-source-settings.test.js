@@ -72,6 +72,13 @@ describe('UI audio source settings', () => {
     });
   });
 
+  test('should reject invalid API URLs from the UI', () => {
+    document.getElementById('sttApiUrl').value = 'not-a-url';
+    document.getElementById('summaryApiUrl').value = 'https://valid.example.com';
+
+    expect(() => getSettingsFromUI()).toThrow('STT API URL');
+  });
+
   test('should open custom dropdown and close it after selecting an option', () => {
     document.body.innerHTML = `
       <div class="custom-select" id="selectField" data-custom-select="preferredMicSource">

@@ -5,6 +5,11 @@
 
 const { test, expect } = require('@playwright/test');
 
+async function openSummaryTab(page) {
+  await page.click('.tab-btn[data-tab="summary"]');
+  await expect(page.locator('#summaryTab')).toHaveClass(/active/);
+}
+
 test.describe('导航功能测试', () => {
   test.beforeEach(async ({ page }) => {
     // 访问应用
@@ -102,7 +107,8 @@ test.describe('录音视图功能测试', () => {
     const subtitleContent = await page.locator('#subtitleContent');
     await expect(subtitleContent).toBeVisible();
 
-    // 检查摘要内容区域
+    // 切换到摘要标签页后检查摘要内容区域
+    await openSummaryTab(page);
     const summaryContent = await page.locator('#summaryContent');
     await expect(summaryContent).toBeVisible();
   });

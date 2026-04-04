@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.15-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.6.17-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -48,8 +48,8 @@
 
 ### Why this version matters
 
-- Current app version: `2.6.15`
-- Recent work focused on recovery, retry-flow correctness, persistence consistency, and Linux recording resilience
+- Current app version: `2.6.17`
+- Recent work focused on recovery flow correctness, safer settings validation, localized user-facing error messages, and broader end-to-end regression coverage
 - `src/index.html` is still useful for UI development and browser-based E2E checks, but the full product experience depends on Electron IPC
 
 ---

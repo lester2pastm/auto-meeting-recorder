@@ -449,4 +449,41 @@ describe('App critical path regressions', () => {
       summaryModel: 'gpt-4o'
     }));
   });
+
+  test('handleTestSttApi should use localized fallback toast when the API returns an English error message', async () => {
+    document.body.innerHTML = `
+      <input id="sttApiUrl" value="https://stt.example.com">
+      <input id="sttApiKey" value="stt-key">
+      <input id="sttModel" value="whisper-1">
+    `;
+
+    const showToast = jest.fn();
+    const testSttApi = jest.fn().mockResolvedValue({
+      success: false,
+      message: 'Network request failed'
+    });
+
+    const app = loadAppModule({
+      showToast,
+      testSttApi,
+      i18n: {
+        get: jest.fn((key) => {
+          const translations = {
+            toastConnectionTestFailed: 'Connection test failed'
+          };
+          return translations[key] || key;
+        })
+      }
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: '',
+      sttApiKey: '',
+      sttModel: 'whisper-1'
+    });
+
+    await app.handleTestSttApi();
+
+    expect(showToast).toHaveBeenLastCalledWith('Connection test failed', 'error');
+  });
 });

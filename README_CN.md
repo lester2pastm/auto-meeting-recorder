@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.6.15-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.6.17-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -48,8 +48,8 @@
 
 ### 为什么当前版本值得关注
 
-- 当前版本：`2.6.15`
-- 最近的工作重点是录音恢复、失败重试正确性、持久化一致性，以及 Linux 录音稳定性
+- 当前版本：`2.6.17`
+- 最近的工作重点是恢复流程正确性、设置校验安全性、用户可见错误提示国际化，以及端到端回归覆盖
 - `src/index.html` 仍适合 UI 开发和浏览器 E2E 检查，但完整产品能力依赖 Electron IPC
 
 ---

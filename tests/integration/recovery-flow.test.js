@@ -4,6 +4,47 @@
  * 这些测试使用真实的 mock 数据来验证功能是否正确
  */
 
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+function loadRecoveryUiIntegration(overrides = {}) {
+  const recoveryUiPath = path.resolve(__dirname, '../../src/js/recovery-ui.js');
+  const recoveryUiSource = fs.readFileSync(recoveryUiPath, 'utf8');
+  const module = { exports: {} };
+
+  const context = vm.createContext({
+    module,
+    exports: module.exports,
+    require,
+    console,
+    Blob,
+    Date,
+    document: {
+      body: { style: {} },
+      getElementById: jest.fn(() => ({ classList: { remove: jest.fn() } }))
+    },
+    window: {},
+    showToast: jest.fn(),
+    getRecoveryMeta: jest.fn(),
+    recoverAudioBlob: jest.fn(),
+    clearRecoveryData: jest.fn(),
+    processRecording: jest.fn(),
+    setLastRecordingDuration: jest.fn(),
+    saveEmptyMeetingRecord: jest.fn(),
+    confirm: jest.fn(() => true),
+    ...overrides
+  });
+
+  const script = new vm.Script(`${recoveryUiSource}
+module.exports = {
+  handleTranscribeNow
+};`);
+
+  script.runInContext(context);
+  return { exported: module.exports, context };
+}
+
 describe('恢复流程集成测试', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -125,6 +166,29 @@ describe('恢复流程集成测试', () => {
 
       // 调用 recoverAudioBlob(meta)
       // 验证：应该使用传入的 meta，而不是全局 recoveryMeta
+    });
+  });
+
+  describe('handleTranscribeNow 失败链路', () => {
+    it('应该在恢复成功但处理失败时保留失败提示', async () => {
+      const showToast = jest.fn();
+      const { exported } = loadRecoveryUiIntegration({
+        showToast,
+        getRecoveryMeta: jest.fn(() => ({ id: 'recovery-err', duration: 90000 })),
+        recoverAudioBlob: jest.fn().mockResolvedValue(new Blob(['audio'], { type: 'audio/webm' })),
+        saveEmptyMeetingRecord: jest.fn().mockResolvedValue({
+          id: 'meeting-err',
+          audioFilename: '/tmp/recovery-error.webm'
+        }),
+        clearRecoveryData: jest.fn().mockResolvedValue(undefined),
+        processRecording: jest.fn().mockRejectedValue(new Error('transcription gateway timeout'))
+      });
+
+      await exported.handleTranscribeNow();
+
+      expect(showToast).toHaveBeenNthCalledWith(1, '正在恢复录音文件...', 'info');
+      expect(showToast).toHaveBeenNthCalledWith(2, '录音已恢复，开始转写...', 'info');
+      expect(showToast).toHaveBeenLastCalledWith('转写失败: transcription gateway timeout', 'error');
     });
   });
 });
