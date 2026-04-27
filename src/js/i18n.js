@@ -269,6 +269,14 @@ const i18n = {
 };
 
 // 导出
+if (typeof globalThis !== 'undefined') {
+    globalThis.i18n = i18n;
+}
+
+if (typeof window !== 'undefined') {
+    window.i18n = i18n;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = i18n;
 }

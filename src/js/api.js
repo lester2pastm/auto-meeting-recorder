@@ -61,7 +61,9 @@ function isRetryableSummaryError(error) {
 function getI18nValue(key, replacements = {}) {
     let i18nInstance = null;
 
-    if (typeof window !== 'undefined' && window.i18n && typeof window.i18n.get === 'function') {
+    if (typeof globalThis !== 'undefined' && globalThis.i18n && typeof globalThis.i18n.get === 'function') {
+        i18nInstance = globalThis.i18n;
+    } else if (typeof window !== 'undefined' && window.i18n && typeof window.i18n.get === 'function') {
         i18nInstance = window.i18n;
     } else if (typeof require === 'function') {
         try {
@@ -586,10 +588,15 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     const transcripts = [];
     const totalSegments = segmentPaths.length || segments.length;
     let lastFailedMessage = '';
+    const loadSegmentBlob = async (index) => (
+        segmentPaths.length > 0
+            ? createBlobFromFilePath(segmentPaths[index])
+            : segments[index]
+    );
 
     for (let i = 0; i < totalSegments; i++) {
         console.log(`转写片段 ${i + 1}/${totalSegments}...`);
-        const segmentBlob = segmentPaths.length > 0 ? await createBlobFromFilePath(segmentPaths[i]) : segments[i];
+        let segmentBlob = await loadSegmentBlob(i);
         
         let result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout);
         
@@ -602,6 +609,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
                 onProgress(getTranscriptionRetryProgressMessage(result, retryCount + 1, maxRetries + 1));
             }
             await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
+            segmentBlob = await loadSegmentBlob(i);
             result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout);
         }
         

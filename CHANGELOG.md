@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.6.18] - 2026-04-27
+
+### Changed
+
+- Removed the Google Fonts dependency and switched the app to offline-friendly system font stacks for more reliable rendering on restricted networks.
+- Reused the shared i18n instance through `globalThis`/`window` so browser-side retry messaging resolves localized strings consistently.
+
+### Fixed
+
+- Refreshed file-backed transcription segments before each retry so long-running SiliconFlow retries upload a fresh blob after timeouts or connection resets.
+- Prevented raw `transcriptionRetryProgressTemplate` keys from leaking into the UI when retry progress updates render in the browser.
+
 ## [2.6.17] - 2026-04-04
 
 ### Added

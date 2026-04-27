@@ -258,4 +258,49 @@ describe('transcribeAudioSegments reliability', () => {
 
     global.Audio = originalAudio;
   });
+
+  test('re-reads file-backed segments before each retry so retried uploads use a fresh blob', async () => {
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
+      realSetTimeout(fn, 0, ...args)
+    ));
+
+    const readAudioFile = jest.fn()
+      .mockResolvedValueOnce({
+        success: true,
+        data: new Uint8Array([1, 2, 3])
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: new Uint8Array([4, 5, 6])
+      });
+
+    global.window.electronAPI = {
+      ...global.window.electronAPI,
+      splitAudioFile: jest.fn().mockResolvedValue({
+        success: true,
+        files: ['segment-1.webm']
+      }),
+      readAudioFile
+    };
+
+    fetch
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ text: 'retry succeeded' })
+      });
+
+    const result = await api.transcribeAudioSegments(
+      createLargeAudioBlob(),
+      'https://api.siliconflow.cn/v1/audio/transcriptions',
+      'test-key',
+      'TeleAI/TeleSpeechASR',
+      '/tmp/audio.webm'
+    );
+
+    expect(result).toEqual({ success: true, text: 'retry succeeded' });
+    expect(readAudioFile).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
