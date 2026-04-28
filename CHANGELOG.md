@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.6.19] - 2026-04-28
+
+### Added
+
+- Added AI-generated meeting titles to history items and meeting detail views, with truncation and full-title hover support.
+
+### Fixed
+
+- Prevented invalid audio durations such as `Infinity` from forcing short recordings into segmented transcription.
+- Failed fast when Windows desktop capture does not expose a usable system-audio track, and cleaned up acquired streams on error.
+
 ## [2.6.18] - 2026-04-27
 
 ### Changed

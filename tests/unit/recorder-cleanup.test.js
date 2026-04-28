@@ -137,6 +137,59 @@ describe('Recorder cleanup regressions', () => {
     expect(sysVideoTrack.stop).toHaveBeenCalled();
   });
 
+  test('startStandardRecording should fail fast when desktop capture does not provide a system audio track', async () => {
+    const micTrack = { kind: 'audio', stop: jest.fn() };
+    const sysVideoTrack = { kind: 'video', stop: jest.fn() };
+
+    const microphoneStream = {
+      getTracks: () => [micTrack]
+    };
+    const desktopStream = {
+      getAudioTracks: () => [],
+      getVideoTracks: () => [sysVideoTrack],
+      getTracks: () => [sysVideoTrack]
+    };
+
+    const audioContextInstance = {
+      state: 'running',
+      createAnalyser: jest.fn(() => ({
+        fftSize: 0,
+        smoothingTimeConstant: 0,
+        frequencyBinCount: 32,
+        getByteTimeDomainData: jest.fn()
+      })),
+      createMediaStreamSource: jest.fn(() => ({ connect: jest.fn() })),
+      createGain: jest.fn(() => ({ connect: jest.fn() })),
+      createMediaStreamDestination: jest.fn(() => ({ stream: { id: 'mixed-stream' } })),
+      close: jest.fn().mockResolvedValue(undefined),
+      resume: jest.fn().mockResolvedValue(undefined)
+    };
+
+    window.electronAPI = {
+      getDesktopCapturerSources: jest.fn().mockResolvedValue({
+        success: true,
+        sources: [{ id: 'screen:1', name: 'Entire screen' }]
+      })
+    };
+
+    navigator.mediaDevices = {
+      getUserMedia: jest.fn()
+        .mockResolvedValueOnce(microphoneStream)
+        .mockResolvedValueOnce(desktopStream)
+    };
+
+    window.AudioContext = jest.fn(() => audioContextInstance);
+    window.webkitAudioContext = window.AudioContext;
+
+    const recorder = loadRecorderModule({
+      initWaveform: jest.fn().mockResolvedValue(undefined)
+    });
+
+    await expect(recorder.startStandardRecording()).rejects.toThrow('系统音频轨道');
+    expect(micTrack.stop).toHaveBeenCalled();
+    expect(sysVideoTrack.stop).toHaveBeenCalled();
+  });
+
   test('startRecording should fail fast when recovery tracking cannot initialize', async () => {
     const micTrack = { kind: 'audio', stop: jest.fn() };
     const sysAudioTrack = { kind: 'audio', stop: jest.fn() };

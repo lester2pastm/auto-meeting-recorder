@@ -926,6 +926,16 @@ body {
     flex: 1;
 }
 
+.history-item-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .history-item-date {
     font-size: 1rem;
     font-weight: 600;
@@ -954,6 +964,29 @@ body {
 .history-item-actions {
     display: flex;
     gap: var(--space-2);
+}
+
+.detail-page-title-row {
+    margin-bottom: var(--space-5);
+}
+
+.detail-page-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.detail-page-title {
+    margin: 0;
+    font-size: 1.35rem;
+    line-height: 1.35;
+    color: var(--text-primary);
+}
+
+.detail-page-subtitle {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-muted);
 }
 
 /* ============================================

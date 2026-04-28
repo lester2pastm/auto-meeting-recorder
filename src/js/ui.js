@@ -132,6 +132,19 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function resolveMeetingTitleHelpers() {
+    const root = typeof globalThis !== 'undefined' ? globalThis : window;
+
+    return {
+        getMeetingDisplayTitle: typeof root.getMeetingDisplayTitle === 'function'
+            ? root.getMeetingDisplayTitle
+            : ((meeting) => (meeting && meeting.title) || '未命名会议'),
+        truncateMeetingTitle: typeof root.truncateMeetingTitle === 'function'
+            ? root.truncateMeetingTitle
+            : (title => title || '')
+    };
+}
+
 function getLoadingMarkup(message) {
     return `
         <div class="loading-state">
@@ -258,9 +271,11 @@ function renderHistoryList(meetings) {
     const viewText = i18n ? i18n.get('view') : '查看';
     const deleteText = i18n ? i18n.get('delete') : '删除';
 
+    const meetingTitleHelpers = resolveMeetingTitleHelpers();
     historyList.innerHTML = meetings.map(meeting => `
         <div class="history-item">
             <div class="history-item-info">
+                <div class="history-item-title" title="${escapeHtml(meetingTitleHelpers.getMeetingDisplayTitle(meeting))}">${escapeHtml(meetingTitleHelpers.truncateMeetingTitle(meetingTitleHelpers.getMeetingDisplayTitle(meeting)))}</div>
                 <div class="history-item-date">${formatDate(meeting.date)}</div>
                 <div class="history-item-meta">
                     <span class="history-item-duration">${meeting.duration}</span>
@@ -331,6 +346,9 @@ async function renderMeetingDetail(meeting) {
     const isElectronEnv = typeof window !== 'undefined' && window.electronAPI;
     const isTranscriptProcessing = meeting.transcriptStatus === 'transcribing';
     const isSummaryProcessing = meeting.summaryStatus === 'generating';
+    const meetingTitleHelpers = resolveMeetingTitleHelpers();
+    const fullTitle = meetingTitleHelpers.getMeetingDisplayTitle(meeting);
+    const shortTitle = meetingTitleHelpers.truncateMeetingTitle(fullTitle);
     const transcriptContent = isTranscriptProcessing
         ? getLoadingMarkup('正在重新转写，请稍候...')
         : (meeting.transcript || '暂无转写文本');
@@ -339,6 +357,13 @@ async function renderMeetingDetail(meeting) {
         : (meeting.summary || '暂无会议纪要');
 
     detailContent.innerHTML = `
+        <div class="detail-page-title-row">
+            <div class="detail-page-title-wrap">
+                <h3 id="detailMeetingTitle" class="detail-page-title" title="${escapeHtml(fullTitle)}">${escapeHtml(shortTitle)}</h3>
+                <p class="detail-page-subtitle">会议详情</p>
+            </div>
+        </div>
+
         <div class="detail-section">
             <h3>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px">
@@ -810,6 +835,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         showToast,
         copyToClipboard,
+        renderHistoryList,
         renderMeetingDetail,
         cleanupDetailAudioPreview,
         updateSubtitleContent,

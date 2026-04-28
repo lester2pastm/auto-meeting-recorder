@@ -335,6 +335,13 @@ async function startStandardRecording() {
                     }
                 }
             });
+
+            const systemAudioTrack = systemAudioStream.getAudioTracks()[0];
+            if (!systemAudioTrack) {
+                systemAudioStream.getTracks().forEach(track => track.stop());
+                systemAudioStream = null;
+                throw new Error('系统音频轨道不可用');
+            }
         } else {
             // 浏览器环境：使用 getDisplayMedia
             console.log('提示: 请在弹出的对话框中选择"整个屏幕"或"标签页"，并勾选"分享音频"选项');
@@ -362,6 +369,7 @@ async function startStandardRecording() {
             systemAudioStream = new MediaStream([systemAudioTrack]);
         }
     } catch (err) {
+        stopAllStreams();
         console.error('获取系统音频失败:', err.name, err.message);
         throw new Error('获取系统音频失败: ' + err.message);
     }

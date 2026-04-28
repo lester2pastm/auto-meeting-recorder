@@ -619,7 +619,12 @@ async function saveEmptyMeetingRecord(audioBlob) {
         audioFile: audioBlob,
         transcript: '',
         summary: '',
-        transcriptStatus: TRANSCRIPT_STATUS.PENDING
+        transcriptStatus: TRANSCRIPT_STATUS.PENDING,
+        title: '',
+        titleStatus: 'pending',
+        titleSource: '',
+        titleError: '',
+        titleUpdatedAt: ''
     };
     
     return await saveMeeting(meeting);
@@ -735,6 +740,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
 async function generateMeetingSummary(transcript, audioBlob, meetingId) {
     console.log('[App] generateMeetingSummary called, meetingId:', meetingId);
     let summary = '';
+    let titleUpdates = {};
 
     try {
         updateRecordingWorkflowState(true, i18n ? i18n.get('workflowGeneratingSummary') : '正在生成会议纪要...', { transcript: false, summary: true });
@@ -769,19 +775,37 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
             } else {
                 summary = result.summary;
                 updateSummaryContent(summary);
+                if (typeof generateMeetingTitle === 'function') {
+                    const titleResult = await generateMeetingTitle(
+                        summary,
+                        currentSettings.summaryApiUrl,
+                        currentSettings.summaryApiKey,
+                        currentSettings.summaryModel,
+                        (message) => updateRecordingWorkflowState(true, message, { transcript: false, summary: true })
+                    );
+                    titleUpdates = buildMeetingTitleUpdates(titleResult);
+                }
                 showToast('纪要生成成功', 'success');
             }
         }
 
         // 无论纪要生成成功与否，都保存会议记录
         console.log('[App] Saving meeting record, meetingId:', meetingId, 'hasSummary:', !!summary);
-        await saveMeetingRecord(transcript, summary, audioBlob, meetingId);
+        if (Object.keys(titleUpdates).length > 0) {
+            await saveMeetingRecord(transcript, summary, audioBlob, meetingId, titleUpdates);
+        } else {
+            await saveMeetingRecord(transcript, summary, audioBlob, meetingId);
+        }
     } catch (error) {
         console.error('[App] Failed to generate summary:', error);
         showToast('生成纪要失败', 'error');
         // 即使出错也尝试保存转写内容
         try {
-            await saveMeetingRecord(transcript, '', audioBlob, meetingId);
+            if (Object.keys(titleUpdates).length > 0) {
+                await saveMeetingRecord(transcript, '', audioBlob, meetingId, titleUpdates);
+            } else {
+                await saveMeetingRecord(transcript, '', audioBlob, meetingId);
+            }
         } catch (saveError) {
             console.error('[App] Failed to save meeting after summary error:', saveError);
         }
@@ -795,7 +819,32 @@ function setLastRecordingDuration(duration) {
     lastRecordingDuration = duration;
 }
 
-async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = null) {
+function buildMeetingTitleUpdates(titleResult) {
+    const titleTimestamp = new Date().toISOString();
+
+    if (titleResult && titleResult.success && titleResult.title) {
+        return {
+            title: titleResult.title,
+            titleStatus: 'completed',
+            titleSource: 'ai',
+            titleError: '',
+            titleUpdatedAt: titleTimestamp
+        };
+    }
+
+    if (titleResult && titleResult.message) {
+        return {
+            titleStatus: 'failed',
+            titleSource: 'fallback',
+            titleError: titleResult.message,
+            titleUpdatedAt: titleTimestamp
+        };
+    }
+
+    return {};
+}
+
+async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = null, extraUpdates = {}) {
     console.log('[App] saveMeetingRecord called, meetingId:', meetingId, 'audioBlob:', audioBlob ? { size: audioBlob.size, type: audioBlob.type } : 'null');
     try {
         if (meetingId) {
@@ -803,7 +852,8 @@ async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = nul
             const updates = {
                 transcript: transcript,
                 summary: summary,
-                transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
+                transcriptStatus: TRANSCRIPT_STATUS.COMPLETED,
+                ...extraUpdates
             };
             await updateMeeting(meetingId, updates);
             console.log('[App] updateMeeting completed successfully for meetingId:', meetingId);
@@ -815,7 +865,8 @@ async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = nul
                 duration: lastRecordingDuration,
                 transcript: transcript,
                 summary: summary,
-                transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
+                transcriptStatus: TRANSCRIPT_STATUS.COMPLETED,
+                ...extraUpdates
             };
             if (currentAudioFilePath) {
                 meeting.audioFilename = currentAudioFilePath;
@@ -1146,8 +1197,20 @@ async function handleRefreshSummaryInDetail(meetingId) {
         }
 
         // 更新数据库中的纪要
+        let titleUpdates = {};
+        if (typeof generateMeetingTitle === 'function') {
+            const titleResult = await generateMeetingTitle(
+                result.summary,
+                currentSettings.summaryApiUrl,
+                currentSettings.summaryApiKey,
+                currentSettings.summaryModel
+            );
+            titleUpdates = buildMeetingTitleUpdates(titleResult);
+        }
+
         await updateMeeting(meetingId, {
-            summary: result.summary
+            summary: result.summary,
+            ...titleUpdates
         });
         shouldCheckCompletion = true;
     } catch (error) {
@@ -1427,9 +1490,21 @@ async function handleRefreshSummary() {
         }
 
         updateSummaryContent(result.summary);
+        let titleUpdates = {};
+
+        if (typeof generateMeetingTitle === 'function') {
+            const titleResult = await generateMeetingTitle(
+                result.summary,
+                currentSettings.summaryApiUrl,
+                currentSettings.summaryApiKey,
+                currentSettings.summaryModel
+            );
+            titleUpdates = buildMeetingTitleUpdates(titleResult);
+        }
         if (currentMeetingId) {
             await updateMeeting(currentMeetingId, {
-                summary: result.summary
+                summary: result.summary,
+                ...titleUpdates
             });
         }
         showToast(i18n ? i18n.get('summaryRefreshed') : '会议纪要已更新', 'success');

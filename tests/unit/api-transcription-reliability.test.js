@@ -212,6 +212,84 @@ describe('transcribeAudioSegments reliability', () => {
     global.webkitAudioContext = originalWebkitAudioContext;
   });
 
+  test('does not route a short recording through segmentation when metadata duration is Infinity', async () => {
+    const originalAudio = global.Audio;
+
+    global.Audio = class MockInfinityAudio {
+      constructor() {
+        this.duration = Number.POSITIVE_INFINITY;
+        this.onloadedmetadata = null;
+        this.onerror = null;
+      }
+
+      set src(value) {
+        this._src = value;
+        if (this.onloadedmetadata) {
+          this.onloadedmetadata();
+        }
+      }
+    };
+
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'short recording transcript' })
+    });
+
+    const result = await api.transcribeAudio(
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'https://api.openai.com/v1/audio/transcriptions',
+      'test-key',
+      'whisper-1',
+      '/tmp/audio.webm'
+    );
+
+    expect(result).toEqual({ success: true, text: 'short recording transcript' });
+    expect(global.window.electronAPI.splitAudioFile).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    global.Audio = originalAudio;
+  });
+
+  test('skips segmentation inside transcribeAudioSegments when the audio is small and duration metadata is invalid', async () => {
+    const originalAudio = global.Audio;
+
+    global.Audio = class MockInfinityAudio {
+      constructor() {
+        this.duration = Number.POSITIVE_INFINITY;
+        this.onloadedmetadata = null;
+        this.onerror = null;
+      }
+
+      set src(value) {
+        this._src = value;
+        if (this.onloadedmetadata) {
+          this.onloadedmetadata();
+        }
+      }
+    };
+
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'single segment transcript' })
+    });
+
+    const result = await api.transcribeAudioSegments(
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'https://api.openai.com/v1/audio/transcriptions',
+      'test-key',
+      'whisper-1',
+      '/tmp/audio.webm'
+    );
+
+    expect(result).toEqual({ success: true, text: 'single segment transcript' });
+    expect(global.window.electronAPI.splitAudioFile).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    global.Audio = originalAudio;
+  });
+
   test('uses a fixed 10 minute timeout for each segmented transcription attempt', async () => {
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
       realSetTimeout(fn, 0, ...args)

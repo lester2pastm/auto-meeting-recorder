@@ -38,6 +38,19 @@ function getSummaryRequestTimeout(transcript) {
     return Math.min(baseTimeout + extraTimeout, maxTimeout);
 }
 
+function getMeetingTitleRequestTimeout(summary) {
+    const baseTimeout = 10000;
+    const maxTimeout = 30000;
+    const summaryLength = typeof summary === 'string' ? summary.trim().length : 0;
+
+    if (summaryLength === 0) {
+        return baseTimeout;
+    }
+
+    const extraTimeout = Math.ceil(summaryLength / 500) * 2000;
+    return Math.min(baseTimeout + extraTimeout, maxTimeout);
+}
+
 function isRetryableSummaryStatus(status) {
     return status === 429 || status >= 500;
 }
@@ -230,8 +243,9 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
         }
 
-        const durationMinutes = (await getAudioDuration(audioBlob)) / 60;
-        if (durationMinutes > 60) {
+        const durationSeconds = await getAudioDuration(audioBlob);
+        const durationMinutes = isValidAudioDuration(durationSeconds) ? durationSeconds / 60 : null;
+        if (durationMinutes !== null && durationMinutes > 60) {
             console.log('音频时长超过 60 分钟限制，使用分段转写...');
             return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
         }
@@ -378,8 +392,13 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
 
 function calculateSegmentCount(sizeMB, durationMinutes, maxSizeMB = 45, maxDurationMinutes = 55) {
     const sizeSegments = Math.max(1, Math.ceil(sizeMB / maxSizeMB));
-    const durationSegments = Math.max(1, Math.ceil(durationMinutes / maxDurationMinutes));
+    const safeDurationMinutes = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 0;
+    const durationSegments = Math.max(1, Math.ceil(safeDurationMinutes / maxDurationMinutes));
     return Math.max(sizeSegments, durationSegments);
+}
+
+function isValidAudioDuration(duration) {
+    return Number.isFinite(duration) && duration > 0;
 }
 
 function detectAudioFormat(audioBlob) {
@@ -553,14 +572,16 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     // 获取音频时长（使用 audio 元素）
     const duration = await getAudioDuration(audioBlob);
-    const durationMinutes = duration / 60;
+    const hasKnownDuration = isValidAudioDuration(duration);
+    const durationMinutes = hasKnownDuration ? duration / 60 : 0;
+    const durationLabel = durationMinutes === null ? 'unknown' : `${durationMinutes.toFixed(2)}åˆ†é’Ÿ`;
     
     console.log(`音频信息: ${durationMinutes.toFixed(2)}分钟, ${sizeMB.toFixed(2)}MB`);
     
     console.log(`转写超时时间: ${(requestTimeout / 1000 / 60).toFixed(1)}分钟`);
     
     // 检查是否需要分割
-    const needsSplit = sizeMB > 50 || durationMinutes > 60;
+    const needsSplit = sizeMB > 50 || (hasKnownDuration && durationMinutes > 60);
     
     if (!needsSplit) {
         // 不需要分割，直接转写
@@ -572,7 +593,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     let segments = null;
     let segmentPaths = [];
 
-    if (audioFilePath && window.electronAPI && typeof window.electronAPI.splitAudioFile === 'function') {
+    if (audioFilePath && hasKnownDuration && window.electronAPI && typeof window.electronAPI.splitAudioFile === 'function') {
         try {
             segmentPaths = await splitAudioByFilePath(audioFilePath, duration, sizeMB);
             console.log(`主进程已分割为 ${segmentPaths.length} 个片段`);
@@ -581,7 +602,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
             segments = await splitAudio(audioBlob, 45, duration);
         }
     } else {
-        segments = await splitAudio(audioBlob, 45, duration);
+        segments = await splitAudio(audioBlob, 45, hasKnownDuration ? duration : null);
     }
     
     // 逐个转写每个片段
@@ -641,16 +662,26 @@ async function getAudioDuration(audioBlob) {
     return new Promise((resolve, reject) => {
         const audio = new Audio();
         const url = URL.createObjectURL(audioBlob);
+        const resolveWithFallback = () => {
+            getAudioDurationFallback(audioBlob)
+                .then((duration) => resolve(isValidAudioDuration(duration) ? duration : 0))
+                .catch(() => resolve(0));
+        };
         
         audio.onloadedmetadata = () => {
             URL.revokeObjectURL(url);
-            resolve(audio.duration);
+            if (isValidAudioDuration(audio.duration)) {
+                resolve(audio.duration);
+                return;
+            }
+
+            resolveWithFallback();
         };
         
         audio.onerror = () => {
             URL.revokeObjectURL(url);
             // 如果失败，尝试使用 AudioContext 解码
-            getAudioDurationFallback(audioBlob).then(resolve).catch(reject);
+            resolveWithFallback();
         };
         
         audio.src = url;
@@ -846,12 +877,107 @@ ${transcript}
     }
 }
 
+function getMeetingTitleSanitizer() {
+    if (typeof globalThis !== 'undefined' && typeof globalThis.sanitizeGeneratedMeetingTitle === 'function') {
+        return globalThis.sanitizeGeneratedMeetingTitle;
+    }
+
+    return (title) => String(title || '').trim();
+}
+
+async function generateMeetingTitle(summary, apiUrl, apiKey, model = 'gpt-4o-mini', onProgress = null) {
+    if (!summary || !summary.trim()) {
+        return { success: false, message: '缺少可用于生成标题的会议纪要' };
+    }
+
+    const prompt = `请基于以下会议纪要生成一个会议标题。
+要求：
+1. 标题不超过15个汉字
+2. 只返回标题文本
+3. 不要序号、引号、句号、解释或Markdown
+
+会议纪要：
+${summary}`;
+
+    const sanitizeTitle = getMeetingTitleSanitizer();
+    const maxAttempts = 3;
+    const requestTimeout = getMeetingTitleRequestTimeout(summary);
+    const maxBackoff = 2000;
+
+    try {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const response = await fetchWithTimeout(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            { role: 'user', content: prompt }
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 40
+                    })
+                }, requestTimeout);
+
+                if (!response.ok) {
+                    const error = new Error(await parseSummaryError(response));
+                    error.status = response.status;
+                    throw error;
+                }
+
+                const data = await response.json();
+                const rawTitle = data.choices?.[0]?.message?.content || '';
+                return { success: true, title: sanitizeTitle(rawTitle) };
+            } catch (error) {
+                const shouldRetry = attempt < maxAttempts && isRetryableSummaryError(error);
+
+                if (!shouldRetry) {
+                    if (attempt === maxAttempts && isRetryableSummaryError(error)) {
+                        const exhaustedError = new Error(getSummaryRetryExhaustedMessage(error));
+                        exhaustedError.status = error.status;
+                        throw exhaustedError;
+                    }
+
+                    throw error;
+                }
+
+                const nextAttempt = attempt + 1;
+                if (typeof onProgress === 'function') {
+                    const progressLabel = getSummaryRetryProgressLabel(error);
+                    onProgress(getI18nValue('summaryRetryProgressTemplate', {
+                        label: progressLabel,
+                        attempt: String(nextAttempt),
+                        maxAttempts: String(maxAttempts)
+                    }));
+                }
+
+                const backoff = Math.min(1000 * attempt, maxBackoff);
+                await delay(backoff);
+            }
+        }
+    } catch (error) {
+        console.error('Meeting title generation error:', error);
+        let userMessage = error.message;
+        if (error.message === 'Failed to fetch' ||
+            error.message.includes('net::ERR_') ||
+            error.name === 'TypeError') {
+            userMessage = '网络连接失败，请检查网络或代理设置';
+        }
+        return { success: false, message: userMessage };
+    }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         transcribeAudio,
         transcribeAudioSegments,
         transcribeSingleSegment,
         generateSummary,
+        generateMeetingTitle,
         calculateSegmentCount,
         getAudioDuration,
         splitAudio,
