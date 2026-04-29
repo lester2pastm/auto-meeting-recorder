@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.6.20] - 2026-04-29
+
+### Changed
+
+- Added detailed meeting-title diagnostics across API requests, app flow state transitions, and IndexedDB persistence to make cross-platform title failures easier to trace.
+
+### Fixed
+
+- Stopped treating blank AI title payloads as silent success; they now persist failed title metadata instead of falling back without explanation.
+- Hardened summary/title/transcription error handling so non-standard provider error objects no longer throw a second error while building user-facing messages.
+
 ## [2.6.19] - 2026-04-28
 
 ### Added

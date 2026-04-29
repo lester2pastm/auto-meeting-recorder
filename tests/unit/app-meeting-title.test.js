@@ -135,6 +135,46 @@ describe('meeting title generation in app flows', () => {
     expect(generateMeetingTitle).not.toHaveBeenCalled();
   });
 
+  test('generateMeetingSummary persists failed title metadata when title api returns blank success payload', async () => {
+    const generateSummary = jest.fn().mockResolvedValue({
+      success: true,
+      summary: '需要会议标题的纪要内容'
+    });
+    const generateMeetingTitle = jest.fn().mockResolvedValue({
+      success: true,
+      title: '   '
+    });
+    const updateMeeting = jest.fn().mockResolvedValue(undefined);
+
+    const app = loadAppModule({
+      generateSummary,
+      generateMeetingTitle,
+      updateMeeting,
+      updateSummaryContent: jest.fn(),
+      showToast: jest.fn(),
+      showLoading: jest.fn(),
+      hideLoading: jest.fn(),
+      updateRecordingButtons: jest.fn(),
+      getRecordingState: jest.fn(() => ({ isRecording: false })),
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      summaryApiUrl: 'https://summary.example.com',
+      summaryApiKey: 'key',
+      summaryModel: 'gpt-4o',
+      summaryTemplate: 'template'
+    });
+
+    await app.generateMeetingSummary('转写内容', new Blob(['audio']), 'meeting-empty-title');
+
+    expect(updateMeeting).toHaveBeenCalledWith('meeting-empty-title', expect.objectContaining({
+      titleStatus: 'failed',
+      titleSource: 'fallback',
+      titleError: '生成的会议标题为空'
+    }));
+  });
+
   test('handleRefreshSummary regenerates title for the current meeting after summary refresh', async () => {
     const generateSummary = jest.fn().mockResolvedValue({
       success: true,

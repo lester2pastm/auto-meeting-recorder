@@ -5,6 +5,16 @@ const SETTINGS_STORE_NAME = 'settings';
 
 let db = null;
 
+function extractMeetingTitleDebugState(record = {}) {
+  return {
+    title: typeof record.title === 'string' ? record.title : '',
+    titleStatus: record.titleStatus || '',
+    titleSource: record.titleSource || '',
+    titleError: record.titleError || '',
+    titleUpdatedAt: record.titleUpdatedAt || ''
+  };
+}
+
 // 检测是否在 Electron 环境中
 const isElectron = () => {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
@@ -150,6 +160,10 @@ function initDB() {
 
 async function saveMeeting(meeting) {
     console.log('[Storage] saveMeeting called, meeting id:', meeting.id);
+    if (Object.prototype.hasOwnProperty.call(meeting, 'title') ||
+        Object.prototype.hasOwnProperty.call(meeting, 'titleStatus')) {
+        console.log('[Storage][MeetingTitle] saveMeeting payload:', extractMeetingTitleDebugState(meeting));
+    }
     return new Promise(async (resolve, reject) => {
         try {
             // 如果有音频文件且是 Blob，保存到文件系统
@@ -301,6 +315,18 @@ function updateMeeting(id, updates) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([STORE_NAME], 'readwrite');
         const objectStore = transaction.objectStore(STORE_NAME);
+        const hasTitleFields = Object.prototype.hasOwnProperty.call(updates, 'title') ||
+            Object.prototype.hasOwnProperty.call(updates, 'titleStatus') ||
+            Object.prototype.hasOwnProperty.call(updates, 'titleSource') ||
+            Object.prototype.hasOwnProperty.call(updates, 'titleError') ||
+            Object.prototype.hasOwnProperty.call(updates, 'titleUpdatedAt');
+
+        if (hasTitleFields) {
+            console.log('[Storage][MeetingTitle] updateMeeting incoming updates:', {
+                id,
+                ...extractMeetingTitleDebugState(updates)
+            });
+        }
         
         const getRequest = objectStore.get(id);
         
@@ -312,9 +338,21 @@ function updateMeeting(id, updates) {
             }
             
             const updated = { ...existing, ...updates };
+            if (hasTitleFields) {
+                console.log('[Storage][MeetingTitle] updateMeeting merged record:', {
+                    id,
+                    ...extractMeetingTitleDebugState(updated)
+                });
+            }
             const putRequest = objectStore.put(updated);
             
             putRequest.onsuccess = () => {
+                if (hasTitleFields) {
+                    console.log('[Storage][MeetingTitle] updateMeeting persisted:', {
+                        id,
+                        ...extractMeetingTitleDebugState(updated)
+                    });
+                }
                 resolve(updated);
             };
             

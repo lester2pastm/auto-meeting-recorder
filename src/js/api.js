@@ -24,6 +24,73 @@ function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function summarizeDebugText(value, maxLength = 80) {
+    const normalized = String(value || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!normalized) {
+        return '';
+    }
+
+    return normalized.length > maxLength
+        ? `${normalized.slice(0, maxLength)}...`
+        : normalized;
+}
+
+function getApiOriginLabel(apiUrl) {
+    try {
+        return new URL(apiUrl).origin;
+    } catch (error) {
+        return 'invalid-url';
+    }
+}
+
+function pushMeetingTitleDebug(stage, details = {}) {
+    const entry = {
+        stage,
+        timestamp: new Date().toISOString(),
+        ...details
+    };
+
+    if (typeof globalThis !== 'undefined') {
+        const existing = Array.isArray(globalThis.__meetingTitleDebug)
+            ? globalThis.__meetingTitleDebug
+            : [];
+        globalThis.__meetingTitleDebug = [...existing.slice(-49), entry];
+        globalThis.pushMeetingTitleDebug = pushMeetingTitleDebug;
+    }
+
+    console.log('[MeetingTitleDebug]', entry);
+    return entry;
+}
+
+function getErrorMessage(error, fallback = '请求失败，请稍后重试') {
+    if (typeof error === 'string' && error.trim()) {
+        return error;
+    }
+
+    if (error && typeof error.message === 'string' && error.message.trim()) {
+        return error.message;
+    }
+
+    return fallback;
+}
+
+function isTimeoutErrorMessage(error) {
+    return getErrorMessage(error, '').includes('请求超时');
+}
+
+function isNetworkErrorLike(error) {
+    const errorMessage = getErrorMessage(error, '');
+
+    return !!(error && (
+        error.name === 'TypeError' ||
+        errorMessage === 'Failed to fetch' ||
+        errorMessage.includes('net::ERR_')
+    ));
+}
+
 function getSummaryRequestTimeout(transcript) {
     const baseTimeout = 15000;
     const maxTimeout = 120000;
@@ -55,7 +122,7 @@ function isRetryableSummaryStatus(status) {
     return status === 429 || status >= 500;
 }
 
-function isRetryableSummaryError(error) {
+function isRetryableSummaryErrorLegacy(error) {
     if (!error) {
         return false;
     }
@@ -97,7 +164,7 @@ function getI18nValue(key, replacements = {}) {
     return value;
 }
 
-function getSummaryRetryProgressLabel(error) {
+function getSummaryRetryProgressLabelLegacy(error) {
     if (!error || !error.message) {
         return getI18nValue('summaryRetryGenericLabel');
     }
@@ -129,7 +196,7 @@ function getSummaryRetryExhaustedMessage(error) {
     return getI18nValue('summaryRetryExhaustedGeneric');
 }
 
-function getTranscriptionRetryProgressLabel(error) {
+function getTranscriptionRetryProgressLabelLegacy(error) {
     if (!error || !error.message) {
         return getI18nValue('transcriptionRetryGenericLabel');
     }
@@ -168,6 +235,53 @@ function getTranscriptionRetryExhaustedMessage(error) {
     }
 
     return getI18nValue('transcriptionRetryExhaustedGeneric');
+}
+
+function isRetryableSummaryError(error) {
+    if (!error) {
+        return false;
+    }
+
+    if (typeof error.status === 'number') {
+        return isRetryableSummaryStatus(error.status);
+    }
+
+    return error.name === 'AbortError' ||
+        isNetworkErrorLike(error) ||
+        isTimeoutErrorMessage(error);
+}
+
+function getSummaryRetryProgressLabel(error) {
+    if (!error) {
+        return getI18nValue('summaryRetryGenericLabel');
+    }
+
+    if (isTimeoutErrorMessage(error)) {
+        return getI18nValue('summaryRetryTimeoutLabel');
+    }
+
+    if (isNetworkErrorLike(error)) {
+        return getI18nValue('summaryRetryNetworkLabel');
+    }
+
+    return getI18nValue('summaryRetryGenericLabel');
+}
+
+function getTranscriptionRetryProgressLabel(error) {
+    if (!error) {
+        return getI18nValue('transcriptionRetryGenericLabel');
+    }
+
+    if (isTimeoutErrorMessage(error)) {
+        return getI18nValue('transcriptionRetryTimeoutLabel');
+    }
+
+    if (isNetworkErrorLike(error) ||
+        getErrorMessage(error, '').includes('网络连接失败')) {
+        return getI18nValue('transcriptionRetryNetworkLabel');
+    }
+
+    return getI18nValue('transcriptionRetryGenericLabel');
 }
 
 async function parseSummaryError(response) {
@@ -380,10 +494,8 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
         return { success: true, text: transcriptText };
     } catch (error) {
         console.error('Transcription error:', error);
-        let userMessage = error.message;
-        if (error.message === 'Failed to fetch' || 
-            error.message.includes('net::ERR_') ||
-            error.name === 'TypeError') {
+        let userMessage = getErrorMessage(error);
+        if (isNetworkErrorLike(error)) {
             userMessage = '网络连接失败，请检查网络或代理设置';
         }
         return { success: false, message: userMessage };
@@ -785,10 +897,8 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout
         return { success: true, text: transcriptText };
     } catch (error) {
         console.error('单片段转写错误:', error);
-        let userMessage = error.message;
-        if (error.message === 'Failed to fetch' || 
-            error.message.includes('net::ERR_') ||
-            error.name === 'TypeError') {
+        let userMessage = getErrorMessage(error);
+        if (isNetworkErrorLike(error)) {
             userMessage = '网络连接失败，请检查网络或代理设置';
         }
         return { success: false, message: userMessage };
@@ -867,10 +977,8 @@ ${transcript}
         }
     } catch (error) {
         console.error('Summary generation error:', error);
-        let userMessage = error.message;
-        if (error.message === 'Failed to fetch' || 
-            error.message.includes('net::ERR_') ||
-            error.name === 'TypeError') {
+        let userMessage = getErrorMessage(error);
+        if (isNetworkErrorLike(error)) {
             userMessage = '网络连接失败，请检查网络或代理设置';
         }
         return { success: false, message: userMessage };
@@ -887,6 +995,9 @@ function getMeetingTitleSanitizer() {
 
 async function generateMeetingTitle(summary, apiUrl, apiKey, model = 'gpt-4o-mini', onProgress = null) {
     if (!summary || !summary.trim()) {
+        pushMeetingTitleDebug('skipped-empty-summary', {
+            model: model || 'unknown'
+        });
         return { success: false, message: '缺少可用于生成标题的会议纪要' };
     }
 
@@ -905,8 +1016,21 @@ ${summary}`;
     const maxBackoff = 2000;
 
     try {
+        pushMeetingTitleDebug('start', {
+            apiOrigin: getApiOriginLabel(apiUrl),
+            model: model || 'unknown',
+            requestTimeout,
+            summaryLength: summary.trim().length,
+            summaryPreview: summarizeDebugText(summary)
+        });
+
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+                pushMeetingTitleDebug('attempt-start', {
+                    attempt,
+                    maxAttempts
+                });
+
                 const response = await fetchWithTimeout(apiUrl, {
                     method: 'POST',
                     headers: {
@@ -923,6 +1047,12 @@ ${summary}`;
                     })
                 }, requestTimeout);
 
+                pushMeetingTitleDebug('attempt-response', {
+                    attempt,
+                    status: response.status,
+                    ok: response.ok
+                });
+
                 if (!response.ok) {
                     const error = new Error(await parseSummaryError(response));
                     error.status = response.status;
@@ -931,9 +1061,43 @@ ${summary}`;
 
                 const data = await response.json();
                 const rawTitle = data.choices?.[0]?.message?.content || '';
-                return { success: true, title: sanitizeTitle(rawTitle) };
+                const sanitizedTitle = sanitizeTitle(rawTitle);
+
+                pushMeetingTitleDebug('attempt-parsed', {
+                    attempt,
+                    rawTitleLength: rawTitle.length,
+                    rawTitlePreview: summarizeDebugText(rawTitle),
+                    sanitizedTitleLength: sanitizedTitle.length,
+                    sanitizedTitlePreview: summarizeDebugText(sanitizedTitle),
+                    choiceCount: Array.isArray(data.choices) ? data.choices.length : 0
+                });
+
+                if (!sanitizedTitle) {
+                    pushMeetingTitleDebug('empty-title-after-sanitize', {
+                        attempt,
+                        rawTitleLength: rawTitle.length,
+                        rawTitlePreview: summarizeDebugText(rawTitle)
+                    });
+                    return { success: false, message: '生成的会议标题为空' };
+                }
+
+                pushMeetingTitleDebug('success', {
+                    attempt,
+                    titleLength: sanitizedTitle.length,
+                    titlePreview: summarizeDebugText(sanitizedTitle)
+                });
+                return { success: true, title: sanitizedTitle };
             } catch (error) {
                 const shouldRetry = attempt < maxAttempts && isRetryableSummaryError(error);
+
+                pushMeetingTitleDebug('attempt-error', {
+                    attempt,
+                    maxAttempts,
+                    name: error.name || 'Error',
+                    message: error.message,
+                    status: typeof error.status === 'number' ? error.status : null,
+                    retrying: shouldRetry
+                });
 
                 if (!shouldRetry) {
                     if (attempt === maxAttempts && isRetryableSummaryError(error)) {
@@ -961,12 +1125,16 @@ ${summary}`;
         }
     } catch (error) {
         console.error('Meeting title generation error:', error);
-        let userMessage = error.message;
-        if (error.message === 'Failed to fetch' ||
-            error.message.includes('net::ERR_') ||
-            error.name === 'TypeError') {
+        let userMessage = getErrorMessage(error);
+        if (isNetworkErrorLike(error)) {
             userMessage = '网络连接失败，请检查网络或代理设置';
         }
+        pushMeetingTitleDebug('failed', {
+            name: error.name || 'Error',
+            message: getErrorMessage(error),
+            userMessage,
+            status: typeof error.status === 'number' ? error.status : null
+        });
         return { success: false, message: userMessage };
     }
 }

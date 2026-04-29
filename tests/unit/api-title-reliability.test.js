@@ -74,4 +74,39 @@ describe('generateMeetingTitle reliability', () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(result).toEqual({ success: false, message: '缺少可用于生成标题的会议纪要' });
   });
+  test('treats empty sanitized title as a failure result', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: '""'
+          }
+        }]
+      })
+    });
+
+    const result = await api.generateMeetingTitle(
+      '浼氳绾鍐呭',
+      'https://summary.example.com',
+      'key',
+      'gpt-4o-mini'
+    );
+
+    expect(result).toEqual({ success: false, message: '生成的会议标题为空' });
+  });
+
+  test('handles non-Error rejection objects without throwing from catch', async () => {
+    fetch.mockRejectedValueOnce({ code: 'E_ARM_PROVIDER' });
+
+    const result = await api.generateMeetingTitle(
+      '会议纪要内容',
+      'https://summary.example.com',
+      'key',
+      'gpt-4o-mini'
+    );
+
+    expect(result).toEqual({ success: false, message: '请求失败，请稍后重试' });
+  });
 });
