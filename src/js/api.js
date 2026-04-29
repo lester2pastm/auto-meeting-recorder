@@ -83,6 +83,9 @@ function normalizeProviderText(value) {
         .toLowerCase();
 }
 
+const OPENAI_REASONING_MODEL_PATTERN = /(^|\/)(o1|o3|o4)(?:[._-]|$)|(^|\/)gpt-5(?:[._-]|$)/i;
+const GLM_REASONING_MODEL_PATTERN = /(^|\/)glm(?:[._-]|$)/i;
+
 function isDeepSeekCompatibleRequest(apiUrl, model) {
     const normalizedModel = normalizeProviderText(model);
     const normalizedUrl = normalizeProviderText(apiUrl);
@@ -90,17 +93,101 @@ function isDeepSeekCompatibleRequest(apiUrl, model) {
     return normalizedModel.includes('deepseek') || normalizedUrl.includes('deepseek');
 }
 
+function isOpenAIRequest(apiUrl) {
+    return normalizeProviderText(apiUrl).includes('openai.com');
+}
+
+function isOpenRouterRequest(apiUrl) {
+    return normalizeProviderText(apiUrl).includes('openrouter.ai');
+}
+
+function isDashScopeCompatibleRequest(apiUrl) {
+    const normalizedUrl = normalizeProviderText(apiUrl);
+    return normalizedUrl.includes('dashscope') && normalizedUrl.includes('compatible-mode');
+}
+
+function isOpenAIReasoningModel(model) {
+    return OPENAI_REASONING_MODEL_PATTERN.test(normalizeProviderText(model));
+}
+
+function isGLMRequest(apiUrl, model) {
+    const normalizedUrl = normalizeProviderText(apiUrl);
+    return normalizedUrl.includes('bigmodel.cn')
+        || normalizedUrl.includes('z.ai')
+        || normalizedUrl.includes('zhipu')
+        || GLM_REASONING_MODEL_PATTERN.test(normalizeProviderText(model));
+}
+
+function isDashScopeThinkingModel(model) {
+    const normalizedModel = normalizeProviderText(model);
+    return normalizedModel.includes('qwen3')
+        || normalizedModel.includes('qwen-plus')
+        || normalizedModel.includes('qwen-turbo')
+        || normalizedModel.includes('glm')
+        || normalizedModel.includes('minimax');
+}
+
+function isMiniMaxRequest(apiUrl) {
+    const normalizedUrl = normalizeProviderText(apiUrl);
+    return normalizedUrl.includes('minimaxi.com') || normalizedUrl.includes('minimax.io');
+}
+
+const TITLE_THINKING_CONTROL_STRATEGIES = [
+    {
+        matches: (apiUrl, model) => isDashScopeCompatibleRequest(apiUrl) && isDashScopeThinkingModel(model),
+        buildControls: () => ({
+            enable_thinking: false
+        })
+    },
+    {
+        matches: (apiUrl, model) => isDeepSeekCompatibleRequest(apiUrl, model),
+        buildControls: () => ({
+            thinking: {
+                type: 'disabled'
+            }
+        })
+    },
+    {
+        matches: (apiUrl, model) => isGLMRequest(apiUrl, model),
+        buildControls: () => ({
+            thinking: {
+                type: 'disabled'
+            }
+        })
+    },
+    {
+        matches: (apiUrl, model) => isOpenAIRequest(apiUrl) && isOpenAIReasoningModel(model),
+        buildControls: () => ({
+            reasoning_effort: 'none'
+        })
+    },
+    {
+        matches: (apiUrl, model) => isOpenRouterRequest(apiUrl) && isOpenAIReasoningModel(model),
+        buildControls: () => ({
+            reasoning: {
+                effort: 'none'
+            }
+        })
+    },
+    {
+        matches: (apiUrl) => isMiniMaxRequest(apiUrl),
+        buildControls: () => ({
+            extra_body: {
+                reasoning_split: true
+            }
+        })
+    }
+];
+
 function getOptionalThinkingControls(apiUrl, model, options = {}) {
     if (!options.forceDisabled) {
         return {};
     }
 
-    if (isDeepSeekCompatibleRequest(apiUrl, model)) {
-        return {
-            thinking: {
-                type: 'disabled'
-            }
-        };
+    for (const strategy of TITLE_THINKING_CONTROL_STRATEGIES) {
+        if (strategy.matches(apiUrl, model)) {
+            return strategy.buildControls(apiUrl, model);
+        }
     }
 
     return {};

@@ -1,7 +1,9 @@
-const FALLBACK_MEETING_TITLE = '未命名会议';
+const FALLBACK_MEETING_TITLE = '\u672A\u547D\u540D\u4F1A\u8BAE';
 const DEFAULT_TITLE_MAX_LENGTH = 15;
 const ISO_DATE_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/;
 const WRAPPING_QUOTES_PATTERN = /^["'“”‘’「」『』《》]+|["'“”‘’「」『』《》]+$/g;
+const THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*?<\/think>/gi;
+const THINKING_BLOCK_PATTERN = /<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi;
 
 function padDatePart(value) {
     return String(value).padStart(2, '0');
@@ -90,16 +92,22 @@ function truncateMeetingTitle(title, maxChars = DEFAULT_TITLE_MAX_LENGTH) {
         : trimmedTitle;
 }
 
+function stripThinkingBlocks(title) {
+    return String(title || '')
+        .replace(THINK_BLOCK_PATTERN, ' ')
+        .replace(THINKING_BLOCK_PATTERN, ' ');
+}
+
 function stripMarkdownTitlePrefix(title) {
-    return title
-        .replace(/^(会议标题|标题|Title)[：:]\s*/i, '')
+    return String(title || '')
         .replace(/^#{1,6}\s+/, '')
-        .replace(/^[-*+•]\s+/, '')
-        .replace(/^\d+[.)、]\s+/, '');
+        .replace(/^[-*+]\s+/, '')
+        .replace(/^\d+[.)\u3001]\s+/, '')
+        .replace(/^(\u4F1A\u8BAE\u6807\u9898|\u6807\u9898|meeting\s+title|title)\s*[:\uFF1A-]\s*/i, '');
 }
 
 function sanitizeGeneratedMeetingTitle(title) {
-    const normalizedTitle = String(title || '')
+    const normalizedTitle = stripThinkingBlocks(title)
         .replace(/[\r\n]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();

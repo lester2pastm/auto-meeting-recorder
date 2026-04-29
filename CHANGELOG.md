@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.7.3] - 2026-04-29
+
+### Changed
+
+- Expanded meeting-title provider compatibility so title-generation requests can disable or isolate reasoning output for DeepSeek, GLM, Qwen, MiniMax, OpenAI reasoning models, OpenRouter, and DashScope-compatible gateways.
+- Hardened title sanitization to strip common `<think>`/`<thinking>` blocks plus `Title:`-style prefixes before saving the final meeting title.
+
+### Fixed
+
+- Prevented reasoning-capable providers such as GLM, Qwen, and MiniMax from leaking thinking content into meeting titles or exhausting the short title token budget before the actual title text appears.
+- Preserved DeepSeek title-generation compatibility while broadening provider-specific request handling and adding regression coverage for both direct and gateway-based configurations.
+
 ## [2.7.2] - 2026-04-29
 
 ### Added

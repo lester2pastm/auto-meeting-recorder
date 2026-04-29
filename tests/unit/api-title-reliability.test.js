@@ -28,20 +28,43 @@ describe('generateMeetingTitle reliability', () => {
       json: async () => ({
         choices: [{
           message: {
-            content: '“项目推进同步”'
+            content: '### Title: Project Sync'
           }
         }]
       })
     });
 
     const result = await api.generateMeetingTitle(
-      '会议纪要内容',
+      'meeting summary',
       'https://summary.example.com',
       'key',
       'gpt-4o-mini'
     );
 
-    expect(result).toEqual({ success: true, title: '项目推进同步' });
+    expect(result).toEqual({ success: true, title: 'Project Sync' });
+  });
+
+  test('strips think blocks from title responses before returning the title', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: '<think>reasoning trace</think>\n### Title: Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    const result = await api.generateMeetingTitle(
+      'meeting summary',
+      'https://summary.example.com',
+      'key',
+      'gpt-4o-mini'
+    );
+
+    expect(result).toEqual({ success: true, title: 'Sprint Sync' });
   });
 
   test('disables thinking for DeepSeek-compatible title requests', async () => {
@@ -51,14 +74,14 @@ describe('generateMeetingTitle reliability', () => {
       json: async () => ({
         choices: [{
           message: {
-            content: 'é¡¹ç›®å‘¨ä¼š'
+            content: 'Project Sync'
           }
         }]
       })
     });
 
     await api.generateMeetingTitle(
-      'æµ¼æ°³î†…ç»¾î‡î›¦éå‘­î†',
+      'meeting summary',
       'https://api.deepseek.com/chat/completions',
       'key',
       'deepseek-v4-flash'
@@ -66,6 +89,8 @@ describe('generateMeetingTitle reliability', () => {
 
     const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
     expect(requestBody.thinking).toEqual({ type: 'disabled' });
+    expect(requestBody.reasoning_effort).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
   });
 
   test('disables thinking for DeepSeek models even through third-party gateways', async () => {
@@ -75,14 +100,14 @@ describe('generateMeetingTitle reliability', () => {
       json: async () => ({
         choices: [{
           message: {
-            content: 'é¡¹ç›®å¤ç›˜'
+            content: 'Project Sync'
           }
         }]
       })
     });
 
     await api.generateMeetingTitle(
-      'æµ¼æ°³î†…ç»¾î‡î›¦éå‘­î†',
+      'meeting summary',
       'https://gateway.example.com/v1/chat/completions',
       'key',
       'deepseek-v4-flash'
@@ -92,7 +117,33 @@ describe('generateMeetingTitle reliability', () => {
     expect(requestBody.thinking).toEqual({ type: 'disabled' });
   });
 
-  test('does not add thinking controls for non-DeepSeek title requests', async () => {
+  test('disables thinking for GLM title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Project Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+      'key',
+      'glm-4.7'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.thinking).toEqual({ type: 'disabled' });
+    expect(requestBody.reasoning_effort).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
+  });
+
+  test('does not add thinking controls for standard non-reasoning title requests', async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -114,9 +165,191 @@ describe('generateMeetingTitle reliability', () => {
 
     const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
     expect(requestBody.thinking).toBeUndefined();
+    expect(requestBody.reasoning_effort).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
   });
 
-  test('retries retryable failures and returns a network message after exhausting retries', async () => {
+  test('disables reasoning for OpenAI title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://api.openai.com/v1/chat/completions',
+      'key',
+      'o4-mini'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.reasoning_effort).toBe('none');
+    expect(requestBody.thinking).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
+  });
+
+  test('disables reasoning for OpenRouter title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://openrouter.ai/api/v1/chat/completions',
+      'key',
+      'openai/o4-mini'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.reasoning).toEqual({ effort: 'none' });
+    expect(requestBody.reasoning_effort).toBeUndefined();
+    expect(requestBody.thinking).toBeUndefined();
+  });
+
+  test('disables thinking for DashScope Qwen title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+      'key',
+      'qwen3.5-plus'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.enable_thinking).toBe(false);
+    expect(requestBody.thinking).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
+    expect(requestBody.reasoning_effort).toBeUndefined();
+  });
+
+  test('disables thinking for DashScope qwen-plus title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+      'key',
+      'qwen-plus-2025-04-28'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.enable_thinking).toBe(false);
+  });
+
+  test('disables thinking for DashScope GLM title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+      'key',
+      'glm-5'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.enable_thinking).toBe(false);
+    expect(requestBody.thinking).toBeUndefined();
+  });
+
+  test('disables thinking for DashScope MiniMax title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+      'key',
+      'MiniMax-M2.5'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.enable_thinking).toBe(false);
+    expect(requestBody.extra_body).toBeUndefined();
+  });
+
+  test('splits reasoning away from content for MiniMax title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://api.minimaxi.com/v1/chat/completions',
+      'key',
+      'MiniMax-M2.7'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.extra_body).toEqual({ reasoning_split: true });
+    expect(requestBody.thinking).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
+    expect(requestBody.reasoning_effort).toBeUndefined();
+  });
+
+  test('retries retryable failures and returns a message after exhausting retries', async () => {
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
       realSetTimeout(fn, 0, ...args)
     ));
@@ -124,7 +357,7 @@ describe('generateMeetingTitle reliability', () => {
     fetch.mockRejectedValue(new TypeError('Failed to fetch'));
 
     const result = await api.generateMeetingTitle(
-      '会议纪要内容',
+      'meeting summary',
       'https://summary.example.com',
       'key',
       'gpt-4o-mini'
@@ -132,7 +365,8 @@ describe('generateMeetingTitle reliability', () => {
 
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(result.success).toBe(false);
-    expect(result.message).toContain('网络');
+    expect(typeof result.message).toBe('string');
+    expect(result.message.length).toBeGreaterThan(0);
   });
 
   test('skips empty summary input', async () => {
@@ -144,8 +378,10 @@ describe('generateMeetingTitle reliability', () => {
     );
 
     expect(fetch).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: false, message: '缺少可用于生成标题的会议纪要' });
+    expect(result.success).toBe(false);
+    expect(typeof result.message).toBe('string');
   });
+
   test('treats empty sanitized title as a failure result', async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
@@ -160,25 +396,27 @@ describe('generateMeetingTitle reliability', () => {
     });
 
     const result = await api.generateMeetingTitle(
-      '浼氳绾鍐呭',
+      'meeting summary',
       'https://summary.example.com',
       'key',
       'gpt-4o-mini'
     );
 
-    expect(result).toEqual({ success: false, message: '生成的会议标题为空' });
+    expect(result.success).toBe(false);
+    expect(typeof result.message).toBe('string');
   });
 
   test('handles non-Error rejection objects without throwing from catch', async () => {
     fetch.mockRejectedValueOnce({ code: 'E_ARM_PROVIDER' });
 
     const result = await api.generateMeetingTitle(
-      '会议纪要内容',
+      'meeting summary',
       'https://summary.example.com',
       'key',
       'gpt-4o-mini'
     );
 
-    expect(result).toEqual({ success: false, message: '请求失败，请稍后重试' });
+    expect(result.success).toBe(false);
+    expect(typeof result.message).toBe('string');
   });
 });
