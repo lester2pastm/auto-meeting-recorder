@@ -24,47 +24,6 @@ function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function summarizeDebugText(value, maxLength = 80) {
-    const normalized = String(value || '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    if (!normalized) {
-        return '';
-    }
-
-    return normalized.length > maxLength
-        ? `${normalized.slice(0, maxLength)}...`
-        : normalized;
-}
-
-function getApiOriginLabel(apiUrl) {
-    try {
-        return new URL(apiUrl).origin;
-    } catch (error) {
-        return 'invalid-url';
-    }
-}
-
-function pushMeetingTitleDebug(stage, details = {}) {
-    const entry = {
-        stage,
-        timestamp: new Date().toISOString(),
-        ...details
-    };
-
-    if (typeof globalThis !== 'undefined') {
-        const existing = Array.isArray(globalThis.__meetingTitleDebug)
-            ? globalThis.__meetingTitleDebug
-            : [];
-        globalThis.__meetingTitleDebug = [...existing.slice(-49), entry];
-        globalThis.pushMeetingTitleDebug = pushMeetingTitleDebug;
-    }
-
-    console.log('[MeetingTitleDebug]', entry);
-    return entry;
-}
-
 function getErrorMessage(error, fallback = '请求失败，请稍后重试') {
     if (typeof error === 'string' && error.trim()) {
         return error;
@@ -995,9 +954,6 @@ function getMeetingTitleSanitizer() {
 
 async function generateMeetingTitle(summary, apiUrl, apiKey, model = 'gpt-4o-mini', onProgress = null) {
     if (!summary || !summary.trim()) {
-        pushMeetingTitleDebug('skipped-empty-summary', {
-            model: model || 'unknown'
-        });
         return { success: false, message: '缺少可用于生成标题的会议纪要' };
     }
 
@@ -1010,27 +966,28 @@ async function generateMeetingTitle(summary, apiUrl, apiKey, model = 'gpt-4o-min
 会议纪要：
 ${summary}`;
 
+    const titlePrompt = `基于以下会议纪要，生成一个简洁的中文会议标题。
+
+规则：
+- 标题长度15个汉字以内
+- 直接输出标题文本即可
+
+输出示例：
+项目排期同步会议
+
+会议纪要：
+${summary}
+
+会议标题：`;
+
     const sanitizeTitle = getMeetingTitleSanitizer();
     const maxAttempts = 3;
     const requestTimeout = getMeetingTitleRequestTimeout(summary);
     const maxBackoff = 2000;
 
     try {
-        pushMeetingTitleDebug('start', {
-            apiOrigin: getApiOriginLabel(apiUrl),
-            model: model || 'unknown',
-            requestTimeout,
-            summaryLength: summary.trim().length,
-            summaryPreview: summarizeDebugText(summary)
-        });
-
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                pushMeetingTitleDebug('attempt-start', {
-                    attempt,
-                    maxAttempts
-                });
-
                 const response = await fetchWithTimeout(apiUrl, {
                     method: 'POST',
                     headers: {
@@ -1040,18 +997,12 @@ ${summary}`;
                     body: JSON.stringify({
                         model: model,
                         messages: [
-                            { role: 'user', content: prompt }
+                            { role: 'user', content: titlePrompt }
                         ],
                         temperature: 0.3,
                         max_tokens: 40
                     })
                 }, requestTimeout);
-
-                pushMeetingTitleDebug('attempt-response', {
-                    attempt,
-                    status: response.status,
-                    ok: response.ok
-                });
 
                 if (!response.ok) {
                     const error = new Error(await parseSummaryError(response));
@@ -1063,41 +1014,13 @@ ${summary}`;
                 const rawTitle = data.choices?.[0]?.message?.content || '';
                 const sanitizedTitle = sanitizeTitle(rawTitle);
 
-                pushMeetingTitleDebug('attempt-parsed', {
-                    attempt,
-                    rawTitleLength: rawTitle.length,
-                    rawTitlePreview: summarizeDebugText(rawTitle),
-                    sanitizedTitleLength: sanitizedTitle.length,
-                    sanitizedTitlePreview: summarizeDebugText(sanitizedTitle),
-                    choiceCount: Array.isArray(data.choices) ? data.choices.length : 0
-                });
-
                 if (!sanitizedTitle) {
-                    pushMeetingTitleDebug('empty-title-after-sanitize', {
-                        attempt,
-                        rawTitleLength: rawTitle.length,
-                        rawTitlePreview: summarizeDebugText(rawTitle)
-                    });
                     return { success: false, message: '生成的会议标题为空' };
                 }
 
-                pushMeetingTitleDebug('success', {
-                    attempt,
-                    titleLength: sanitizedTitle.length,
-                    titlePreview: summarizeDebugText(sanitizedTitle)
-                });
                 return { success: true, title: sanitizedTitle };
             } catch (error) {
                 const shouldRetry = attempt < maxAttempts && isRetryableSummaryError(error);
-
-                pushMeetingTitleDebug('attempt-error', {
-                    attempt,
-                    maxAttempts,
-                    name: error.name || 'Error',
-                    message: error.message,
-                    status: typeof error.status === 'number' ? error.status : null,
-                    retrying: shouldRetry
-                });
 
                 if (!shouldRetry) {
                     if (attempt === maxAttempts && isRetryableSummaryError(error)) {
@@ -1129,12 +1052,6 @@ ${summary}`;
         if (isNetworkErrorLike(error)) {
             userMessage = '网络连接失败，请检查网络或代理设置';
         }
-        pushMeetingTitleDebug('failed', {
-            name: error.name || 'Error',
-            message: getErrorMessage(error),
-            userMessage,
-            status: typeof error.status === 'number' ? error.status : null
-        });
         return { success: false, message: userMessage };
     }
 }

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.7.0] - 2026-04-29
+
+### Changed
+
+- Simplified the AI meeting-title prompt with a clearer output anchor to improve compatibility with lightweight OpenAI-compatible models such as `deepseek-v4-flash`.
+
+### Fixed
+
+- Kept empty-title responses as explicit failed title metadata instead of silently falling back, while removing the temporary cross-platform debugging noise added during investigation.
+- Preserved safer provider error handling so non-standard error payloads no longer trigger secondary exceptions when building user-facing messages.
+
 ## [2.6.20] - 2026-04-29
 
 ### Changed

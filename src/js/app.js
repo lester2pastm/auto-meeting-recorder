@@ -776,10 +776,6 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
                 summary = result.summary;
                 updateSummaryContent(summary);
                 if (typeof generateMeetingTitle === 'function') {
-                    logMeetingTitleFlow('request-start', {
-                        meetingId: meetingId || 'new-meeting',
-                        summaryLength: summary.trim().length
-                    });
                     const titleResult = await generateMeetingTitle(
                         summary,
                         currentSettings.summaryApiUrl,
@@ -787,18 +783,7 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
                         currentSettings.summaryModel,
                         (message) => updateRecordingWorkflowState(true, message, { transcript: false, summary: true })
                     );
-                    logMeetingTitleFlow('request-finished', {
-                        meetingId: meetingId || 'new-meeting',
-                        success: !!titleResult.success,
-                        titleLength: titleResult.title ? titleResult.title.length : 0,
-                        titlePreview: titleResult.title || '',
-                        message: titleResult.message || ''
-                    });
                     titleUpdates = buildMeetingTitleUpdates(titleResult);
-                } else {
-                    logMeetingTitleFlow('request-skipped-missing-generator', {
-                        meetingId: meetingId || 'new-meeting'
-                    });
                 }
                 showToast('纪要生成成功', 'success');
             }
@@ -806,13 +791,6 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
 
         // 无论纪要生成成功与否，都保存会议记录
         console.log('[App] Saving meeting record, meetingId:', meetingId, 'hasSummary:', !!summary);
-        logMeetingTitleFlow('persisting-meeting-record', {
-            meetingId: meetingId || 'new-meeting',
-            titleUpdateKeys: Object.keys(titleUpdates),
-            titleStatus: titleUpdates.titleStatus || '',
-            titlePreview: titleUpdates.title || '',
-            titleError: titleUpdates.titleError || ''
-        });
         if (Object.keys(titleUpdates).length > 0) {
             await saveMeetingRecord(transcript, summary, audioBlob, meetingId, titleUpdates);
         } else {
@@ -841,21 +819,6 @@ function setLastRecordingDuration(duration) {
     lastRecordingDuration = duration;
 }
 
-function logMeetingTitleFlow(stage, details = {}) {
-    const entry = {
-        stage,
-        timestamp: new Date().toISOString(),
-        ...details
-    };
-
-    if (typeof globalThis !== 'undefined' && typeof globalThis.pushMeetingTitleDebug === 'function') {
-        globalThis.pushMeetingTitleDebug(`app-${stage}`, details);
-        return;
-    }
-
-    console.log('[MeetingTitleDebug][App]', entry);
-}
-
 function buildMeetingTitleUpdates(titleResult) {
     const titleTimestamp = new Date().toISOString();
     const normalizedTitle = typeof (titleResult && titleResult.title) === 'string'
@@ -863,10 +826,6 @@ function buildMeetingTitleUpdates(titleResult) {
         : '';
 
     if (titleResult && titleResult.success && normalizedTitle) {
-        logMeetingTitleFlow('mapped-success', {
-            titleLength: normalizedTitle.length,
-            titlePreview: normalizedTitle
-        });
         return {
             title: normalizedTitle,
             titleStatus: 'completed',
@@ -878,9 +837,6 @@ function buildMeetingTitleUpdates(titleResult) {
 
     if (titleResult && titleResult.success) {
         const emptyTitleMessage = titleResult.message || '生成的会议标题为空';
-        logMeetingTitleFlow('mapped-empty-success-title', {
-            message: emptyTitleMessage
-        });
         return {
             titleStatus: 'failed',
             titleSource: 'fallback',
@@ -890,9 +846,6 @@ function buildMeetingTitleUpdates(titleResult) {
     }
 
     if (titleResult && titleResult.message) {
-        logMeetingTitleFlow('mapped-failure', {
-            message: titleResult.message
-        });
         return {
             titleStatus: 'failed',
             titleSource: 'fallback',
@@ -901,23 +854,12 @@ function buildMeetingTitleUpdates(titleResult) {
         };
     }
 
-    logMeetingTitleFlow('mapped-empty-result');
     return {};
 }
 
 async function saveMeetingRecord(transcript, summary, audioBlob, meetingId = null, extraUpdates = {}) {
     console.log('[App] saveMeetingRecord called, meetingId:', meetingId, 'audioBlob:', audioBlob ? { size: audioBlob.size, type: audioBlob.type } : 'null');
     try {
-        if (Object.keys(extraUpdates).length > 0) {
-            logMeetingTitleFlow('saveMeetingRecord-extraUpdates', {
-                meetingId: meetingId || 'new-meeting',
-                title: extraUpdates.title || '',
-                titleStatus: extraUpdates.titleStatus || '',
-                titleSource: extraUpdates.titleSource || '',
-                titleError: extraUpdates.titleError || ''
-            });
-        }
-
         if (meetingId) {
             // Update existing meeting record
             const updates = {
