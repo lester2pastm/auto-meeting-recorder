@@ -16,6 +16,7 @@
 
 - Prevented DeepSeek-compatible lightweight models such as `deepseek-v4-flash` from failing title generation because of default thinking-mode behavior.
 - Corrected the manual build workflow so Linux-only system dependency installation no longer runs in the Windows job.
+- Fixed the Linux ARM64 GitHub Actions dependency list for `ubuntu-22.04` by replacing the unavailable `libasound2t64` package with `libasound2`.
 
 ## [2.7.0] - 2026-04-29
 
