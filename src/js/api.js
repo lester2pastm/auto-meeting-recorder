@@ -77,6 +77,54 @@ function getMeetingTitleRequestTimeout(summary) {
     return Math.min(baseTimeout + extraTimeout, maxTimeout);
 }
 
+function normalizeProviderText(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase();
+}
+
+function isDeepSeekCompatibleRequest(apiUrl, model) {
+    const normalizedModel = normalizeProviderText(model);
+    const normalizedUrl = normalizeProviderText(apiUrl);
+
+    return normalizedModel.includes('deepseek') || normalizedUrl.includes('deepseek');
+}
+
+function getOptionalThinkingControls(apiUrl, model, options = {}) {
+    if (!options.forceDisabled) {
+        return {};
+    }
+
+    if (isDeepSeekCompatibleRequest(apiUrl, model)) {
+        return {
+            thinking: {
+                type: 'disabled'
+            }
+        };
+    }
+
+    return {};
+}
+
+function buildChatCompletionRequestBody(apiUrl, model, messages, options = {}) {
+    const requestBody = {
+        model,
+        messages,
+        max_tokens: options.maxTokens
+    };
+
+    if (typeof options.temperature === 'number') {
+        requestBody.temperature = options.temperature;
+    }
+
+    return {
+        ...requestBody,
+        ...getOptionalThinkingControls(apiUrl, model, {
+            forceDisabled: !!options.disableThinking
+        })
+    };
+}
+
 function isRetryableSummaryStatus(status) {
     return status === 429 || status >= 500;
 }
@@ -976,14 +1024,18 @@ ${summary}`;
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        model: model,
-                        messages: [
+                    body: JSON.stringify(buildChatCompletionRequestBody(
+                        apiUrl,
+                        model,
+                        [
                             { role: 'user', content: titlePrompt }
                         ],
-                        temperature: 0,
-                        max_tokens: 60
-                    })
+                        {
+                            temperature: 0,
+                            maxTokens: 60,
+                            disableThinking: true
+                        }
+                    ))
                 }, requestTimeout);
 
                 if (!response.ok) {

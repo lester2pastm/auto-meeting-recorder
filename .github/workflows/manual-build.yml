@@ -33,7 +33,7 @@ jobs:
       run: npm ci
       
     - name: Build Windows app
-      run: npm run build:win
+      run: node scripts/run-with-retry.js --attempts 3 --delay-ms 15000 -- npm run build:win
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
@@ -62,7 +62,7 @@ jobs:
       run: npm ci
       
     - name: Build macOS app
-      run: npm run build:mac
+      run: node scripts/run-with-retry.js --attempts 3 --delay-ms 15000 -- npm run build:mac
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
@@ -74,7 +74,7 @@ jobs:
         retention-days: 30
 
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all'
     
     steps:
@@ -86,12 +86,17 @@ jobs:
       with:
         node-version: '20'
         cache: 'npm'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libarchive-tools rpm
         
     - name: Install dependencies
       run: npm ci
       
     - name: Build Linux app
-      run: npm run build:linux
+      run: node scripts/run-with-retry.js --attempts 3 --delay-ms 15000 -- npm run build:linux
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
@@ -99,5 +104,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: linux-installer
-        path: dist/*.AppImage
+        path: |
+          dist/*.AppImage
+          dist/*.deb
         retention-days: 30

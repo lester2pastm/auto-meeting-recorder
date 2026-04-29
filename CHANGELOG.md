@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.7.2] - 2026-04-29
+
+### Added
+
+- Added automated Linux `.deb` packaging alongside the existing AppImage artifacts in GitHub Actions release builds.
+- Added a reusable CI build retry helper plus unit coverage so transient external packaging download failures can self-recover.
+
+### Changed
+
+- Disabled DeepSeek thinking mode specifically for meeting-title generation requests while keeping other OpenAI-compatible providers untouched.
+- Applied build-command retries across Windows, macOS, Linux x64, Linux arm64, and manual workflow builds.
+
+### Fixed
+
+- Prevented DeepSeek-compatible lightweight models such as `deepseek-v4-flash` from failing title generation because of default thinking-mode behavior.
+- Corrected the manual build workflow so Linux-only system dependency installation no longer runs in the Windows job.
+
 ## [2.7.0] - 2026-04-29
 
 ### Changed

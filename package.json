@@ -1,6 +1,6 @@
 {
   "name": "meeting-minutes-app",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
   "scripts": {
@@ -66,7 +66,10 @@
       "artifactName": "${productName}-${version}-mac.${ext}"
     },
     "linux": {
-      "target": "AppImage",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
       "category": "Office"
     },

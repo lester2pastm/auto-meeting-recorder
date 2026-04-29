@@ -44,6 +44,78 @@ describe('generateMeetingTitle reliability', () => {
     expect(result).toEqual({ success: true, title: '项目推进同步' });
   });
 
+  test('disables thinking for DeepSeek-compatible title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'é¡¹ç›®å‘¨ä¼š'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'æµ¼æ°³î†…ç»¾î‡î›¦éå‘­î†',
+      'https://api.deepseek.com/chat/completions',
+      'key',
+      'deepseek-v4-flash'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.thinking).toEqual({ type: 'disabled' });
+  });
+
+  test('disables thinking for DeepSeek models even through third-party gateways', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'é¡¹ç›®å¤ç›˜'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'æµ¼æ°³î†…ç»¾î‡î›¦éå‘­î†',
+      'https://gateway.example.com/v1/chat/completions',
+      'key',
+      'deepseek-v4-flash'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.thinking).toEqual({ type: 'disabled' });
+  });
+
+  test('does not add thinking controls for non-DeepSeek title requests', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: 'Sprint Sync'
+          }
+        }]
+      })
+    });
+
+    await api.generateMeetingTitle(
+      'meeting summary',
+      'https://api.openai.com/v1/chat/completions',
+      'key',
+      'gpt-4o-mini'
+    );
+
+    const requestBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(requestBody.thinking).toBeUndefined();
+  });
+
   test('retries retryable failures and returns a network message after exhausting retries', async () => {
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
       realSetTimeout(fn, 0, ...args)
