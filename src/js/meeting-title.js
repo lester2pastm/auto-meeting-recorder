@@ -92,6 +92,7 @@ function truncateMeetingTitle(title, maxChars = DEFAULT_TITLE_MAX_LENGTH) {
 
 function stripMarkdownTitlePrefix(title) {
     return title
+        .replace(/^(会议标题|标题|Title)[：:]\s*/i, '')
         .replace(/^#{1,6}\s+/, '')
         .replace(/^[-*+•]\s+/, '')
         .replace(/^\d+[.)、]\s+/, '');

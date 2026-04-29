@@ -957,28 +957,10 @@ async function generateMeetingTitle(summary, apiUrl, apiKey, model = 'gpt-4o-min
         return { success: false, message: '缺少可用于生成标题的会议纪要' };
     }
 
-    const prompt = `请基于以下会议纪要生成一个会议标题。
-要求：
-1. 标题不超过15个汉字
-2. 只返回标题文本
-3. 不要序号、引号、句号、解释或Markdown
+    const titlePrompt = `生成一个不超过15个汉字的会议标题，只输出标题本身。
 
 会议纪要：
 ${summary}`;
-
-    const titlePrompt = `基于以下会议纪要，生成一个简洁的中文会议标题。
-
-规则：
-- 标题长度15个汉字以内
-- 直接输出标题文本即可
-
-输出示例：
-项目排期同步会议
-
-会议纪要：
-${summary}
-
-会议标题：`;
 
     const sanitizeTitle = getMeetingTitleSanitizer();
     const maxAttempts = 3;
@@ -999,8 +981,8 @@ ${summary}
                         messages: [
                             { role: 'user', content: titlePrompt }
                         ],
-                        temperature: 0.3,
-                        max_tokens: 40
+                        temperature: 0,
+                        max_tokens: 60
                     })
                 }, requestTimeout);
 
