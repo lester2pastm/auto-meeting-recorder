@@ -12,4 +12,13 @@ describe('Package build config', () => {
       '${productName}-${version}-linux-${arch}.${ext}'
     );
   });
+
+  test('provides author metadata required for deb maintainer fields', () => {
+    expect(packageJson.author).toEqual(
+      expect.objectContaining({
+        name: expect.any(String),
+        email: expect.stringContaining('@')
+      })
+    );
+  });
 });

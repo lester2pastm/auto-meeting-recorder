@@ -8,6 +8,7 @@ This release improves packaging reliability and restores meeting-title generatio
 - Added automatic `.deb` packaging to Linux release builds alongside the existing AppImage artifacts.
 - Added a reusable build retry wrapper across Windows, macOS, Linux x64, Linux arm64, and manual workflows to reduce CI failures caused by transient upstream download errors.
 - Fixed the Ubuntu 22.04 ARM64 dependency package list so the Linux ARM64 build no longer fails during `apt-get install`.
+- Added the package author email metadata required for Electron Builder to produce Linux `.deb` maintainer fields successfully.
 
 ## Reliability and release pipeline improvements
 

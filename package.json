@@ -1,6 +1,10 @@
 {
   "name": "meeting-minutes-app",
   "version": "2.7.2",
+  "author": {
+    "name": "lester2pastm",
+    "email": "25032501+lester2pastm@users.noreply.github.com"
+  },
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
   "scripts": {
