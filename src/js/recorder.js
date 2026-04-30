@@ -28,6 +28,24 @@ let systemAudioStream = null;
 let currentPlatform = null;
 let isLinuxPlatform = false;
 let isFFmpegRecording = false;
+let pendingStopResolve = null;
+let pendingStopReject = null;
+
+function takePendingStopHandlers() {
+    const handlers = {
+        resolve: pendingStopResolve,
+        reject: pendingStopReject
+    };
+    pendingStopResolve = null;
+    pendingStopReject = null;
+    return handlers;
+}
+
+async function notifyAudioFileReady(audioBlob) {
+    if (typeof onAudioFileReady === 'function') {
+        await Promise.resolve(onAudioFileReady(audioBlob));
+    }
+}
 
 // FFmpeg 录制相关变量（Linux）
 let linuxRecordingPaths = null;
@@ -392,34 +410,57 @@ async function startStandardRecording() {
     };
 
     mediaRecorder.onstop = async () => {
-        const meta = typeof getRecoveryMeta === 'function' ? getRecoveryMeta() : null;
-        if (meta && meta.tempFile) {
-            try {
-                const readResult = await window.electronAPI.readAudioFile(meta.tempFile);
-                if (readResult.success) {
-                    const buffer = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
-                    audioBlob = new Blob([buffer], { type: 'audio/webm' });
-                    
-                    // 通知文件已准备好
-                    if (typeof onAudioFileReady === 'function') {
-                        onAudioFileReady(audioBlob);
-                    }
-                }
-            } catch (error) {
-                console.error('[Recorder] Error reading audio file:', error);
+        const handlers = takePendingStopHandlers();
+
+        try {
+            const meta = typeof getRecoveryMeta === 'function' ? getRecoveryMeta() : null;
+            if (!meta || !meta.tempFile) {
+                throw new Error('Temporary recording file is not available');
             }
-        }
-        
-        stopAllStreams();
-        stopWaveform();
-        
-        if (typeof clearRecoveryData === 'function') {
-            await clearRecoveryData();
+            if (!window.electronAPI || typeof window.electronAPI.readAudioFile !== 'function') {
+                throw new Error('readAudioFile IPC is not available');
+            }
+
+            const readResult = await window.electronAPI.readAudioFile(meta.tempFile);
+            if (!readResult.success) {
+                throw new Error(readResult.error || 'Failed to read audio recording');
+            }
+
+            const buffer = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
+            audioBlob = new Blob([buffer], { type: 'audio/webm' });
+
+            if (typeof handlers.resolve === 'function') {
+                handlers.resolve(audioBlob);
+            }
+
+            try {
+                await notifyAudioFileReady(audioBlob);
+            } catch (callbackError) {
+                console.error('[Recorder] Audio ready callback failed:', callbackError);
+            }
+        } catch (error) {
+            console.error('[Recorder] Error reading audio file:', error);
+            if (typeof handlers.reject === 'function') {
+                handlers.reject(error);
+            }
+        } finally {
+            stopAllStreams();
+            stopWaveform();
+            mediaRecorder = null;
+
+            if (typeof clearRecoveryData === 'function') {
+                await clearRecoveryData();
+            }
         }
     };
     
     mediaRecorder.onerror = (event) => {
         console.error('MediaRecorder 错误:', event);
+        const handlers = takePendingStopHandlers();
+        if (typeof handlers.reject === 'function') {
+            const recorderError = event && event.error ? event.error : new Error('MediaRecorder error');
+            handlers.reject(recorderError);
+        }
     };
 
     mediaRecorder.start(1000);
@@ -504,40 +545,40 @@ function resumeRecording() {
 }
 
 async function stopRecording() {
-    return new Promise(async (resolve, reject) => {
-        if (!isRecording) {
-            resolve(null);
-            return;
-        }
-        
-        // 先更新录音状态，让 UI 立即响应
-        isRecording = false;
-        isPaused = false;
-        stopTimer();
-        
-        if (typeof stopTempSaveTimer === 'function') {
-            stopTempSaveTimer();
-        }
-        
+    if (!isRecording) {
+        return null;
+    }
+    
+    // 先更新录音状态，让 UI 立即响应
+    isRecording = false;
+    isPaused = false;
+    stopTimer();
+    
+    if (typeof stopTempSaveTimer === 'function') {
+        stopTempSaveTimer();
+    }
+    
+    if (isFFmpegRecording) {
+        return await stopLinuxRecording();
+    }
+
+    if (!mediaRecorder) {
+        return null;
+    }
+
+    if (pendingStopResolve || pendingStopReject) {
+        throw new Error('Recording stop is already in progress');
+    }
+
+    return await new Promise((resolve, reject) => {
+        pendingStopResolve = resolve;
+        pendingStopReject = reject;
+
         try {
-            if (isFFmpegRecording) {
-                const result = await stopLinuxRecording();
-                resolve(result);
-            } else {
-                // 标准录制停止 - 立即返回，文件读取在后台进行
-                if (mediaRecorder) {
-                    // 立即调用 stop，不等待 onstop
-                    mediaRecorder.stop();
-                    
-                    // 设置后台文件读取完成后的回调
-                    // 这样 stopRecording 会立即返回，但文件读取完成后会触发回调
-                }
-                
-                // 立即返回 null，表示停止成功，文件读取在后台进行
-                // 调用者应该注册 onAudioFileReady 回调来处理文件
-                resolve(null);
-            }
+            mediaRecorder.stop();
         } catch (error) {
+            pendingStopResolve = null;
+            pendingStopReject = null;
             reject(error);
         }
     });
@@ -677,7 +718,9 @@ async function initWaveform(stream) {
         if (source) {
             try {
                 source.disconnect();
-            } catch (e) {}
+            } catch (e) {
+                console.warn('[Recorder] Failed to disconnect previous waveform source:', e);
+            }
         }
         
         source = audioContext.createMediaStreamSource(stream);

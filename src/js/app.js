@@ -543,7 +543,6 @@ function handleResumeRecording() {
 
 async function handleStopRecording() {
     const stopBtn = document.getElementById('btnStopRecording');
-    let shouldKeepBusyState = false;
     
     try {
         stopBtn.classList.add('btn-loading');
@@ -552,49 +551,22 @@ async function handleStopRecording() {
         
         const currentDuration = getRecordingDuration();
         setLastRecordingDuration(currentDuration);
-        
-        // 先注册回调：文件读取完成后自动保存记录并转写
-        if (typeof setAudioFileReadyCallback === 'function') {
-            setAudioFileReadyCallback(async (audioBlob) => {
-                try {
-                    if (audioBlob) {
-                        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowSaving') : '正在保存录音...');
-                        const meeting = await saveEmptyMeetingRecord(audioBlob);
-                        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
-                        showToast(i18n ? i18n.get('toastRecordingStopped') : '录音已停止，正在转写...', 'info');
-                        await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
-                    } else {
-                        clearRecordingWorkflowState();
-                        hideLoading();
-                    }
-                } catch (error) {
-                    clearRecordingWorkflowState();
-                    hideLoading();
-                    console.error('异步处理录音文件失败:', error);
-                    showToast(buildUserFacingErrorToast(getLocalizedMessage('toastProcessingFailed', '处理录音失败'), error.message), 'error');
-                } finally {
-                    if (typeof setAudioFileReadyCallback === 'function') {
-                        setAudioFileReadyCallback(null);
-                    }
-                }
-            });
-        }
-        
-        // 停止录音（Linux 平台会同步等待文件读取完成）
+
+        // 停止录音，并等待标准录音/ Linux 录音都返回最终音频
         const audioBlob = await stopRecording();
         updateRecordingButtons(getRecordingState(), { isProcessing: true });
         
-        // 如果 audioBlob 已准备好（Linux 平台），直接处理
-        if (audioBlob) {
-            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowSaving') : '正在保存录音...');
-            const meeting = await saveEmptyMeetingRecord(audioBlob);
-            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
-            showToast(i18n ? i18n.get('toastRecordingStopped') : '录音已停止，正在转写...', 'info');
-            await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
-        } else {
-            shouldKeepBusyState = true;
-            updateRecordingWorkflowState(true, i18n ? i18n.get('workflowOrganizing') : '正在整理录音...');
+        if (!audioBlob) {
+            clearRecordingWorkflowState();
+            hideLoading();
+            return;
         }
+
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowSaving') : '正在保存录音...');
+        const meeting = await saveEmptyMeetingRecord(audioBlob);
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
+        showToast(i18n ? i18n.get('toastRecordingStopped') : '录音已停止，正在转写...', 'info');
+        await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
     } catch (error) {
         console.error('Failed to stop recording:', error);
         clearRecordingWorkflowState();
@@ -603,10 +575,7 @@ async function handleStopRecording() {
     } finally {
         stopBtn.classList.remove('btn-loading');
         stopBtn.disabled = false;
-
-        if (!shouldKeepBusyState) {
-            clearRecordingWorkflowState();
-        }
+        clearRecordingWorkflowState();
     }
 }
 

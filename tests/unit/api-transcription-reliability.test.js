@@ -381,4 +381,47 @@ describe('transcribeAudioSegments reliability', () => {
     expect(readAudioFile).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  test('routes DashScope compatible transcription uploads through the audio/transcriptions endpoint', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'dashscope transcript' })
+    });
+
+    const apiUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+    const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+
+    const wholeAudioResult = await api.transcribeAudio(
+      audioBlob,
+      apiUrl,
+      'test-key',
+      'whisper-1'
+    );
+    const singleSegmentResult = await api.transcribeSingleSegment(
+      audioBlob,
+      apiUrl,
+      'test-key',
+      'whisper-1'
+    );
+
+    expect(wholeAudioResult).toEqual({ success: true, text: 'dashscope transcript' });
+    expect(singleSegmentResult).toEqual({ success: true, text: 'dashscope transcript' });
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/audio/transcriptions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key' }
+      })
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/audio/transcriptions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key' }
+      })
+    );
+  });
 });

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
 // 安全地暴露 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  isDevMode: process.argv.includes('--dev'),
+
   // 音频文件操作
   saveAudio: (blob, filename) => ipcRenderer.invoke('save-audio', { blob, filename }),
   getAudio: (filename) => ipcRenderer.invoke('get-audio', filename),

@@ -438,12 +438,111 @@ async function testSummaryApi(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     }
 }
 
+function resolveTranscriptionProvider(apiUrl) {
+    return {
+        isBailian: apiUrl.includes('bailian') || apiUrl.includes('dashscope.aliyuncs.com/api/v1'),
+        isDashScopeCompatible: apiUrl.includes('dashscope') && apiUrl.includes('compatible-mode'),
+        isSiliconFlow: apiUrl.includes('siliconflow.cn') || apiUrl.includes('siliconflow.ai')
+    };
+}
+
+function resolveAudioTranscriptionEndpoint(apiUrl) {
+    if (apiUrl.includes('/chat/completions')) {
+        return apiUrl.replace('/chat/completions', '/audio/transcriptions');
+    }
+
+    return apiUrl;
+}
+
+async function dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, timeout = 600000, filename = null) {
+    const { isBailian, isDashScopeCompatible, isSiliconFlow } = resolveTranscriptionProvider(apiUrl);
+    const audioFormat = detectAudioFormat(audioBlob);
+    const uploadFilename = filename || `recording.${audioFormat}`;
+
+    if (isBailian) {
+        const base64Audio = await blobToBase64(audioBlob);
+        const requestBody = {
+            model: model,
+            input: {
+                audio: base64Audio
+            },
+            parameters: {
+                sample_rate: 16000,
+                format: audioFormat,
+                language_hints: ['zh', 'en']
+            }
+        };
+
+        console.log('发送百炼录音文件识别请求:', { url: apiUrl, model });
+        return await fetchWithTimeout(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        }, timeout);
+    }
+
+    const audioEndpoint = (isDashScopeCompatible || isSiliconFlow)
+        ? resolveAudioTranscriptionEndpoint(apiUrl)
+        : apiUrl;
+    const formData = new FormData();
+    formData.append('file', audioBlob, uploadFilename);
+    formData.append('model', (isDashScopeCompatible || isSiliconFlow) ? (model || 'whisper-1') : model);
+
+    let providerLabel = 'OpenAI';
+    if (isDashScopeCompatible) {
+        providerLabel = 'DashScope';
+    } else if (isSiliconFlow) {
+        providerLabel = 'SiliconFlow';
+    }
+
+    console.log(`发送 ${providerLabel} 请求:`, { url: audioEndpoint, model });
+    return await fetchWithTimeout(audioEndpoint, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`
+        },
+        body: formData
+    }, timeout);
+}
+
+function extractTranscriptText(data) {
+    if (data.text) {
+        return data.text;
+    }
+
+    if (data.choices && data.choices[0] && data.choices[0].message) {
+        const message = data.choices[0].message;
+        if (message.content) {
+            return message.content;
+        }
+        if (message.audio && message.audio.transcript) {
+            return message.audio.transcript;
+        }
+    }
+
+    if (data.output && data.output.text) {
+        return data.output.text;
+    }
+
+    if (data.output && data.output.sentences) {
+        return data.output.sentences.map(s => s.text).join('');
+    }
+
+    if (data.output && data.output.flash_result) {
+        return data.output.flash_result.text || '';
+    }
+
+    return '';
+}
+
 async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null, onProgress = null) {
     try {
         console.log('开始转写音频:', { apiUrl, model, blobSize: audioBlob.size, blobType: audioBlob.type });
 
         const sizeMB = audioBlob.size / (1024 * 1024);
-        const isSiliconFlow = apiUrl.includes('siliconflow.cn') || apiUrl.includes('siliconflow.ai');
 
         // 超长音频统一走分段转写，避免不同服务商路径分叉导致大文件直传失败
         if (sizeMB > 50) {
@@ -458,91 +557,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
         }
 
-        if (isSiliconFlow) {
-            // 不超过限制，直接使用原始 webm 格式
-            console.log('使用原始 webm 格式转写');
-            return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, 600000);
-        }
-
-        // 判断是否为阿里云百炼 API
-        const isBailian = apiUrl.includes('bailian') || apiUrl.includes('dashscope.aliyuncs.com/api/v1');
-        const isDashScopeCompatible = apiUrl.includes('dashscope') && apiUrl.includes('compatible-mode');
-        // isSiliconFlow 已在上面检查过
-
-        let response;
-        const audioFormat = detectAudioFormat(audioBlob);
-
-        if (isBailian) {
-            const base64Audio = await blobToBase64(audioBlob);
-
-            const requestBody = {
-                model: model,
-                input: {
-                    audio: base64Audio
-                },
-                parameters: {
-                    sample_rate: 16000,
-                    format: audioFormat,
-                    language_hints: ['zh', 'en']
-                }
-            };
-
-            console.log('发送百炼录音文件识别请求:', { url: apiUrl, model });
-            response = await fetchWithTimeout(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } else if (isDashScopeCompatible) {
-            const audioEndpoint = apiUrl.replace('/chat/completions', '/audio/transcriptions');
-            
-            const formData = new FormData();
-            formData.append('file', audioBlob, `recording.${audioFormat}`);
-            formData.append('model', model || 'whisper-1');
-
-            console.log('发送 DashScope 兼容请求:', { url: audioEndpoint, model });
-            response = await fetchWithTimeout(audioEndpoint, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: formData
-            });
-        } else if (isSiliconFlow) {
-            let audioEndpoint = apiUrl;
-            if (apiUrl.includes('/chat/completions')) {
-                audioEndpoint = apiUrl.replace('/chat/completions', '/audio/transcriptions');
-            }
-            
-            const formData = new FormData();
-            formData.append('file', audioBlob, `recording.${audioFormat}`);
-            formData.append('model', model || 'whisper-1');
-
-            console.log('发送 SiliconFlow 请求:', { url: audioEndpoint, model });
-            response = await fetchWithTimeout(audioEndpoint, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: formData
-            });
-        } else {
-            const formData = new FormData();
-            formData.append('file', audioBlob, `recording.${audioFormat}`);
-            formData.append('model', model);
-
-            console.log('发送 OpenAI 请求:', { url: apiUrl, model });
-            response = await fetchWithTimeout(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: formData
-            });
-        }
+        const response = await dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, 600000);
 
         console.log('响应状态:', response.status, response.statusText);
 
@@ -561,31 +576,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
         const data = await response.json();
         console.log('API 响应数据:', data);
 
-        // 解析不同格式的响应
-        let transcriptText = '';
-        if (data.text) {
-            // OpenAI 格式
-            transcriptText = data.text;
-        } else if (data.choices && data.choices[0] && data.choices[0].message) {
-            // Chat completions 格式
-            const message = data.choices[0].message;
-            if (message.content) {
-                transcriptText = message.content;
-            } else if (message.audio && message.audio.transcript) {
-                transcriptText = message.audio.transcript;
-            }
-        } else if (data.output && data.output.text) {
-            // 百炼/DashScope 格式
-            transcriptText = data.output.text;
-        } else if (data.output && data.output.sentences) {
-            // 百炼句子数组格式
-            transcriptText = data.output.sentences.map(s => s.text).join('');
-        } else if (data.output && data.output.flash_result) {
-            // 实时识别结果格式
-            transcriptText = data.output.flash_result.text || '';
-        }
-
-        return { success: true, text: transcriptText };
+        return { success: true, text: extractTranscriptText(data) };
     } catch (error) {
         console.error('Transcription error:', error);
         let userMessage = getErrorMessage(error);
@@ -715,21 +706,30 @@ async function extractAudioSegment(audioBuffer, startTime, endTime, sampleRate) 
     const startSample = Math.floor(startTime * sampleRate);
     const endSample = Math.floor(endTime * sampleRate);
     const segmentLength = endSample - startSample;
-    
-    const numberOfChannels = audioBuffer.numberOfChannels;
-    const segmentBuffer = new AudioContext().createBuffer(
-        numberOfChannels,
-        segmentLength,
-        sampleRate
-    );
-    
-    for (let channel = 0; channel < numberOfChannels; channel++) {
-        const sourceData = audioBuffer.getChannelData(channel);
-        const segmentData = segmentBuffer.getChannelData(channel);
-        segmentData.set(sourceData.subarray(startSample, endSample));
+
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext || AudioContext;
+    const segmentContext = new AudioContextCtor();
+
+    try {
+        const numberOfChannels = audioBuffer.numberOfChannels;
+        const segmentBuffer = segmentContext.createBuffer(
+            numberOfChannels,
+            segmentLength,
+            sampleRate
+        );
+        
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+            const sourceData = audioBuffer.getChannelData(channel);
+            const segmentData = segmentBuffer.getChannelData(channel);
+            segmentData.set(sourceData.subarray(startSample, endSample));
+        }
+        
+        return await audioBufferToWebm(segmentBuffer);
+    } finally {
+        if (typeof segmentContext.close === 'function') {
+            await segmentContext.close();
+        }
     }
-    
-    return await audioBufferToWebm(segmentBuffer);
 }
 
 // 将 AudioBuffer 转换为 webm Blob（简化版）
@@ -909,65 +909,14 @@ async function getAudioDurationFallback(audioBlob) {
 // 转写单个音频片段
 async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout = 600000) {
     try {
-        const isBailian = apiUrl.includes('bailian') || apiUrl.includes('dashscope.aliyuncs.com/api/v1');
-        const isDashScopeCompatible = apiUrl.includes('dashscope') && apiUrl.includes('compatible-mode');
-        const isSiliconFlow = apiUrl.includes('siliconflow.cn') || apiUrl.includes('siliconflow.ai');
-        
-        let response;
-        
-        if (isBailian) {
-            const base64Audio = await blobToBase64(audioBlob);
-            const requestBody = {
-                model: model,
-                input: { audio: base64Audio },
-                parameters: { sample_rate: 16000, format: detectAudioFormat(audioBlob), language_hints: ['zh', 'en'] }
-            };
-            
-            response = await fetchWithTimeout(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            }, timeout);
-        } else if (isDashScopeCompatible) {
-            const audioEndpoint = apiUrl.replace('/chat/completions', '/audio/transcriptions');
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'segment.webm');
-            formData.append('model', model || 'whisper-1');
-            
-            response = await fetchWithTimeout(audioEndpoint, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${apiKey}` },
-                body: formData
-            }, timeout);
-        } else if (isSiliconFlow) {
-            let audioEndpoint = apiUrl;
-            if (apiUrl.includes('/chat/completions')) {
-                audioEndpoint = apiUrl.replace('/chat/completions', '/audio/transcriptions');
-            }
-            
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'segment.webm');
-            formData.append('model', model || 'whisper-1');
-            
-            response = await fetchWithTimeout(audioEndpoint, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${apiKey}` },
-                body: formData
-            }, timeout);
-        } else {
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'segment.webm');
-            formData.append('model', model);
-            
-            response = await fetchWithTimeout(apiUrl, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${apiKey}` },
-                body: formData
-            }, timeout);
-        }
+        const response = await dispatchTranscriptionRequest(
+            audioBlob,
+            apiUrl,
+            apiKey,
+            model,
+            timeout,
+            'segment.webm'
+        );
         
         if (!response.ok) {
             const errorText = await response.text();
@@ -975,20 +924,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout
         }
         
         const data = await response.json();
-        let transcriptText = '';
-        
-        if (data.text) {
-            transcriptText = data.text;
-        } else if (data.choices && data.choices[0] && data.choices[0].message) {
-            const message = data.choices[0].message;
-            transcriptText = message.content || (message.audio && message.audio.transcript) || '';
-        } else if (data.output && data.output.text) {
-            transcriptText = data.output.text;
-        } else if (data.output && data.output.sentences) {
-            transcriptText = data.output.sentences.map(s => s.text).join('');
-        }
-        
-        return { success: true, text: transcriptText };
+        return { success: true, text: extractTranscriptText(data) };
     } catch (error) {
         console.error('单片段转写错误:', error);
         let userMessage = getErrorMessage(error);
