@@ -48,3 +48,6 @@ config.json
 CLAUDE.md
 .codex
 docs/plans/
+
+# Release notes (generated locally, not for repo)
+release-notes-v*.*.*.md
