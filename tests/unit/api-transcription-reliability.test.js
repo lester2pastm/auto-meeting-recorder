@@ -53,6 +53,8 @@ describe('transcribeAudioSegments reliability', () => {
       deleteFile: jest.fn().mockResolvedValue(null)
     };
 
+    global.isElectron = () => false;
+
     i18n = require('../../src/js/i18n');
     i18n.currentLang = 'zh';
     api = require('../../src/js/api');

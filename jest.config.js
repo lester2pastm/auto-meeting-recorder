@@ -5,7 +5,8 @@ module.exports = {
     '<rootDir>/tests/**/*.test.js'
   ],
   testPathIgnorePatterns: [
-    '<rootDir>/tests/tdd-linux-recording-paths.test.js'
+    '<rootDir>/tests/tdd-linux-recording-paths.test.js',
+    '<rootDir>/tests/smoke/'
   ],
   modulePathIgnorePatterns: [
     '<rootDir>/node_modules_win/',

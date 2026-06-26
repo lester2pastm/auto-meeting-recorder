@@ -45,7 +45,8 @@ module.exports = {
     currentMeetingId = meetingId;
     currentAudioBlob = audioBlob;
     currentAudioFilePath = audioFilePath;
-  }
+  },
+  __getRetryBlob: () => currentAudioBlob
 };`);
 
   script.runInContext(context);
@@ -217,6 +218,107 @@ describe('App critical path regressions', () => {
     expect(updateMeeting).toHaveBeenCalledWith('meeting-pending', {
       transcriptStatus: 'failed'
     });
+  });
+
+  test('processRecording should release currentAudioBlob after successful transcription', async () => {
+    const transcribeAudio = jest.fn().mockResolvedValue({
+      success: true,
+      text: '转写完成'
+    });
+    const updateSubtitleContent = jest.fn();
+    const hideRetryTranscriptionButton = jest.fn();
+    const generateSummary = jest.fn().mockResolvedValue({
+      success: true,
+      summary: '纪要内容'
+    });
+    const generateMeetingSummary = jest.fn(async (transcript, blob, mid) => {
+      const result = await generateSummary(transcript, blob, mid);
+      if (result.success) {
+        global.updateSummaryContent(result.summary);
+      }
+    });
+    global.updateSummaryContent = jest.fn();
+    const updateMeeting = jest.fn().mockResolvedValue(undefined);
+    const hideLoading = jest.fn();
+    const showToast = jest.fn();
+    const updateRecordingButtons = jest.fn();
+    const getRecordingState = jest.fn(() => ({ isRecording: false }));
+    const saveMeetingRecord = jest.fn();
+    const generateMeetingTitle = jest.fn().mockResolvedValue({ success: false });
+
+    const app = loadAppModule({
+      transcribeAudio,
+      updateSubtitleContent,
+      hideRetryTranscriptionButton,
+      generateSummary,
+      generateMeetingSummary,
+      updateMeeting,
+      hideLoading,
+      showToast,
+      updateRecordingButtons,
+      getRecordingState,
+      updateSummaryContent: global.updateSummaryContent,
+      saveMeetingRecord,
+      generateMeetingTitle,
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: 'https://stt.example.com',
+      sttApiKey: 'key',
+      sttModel: 'whisper-1',
+      summaryApiUrl: 'https://summary.example.com',
+      summaryApiKey: 'key',
+      summaryModel: 'gpt-4o',
+      summaryTemplate: 'template'
+    });
+
+    app.__setRetryState({
+      meetingId: 'pre-existing-id',
+      audioBlob: new Blob([new Uint8Array(1024 * 1024)], { type: 'audio/webm' }),
+      audioFilePath: '/path/to/old.wav'
+    });
+
+    await app.processRecording(new Blob(['audio'], { type: 'audio/webm' }), 'meeting-success');
+
+    expect(app.__getRetryBlob()).toBeNull();
+  });
+
+  test('processRecording should keep currentAudioBlob after transcription failure for retry', async () => {
+    const transcribeAudio = jest.fn().mockResolvedValue({
+      success: false,
+      message: '网络连接失败'
+    });
+    const updateSubtitleContent = jest.fn();
+    const showRetryTranscriptionButton = jest.fn();
+    const updateMeeting = jest.fn().mockResolvedValue(undefined);
+    const hideLoading = jest.fn();
+    const showToast = jest.fn();
+    const updateRecordingButtons = jest.fn();
+    const getRecordingState = jest.fn(() => ({ isRecording: false }));
+
+    const app = loadAppModule({
+      transcribeAudio,
+      updateSubtitleContent,
+      showRetryTranscriptionButton,
+      updateMeeting,
+      hideLoading,
+      showToast,
+      updateRecordingButtons,
+      getRecordingState,
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: 'https://stt.example.com',
+      sttApiKey: 'key',
+      sttModel: 'whisper-1'
+    });
+
+    const failBlob = new Blob(['fail-audio'], { type: 'audio/webm' });
+    await app.processRecording(failBlob, 'meeting-fail');
+
+    expect(app.__getRetryBlob()).toBe(failBlob);
   });
 
   test('recoverInterruptedMeetingStates should convert stale processing records into recoverable states', async () => {

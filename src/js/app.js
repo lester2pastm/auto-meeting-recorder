@@ -669,6 +669,9 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
         updateSubtitleContent(result.text);
         hideRetryTranscriptionButton();
 
+        currentAudioBlob = null;
+        currentAudioFilePath = null;
+
         // 保存当前转写文本，用于刷新纪要
         currentTranscript = result.text;
 

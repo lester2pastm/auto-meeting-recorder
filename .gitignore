@@ -51,3 +51,6 @@ docs/plans/
 
 # Release notes (generated locally, not for repo)
 release-notes-v*.*.*.md
+
+# Smoke test files (contain credentials, local only)
+tests/smoke/

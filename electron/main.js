@@ -36,6 +36,31 @@ if (!fs.existsSync(AUDIO_DIR)) {
   fs.mkdirSync(AUDIO_DIR, { recursive: true });
 }
 
+const PID_FILE = path.join(app.getPath('userData'), 'ffmpeg_recording.pid');
+
+async function cleanupOrphanFFmpeg() {
+  if (!isLinux) return;
+  try {
+    if (!fs.existsSync(PID_FILE)) return;
+    const pidContent = fs.readFileSync(PID_FILE, 'utf8').trim();
+    const pid = parseInt(pidContent, 10);
+    if (!pid) {
+      fs.unlinkSync(PID_FILE);
+      return;
+    }
+    try {
+      const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+      if (cmdline.includes('ffmpeg')) {
+        process.kill(pid, 'SIGKILL');
+        safeLog(`Cleaned up orphan FFmpeg process (PID: ${pid})`);
+      }
+    } catch (e) {
+    }
+    fs.unlinkSync(PID_FILE);
+  } catch (e) {
+  }
+}
+
 let mainWindow;
 
 // 安全日志函数，完全避免 EPIPE 错误
@@ -166,7 +191,8 @@ if (!gotTheLock) {
   });
 
   // 应用就绪
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await cleanupOrphanFFmpeg();
     createWindow();
 
     app.on('activate', () => {
@@ -188,6 +214,8 @@ app.on('window-all-closed', () => {
     }
     ffmpegSystemAudioProcess = null;
   }
+
+  try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
   
   if (process.platform !== 'darwin') {
     app.quit();
@@ -503,6 +531,7 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
     ffmpegSystemAudioProcess.on('exit', (code) => {
       safeLog(`FFmpeg system audio process exited with code ${code}`);
       ffmpegSystemAudioProcess = null;
+      try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
     });
 
     // 等待 ffmpeg 启动
@@ -514,6 +543,9 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       const checkStarted = () => {
         if (ffmpegSystemAudioProcess && ffmpegSystemAudioProcess.pid) {
           clearTimeout(timeout);
+          try {
+            fs.writeFileSync(PID_FILE, String(ffmpegSystemAudioProcess.pid));
+          } catch (e) {}
           resolve();
         }
       };
@@ -547,6 +579,7 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
           } catch (e) {}
           results.systemAudio = true;
           ffmpegSystemAudioProcess = null;
+          try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
           resolve();
         }, 3000);
 
@@ -554,6 +587,7 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
           clearTimeout(timeout);
           results.systemAudio = true;
           ffmpegSystemAudioProcess = null;
+          try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
           resolve();
         });
 
@@ -582,6 +616,10 @@ ipcMain.handle('stop-ffmpeg-recording', async () => {
 
 // 合并音频文件（使用 ffmpeg）
 ipcMain.handle('merge-audio-files', async (event, { microphonePath, systemAudioPath, outputPath }) => {
+  if (!isLinux) {
+    return { success: false, error: 'Audio merging via FFmpeg is only supported on Linux' };
+  }
+
   try {
     // 检查输入文件是否存在
     if (!fs.existsSync(microphonePath)) {
@@ -836,9 +874,7 @@ ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => 
     const args = [
       '-i', managedSourcePath,
       '-vn',
-      '-c:a', 'libopus',
-      '-b:a', '128k',
-      '-ar', '48000',
+      '-c', 'copy',
       '-f', 'segment',
       '-segment_time', String(segmentDuration),
       '-reset_timestamps', '1',
@@ -922,6 +958,168 @@ ipcMain.handle('append-audio-to-path', async (event, { data, filePath }) => {
     safeError('Error appending audio to path:', error);
     return { success: false, error: error.message };
   }
+});
+
+// IPC 处理器：通过 Node.js https 模块发送 HTTP POST 请求
+// 解决 fetch API 在发送大文件 multipart/form-data 时与 SiliconFlow 服务端不兼容的问题
+// 支持 filePath 参数进行流式上传，避免渲染进程侧全量复制二进制数据
+ipcMain.handle('http-post', async (event, options) => {
+  const { url, headers, body, filePath, timeout = 600000, model, filename } = options;
+
+  return new Promise((resolve) => {
+    try {
+      const urlObj = new URL(url);
+      const isHttps = urlObj.protocol === 'https:';
+      const httpModule = isHttps ? require('https') : require('http');
+
+      const responseHandler = (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const responseBody = Buffer.concat(chunks).toString();
+          resolve({
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode,
+            statusText: res.statusMessage || '',
+            body: responseBody,
+            headers: res.headers
+          });
+        });
+      };
+
+      const errorHandler = (error) => {
+        resolve({
+          ok: false,
+          status: 0,
+          statusText: error.message || 'Network error',
+          body: '',
+          headers: {}
+        });
+      };
+
+      if (filePath) {
+        const managedFilePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
+
+        if (!fs.existsSync(managedFilePath)) {
+          resolve({
+            ok: false,
+            status: 0,
+            statusText: 'File not found: ' + filePath,
+            body: '',
+            headers: {}
+          });
+          return;
+        }
+
+        const fileStats = fs.statSync(managedFilePath);
+        const fileType = 'audio/webm';
+        const uploadFilename = filename || path.basename(managedFilePath);
+
+        const boundary = '----FormBoundary' + Math.random().toString(36).substring(2, 17);
+        const crlf = '\r\n';
+
+        const preamble =
+          '--' + boundary + crlf +
+          'Content-Disposition: form-data; name="file"; filename="' + uploadFilename + '"' + crlf +
+          'Content-Type: ' + fileType + crlf +
+          crlf;
+
+        const postamble =
+          crlf +
+          '--' + boundary + crlf +
+          'Content-Disposition: form-data; name="model"' + crlf +
+          crlf +
+          (model || 'whisper-1') + crlf +
+          '--' + boundary + '--' + crlf;
+
+        const preambleBuffer = Buffer.from(preamble, 'utf-8');
+        const postambleBuffer = Buffer.from(postamble, 'utf-8');
+        const contentLength = preambleBuffer.length + fileStats.size + postambleBuffer.length;
+
+        const allHeaders = {
+          ...headers,
+          'Content-Type': 'multipart/form-data; boundary=' + boundary,
+          'Content-Length': String(contentLength)
+        };
+
+        const reqOptions = {
+          hostname: urlObj.hostname,
+          port: urlObj.port || (isHttps ? 443 : 80),
+          path: urlObj.pathname + urlObj.search,
+          method: 'POST',
+          headers: allHeaders,
+          timeout: timeout
+        };
+
+        const req = httpModule.request(reqOptions, responseHandler);
+        req.on('error', errorHandler);
+        req.on('timeout', () => {
+          req.destroy();
+          resolve({
+            ok: false,
+            status: 0,
+            statusText: '\u8bf7\u6c42\u8d85\u65f6\uff08' + (timeout / 1000) + '\u79d2\uff09',
+            body: '',
+            headers: {}
+          });
+        });
+
+        req.write(preambleBuffer);
+
+        const fileStream = fs.createReadStream(managedFilePath, { highWaterMark: 64 * 1024 });
+        fileStream.on('error', (err) => {
+          req.destroy(err);
+        });
+        fileStream.on('end', () => {
+          req.write(postambleBuffer, () => {
+            req.end();
+          });
+        });
+        fileStream.pipe(req, { end: false });
+
+        return;
+      }
+
+      const bodyBuffer = normalizeBinaryPayload(body);
+      const allHeaders = {
+        ...headers,
+        'Content-Length': String(bodyBuffer.length)
+      };
+
+      const reqOptions = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (isHttps ? 443 : 80),
+        path: urlObj.pathname + urlObj.search,
+        method: 'POST',
+        headers: allHeaders,
+        timeout: timeout
+      };
+
+      const req = httpModule.request(reqOptions, responseHandler);
+      req.on('error', errorHandler);
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({
+          ok: false,
+          status: 0,
+          statusText: '\u8bf7\u6c42\u8d85\u65f6\uff08' + (timeout / 1000) + '\u79d2\uff09',
+          body: '',
+          headers: {}
+        });
+      });
+
+      req.write(bodyBuffer);
+      req.end();
+    } catch (error) {
+      resolve({
+        ok: false,
+        status: 0,
+        statusText: error.message || 'Request failed',
+        body: '',
+        headers: {}
+      });
+    }
+  });
 });
 
 // 恢复管理相关 IPC

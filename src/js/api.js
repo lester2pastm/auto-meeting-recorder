@@ -454,7 +454,77 @@ function resolveAudioTranscriptionEndpoint(apiUrl) {
     return apiUrl;
 }
 
-async function dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, timeout = 600000, filename = null) {
+async function dispatchTranscriptionViaIPC(audioBlob, apiUrl, apiKey, model, timeout, filename, audioFilePath = null) {
+    const boundary = '----FormBoundary' + Math.random().toString(36).substring(2, 17);
+
+    if (audioFilePath) {
+        const result = await window.electronAPI.httpPost({
+            url: apiUrl,
+            headers: {
+                'Authorization': 'Bearer ' + apiKey
+            },
+            filePath: audioFilePath,
+            model: model,
+            filename: filename,
+            timeout: timeout
+        });
+
+        return {
+            ok: result.ok,
+            status: result.status,
+            statusText: result.statusText,
+            text: async () => result.body,
+            json: async () => JSON.parse(result.body)
+        };
+    }
+
+    const crlf = '\r\n';
+    const fileType = (audioBlob && audioBlob.type) || 'audio/webm';
+
+    const preamble =
+        '--' + boundary + crlf +
+        'Content-Disposition: form-data; name="file"; filename="' + filename + '"' + crlf +
+        'Content-Type: ' + fileType + crlf +
+        crlf;
+
+    const postamble =
+        crlf +
+        '--' + boundary + crlf +
+        'Content-Disposition: form-data; name="model"' + crlf +
+        crlf +
+        model + crlf +
+        '--' + boundary + '--' + crlf;
+
+    const encoder = new TextEncoder();
+    const preambleBytes = encoder.encode(preamble);
+    const postambleBytes = encoder.encode(postamble);
+    const fileBytes = new Uint8Array(await audioBlob.arrayBuffer());
+
+    const body = new Uint8Array(preambleBytes.length + fileBytes.length + postambleBytes.length);
+    body.set(preambleBytes, 0);
+    body.set(fileBytes, preambleBytes.length);
+    body.set(postambleBytes, preambleBytes.length + fileBytes.length);
+
+    const result = await window.electronAPI.httpPost({
+        url: apiUrl,
+        headers: {
+            'Authorization': 'Bearer ' + apiKey,
+            'Content-Type': 'multipart/form-data; boundary=' + boundary
+        },
+        body: body,
+        timeout: timeout
+    });
+
+    return {
+        ok: result.ok,
+        status: result.status,
+        statusText: result.statusText,
+        text: async () => result.body,
+        json: async () => JSON.parse(result.body)
+    };
+}
+
+async function dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, timeout = 600000, filename = null, audioFilePath = null) {
     const { isBailian, isDashScopeCompatible, isSiliconFlow } = resolveTranscriptionProvider(apiUrl);
     const audioFormat = detectAudioFormat(audioBlob);
     const uploadFilename = filename || `recording.${audioFormat}`;
@@ -487,9 +557,7 @@ async function dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, ti
     const audioEndpoint = (isDashScopeCompatible || isSiliconFlow)
         ? resolveAudioTranscriptionEndpoint(apiUrl)
         : apiUrl;
-    const formData = new FormData();
-    formData.append('file', audioBlob, uploadFilename);
-    formData.append('model', (isDashScopeCompatible || isSiliconFlow) ? (model || 'whisper-1') : model);
+    const effectiveModel = (isDashScopeCompatible || isSiliconFlow) ? (model || 'whisper-1') : model;
 
     let providerLabel = 'OpenAI';
     if (isDashScopeCompatible) {
@@ -499,6 +567,15 @@ async function dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, ti
     }
 
     console.log(`发送 ${providerLabel} 请求:`, { url: audioEndpoint, model });
+
+    if (isElectron && isElectron() && window.electronAPI && typeof window.electronAPI.httpPost === 'function') {
+        return await dispatchTranscriptionViaIPC(audioBlob, audioEndpoint, apiKey, effectiveModel, timeout, uploadFilename, audioFilePath);
+    }
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, uploadFilename);
+    formData.append('model', effectiveModel);
+
     return await fetchWithTimeout(audioEndpoint, {
         method: 'POST',
         headers: {
@@ -557,7 +634,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
             return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
         }
 
-        const response = await dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, 600000);
+        const response = await dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, 600000, null, audioFilePath);
 
         console.log('响应状态:', response.status, response.statusText);
 
@@ -804,16 +881,18 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
             segmentPaths = await splitAudioByFilePath(audioFilePath, duration, sizeMB);
             console.log(`主进程已分割为 ${segmentPaths.length} 个片段`);
         } catch (error) {
-            console.warn('主进程分段失败，回退到渲染进程分段:', error.message);
-            segments = await splitAudio(audioBlob, 45, duration);
+            console.warn('主进程分段失败:', error.message);
+            return { success: false, message: 'Audio segmentation failed: ' + error.message };
         }
-    } else {
+    } else if (!audioFilePath) {
         segments = await splitAudio(audioBlob, 45, hasKnownDuration ? duration : null);
+    } else {
+        return { success: false, message: 'Audio segmentation requires a file path' };
     }
-    
+
     // 逐个转写每个片段
     const transcripts = [];
-    const totalSegments = segmentPaths.length || segments.length;
+    const totalSegments = segmentPaths.length || (segments ? segments.length : 0);
     let lastFailedMessage = '';
     const loadSegmentBlob = async (index) => (
         segmentPaths.length > 0
@@ -823,10 +902,12 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
 
     for (let i = 0; i < totalSegments; i++) {
         console.log(`转写片段 ${i + 1}/${totalSegments}...`);
+        const segmentFilePath = segmentPaths.length > 0 ? segmentPaths[i] : null;
         let segmentBlob = await loadSegmentBlob(i);
-        
-        let result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout);
-        
+
+        let result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout, segmentFilePath);
+        segmentBlob = null;
+
         let retryCount = 0;
         const maxRetries = 2;
         while (!result.success && retryCount < maxRetries) {
@@ -837,9 +918,14 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
             }
             await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
             segmentBlob = await loadSegmentBlob(i);
-            result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout);
+            result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout, segmentFilePath);
+            segmentBlob = null;
         }
-        
+
+        if (segments && segments[i]) {
+            segments[i] = null;
+        }
+
         if (result.success) {
             transcripts.push(result.text);
             console.log(`片段 ${i + 1} 转写完成`);
@@ -848,6 +934,8 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
             console.error(`片段 ${i + 1} 转写失败:`, lastFailedMessage);
         }
     }
+
+    segments = null;
     
     if (transcripts.length === 0) {
         return { success: false, message: lastFailedMessage || getI18nValue('transcriptionRetryExhaustedGeneric') };
@@ -907,7 +995,7 @@ async function getAudioDurationFallback(audioBlob) {
 }
 
 // 转写单个音频片段
-async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout = 600000) {
+async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout = 600000, audioFilePath = null) {
     try {
         const response = await dispatchTranscriptionRequest(
             audioBlob,
@@ -915,14 +1003,15 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout
             apiKey,
             model,
             timeout,
-            'segment.webm'
+            'segment.webm',
+            audioFilePath
         );
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`API 错误: ${response.status} - ${errorText}`);
         }
-        
+
         const data = await response.json();
         return { success: true, text: extractTranscriptText(data) };
     } catch (error) {

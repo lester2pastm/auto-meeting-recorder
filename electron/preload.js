@@ -59,6 +59,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fileExists: (filePath) => ipcRenderer.invoke('file-exists', filePath),
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
 
+  // HTTP 请求（通过主进程 Node.js https 模块，解决 fetch 大文件 500 问题）
+  httpPost: (options) => ipcRenderer.invoke('http-post', options),
+
   // App Control
   onCheckRecordingStatus: (callback) => ipcRenderer.on('check-recording-status', callback),
   forceClose: () => ipcRenderer.send('force-close')
