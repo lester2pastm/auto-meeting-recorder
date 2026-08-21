@@ -387,10 +387,41 @@ async function parseSummaryError(response) {
     }
 }
 
+// 生成一段真实有效的极短静音 WAV，用于测试连接。
+// 注意：不能使用伪造的字节数据（如纯文本），否则服务端（如 SiliconFlow）
+// 会因无法解码而返回 500，导致测试连接误报失败，进而阻止设置保存。
+function createTestWavBlob() {
+    const sampleRate = 8000;
+    const sampleCount = 800; // 0.1 秒
+    const dataSize = sampleCount * 2;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+        }
+    };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);   // PCM
+    view.setUint16(22, 1, true);   // 单声道
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);   // blockAlign
+    view.setUint16(34, 16, true);  // 16bit
+    writeStr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    // 采样数据全为 0（静音），DataView 默认填充 0
+    return new Blob([buffer], { type: 'audio/wav' });
+}
+
 async function testSttApi(apiUrl, apiKey, model = 'whisper-1') {
     try {
         const formData = new FormData();
-        formData.append('file', new Blob(['test'], { type: 'audio/webm' }), 'test.webm');
+        formData.append('file', createTestWavBlob(), 'test.wav');
         formData.append('model', model);
 
         const response = await fetch(apiUrl, {
@@ -401,7 +432,8 @@ async function testSttApi(apiUrl, apiKey, model = 'whisper-1') {
             body: formData
         });
 
-        if (response.ok || response.status === 400) {
+        // 使用有效音频后，2xx 即连接成功；400/500 说明模型或请求有误，不应再误报成功
+        if (response.ok) {
             return { success: true, message: '连接成功' };
         } else {
             return { success: false, message: `连接失败: ${response.status}` };

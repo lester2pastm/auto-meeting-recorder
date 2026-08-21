@@ -387,6 +387,7 @@ function setupEventListeners() {
     
     // 设置页面按钮
     document.getElementById('btnTestSttApi').addEventListener('click', handleTestSttApi);
+    document.getElementById('btnSaveSttSettings').addEventListener('click', handleSaveSttSettings);
     document.getElementById('btnTestSummaryApi').addEventListener('click', handleTestSummaryApi);
     document.getElementById('btnSaveTemplate').addEventListener('click', handleSaveTemplate);
     document.getElementById('btnRefreshAudioSources').addEventListener('click', () => refreshAudioSourceOptions());
@@ -899,6 +900,23 @@ async function persistSettings(settings) {
     if (typeof window !== 'undefined' && window.electronAPI) {
         await saveConfigToFile(settings);
     }
+}
+
+async function handleSaveSttSettings() {
+    const apiUrl = document.getElementById('sttApiUrl').value.trim();
+    const apiKey = document.getElementById('sttApiKey').value.trim();
+    const model = document.getElementById('sttModel').value.trim() || 'whisper-1';
+
+    if (!apiUrl || !apiKey) {
+        showToast('请输入API地址和API Key', 'error');
+        return;
+    }
+
+    currentSettings.sttApiUrl = apiUrl;
+    currentSettings.sttApiKey = apiKey;
+    currentSettings.sttModel = model;
+    await persistSettings(currentSettings);
+    showToast('语音识别设置已保存', 'success');
 }
 
 async function handleTestSttApi() {

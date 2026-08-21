@@ -32,6 +32,7 @@ function loadAppModule(overrides = {}) {
   const script = new vm.Script(`${appSource}
 module.exports = {
   handleTestSttApi,
+  handleSaveSttSettings,
   handleTestSummaryApi,
   handleRetryTranscription,
   handleRefreshSummary,
@@ -509,6 +510,44 @@ describe('App critical path regressions', () => {
       sttApiKey: 'stt-key',
       sttModel: 'whisper-1'
     }));
+  });
+
+  test('handleSaveSttSettings should persist settings without requiring a connection test', async () => {
+    document.body.innerHTML = `
+      <input id="sttApiUrl" value="https://api.siliconflow.cn/v1/audio/transcriptions" />
+      <input id="sttApiKey" value="stt-key" />
+      <input id="sttModel" value="FunAudioLLM/SenseVoiceSmall" />
+    `;
+
+    const saveSettings = jest.fn().mockResolvedValue(undefined);
+    const saveConfigToFile = jest.fn().mockResolvedValue(undefined);
+    const showToast = jest.fn();
+    window.electronAPI = {};
+
+    const app = loadAppModule({
+      saveSettings,
+      saveConfigToFile,
+      showToast,
+      i18n: null
+    });
+
+    app.__setCurrentSettings({
+      sttApiUrl: '',
+      sttApiKey: '',
+      sttModel: 'TeleAI/TeleSpeechASR'
+    });
+
+    await app.handleSaveSttSettings();
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      sttApiUrl: 'https://api.siliconflow.cn/v1/audio/transcriptions',
+      sttApiKey: 'stt-key',
+      sttModel: 'FunAudioLLM/SenseVoiceSmall'
+    }));
+    expect(saveConfigToFile).toHaveBeenCalledWith(expect.objectContaining({
+      sttModel: 'FunAudioLLM/SenseVoiceSmall'
+    }));
+    expect(showToast).toHaveBeenCalled();
   });
 
   test('handleTestSummaryApi should persist settings to IndexedDB and file config after a successful test', async () => {
