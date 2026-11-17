@@ -248,12 +248,18 @@ describe('Recorder cleanup regressions', () => {
 
     await expect(recorder.startRecording()).rejects.toThrow('恢复录音初始化失败');
   });
-  test('stopRecording should resolve with the recorded blob after the standard recorder finishes reading the temp file', async () => {
+  test.each([true, false])('waits for the final chunk before reading the recording (write succeeds: %s)', async (writeSucceeds) => {
     const micTrack = { kind: 'audio', stop: jest.fn() };
     const sysAudioTrack = { kind: 'audio', stop: jest.fn() };
     const sysVideoTrack = { kind: 'video', stop: jest.fn() };
     const mixedStream = { id: 'mixed-stream' };
     const recorderInstances = [];
+    let releaseWrite;
+    let notifyWriteStarted;
+    const writeStarted = new Promise(resolve => { notifyWriteStarted = resolve; });
+    const finalWrite = new Promise((resolve, reject) => {
+      releaseWrite = () => writeSucceeds ? resolve() : reject(new Error('Disk full'));
+    });
 
     const microphoneStream = {
       getTracks: () => [micTrack]
@@ -291,6 +297,9 @@ describe('Recorder cleanup regressions', () => {
 
       stop() {
         setTimeout(() => {
+          this.ondataavailable({
+            data: { size: 1, arrayBuffer: async () => Uint8Array.of(4).buffer }
+          });
           if (typeof this.onstop === 'function') {
             this.onstop();
           }
@@ -321,19 +330,34 @@ describe('Recorder cleanup regressions', () => {
     window.AudioContext = jest.fn(() => audioContextInstance);
     window.webkitAudioContext = window.AudioContext;
 
+    const clearRecoveryData = jest.fn();
     const recorder = loadRecorderModule({
       MediaRecorder: FakeMediaRecorder,
       getRecoveryMeta: jest.fn(() => ({ tempFile: '/tmp/recovery.webm' })),
-      clearRecoveryData: jest.fn().mockResolvedValue(undefined),
+      clearRecoveryData,
+      appendAudioChunk: jest.fn(() => {
+        notifyWriteStarted();
+        return finalWrite;
+      }),
       initWaveform: jest.fn().mockResolvedValue(undefined)
     });
 
     await recorder.startStandardRecording();
-    const audioBlob = await recorder.stopRecording();
+    const stopPromise = recorder.stopRecording();
+    await writeStarted;
+    expect(window.electronAPI.readAudioFile).not.toHaveBeenCalled();
+    releaseWrite();
 
-    expect(audioBlob).toBeInstanceOf(Blob);
-    expect(audioBlob.size).toBe(4);
-    expect(window.electronAPI.readAudioFile).toHaveBeenCalledWith('/tmp/recovery.webm');
+    if (writeSucceeds) {
+      const audioBlob = await stopPromise;
+      expect(audioBlob).toBeInstanceOf(Blob);
+      expect(audioBlob.size).toBe(4);
+      expect(window.electronAPI.readAudioFile).toHaveBeenCalledWith('/tmp/recovery.webm');
+    } else {
+      await expect(stopPromise).rejects.toThrow('Disk full');
+      expect(window.electronAPI.readAudioFile).not.toHaveBeenCalled();
+    }
+    expect(clearRecoveryData).not.toHaveBeenCalled();
     expect(recorderInstances).toHaveLength(1);
   });
 

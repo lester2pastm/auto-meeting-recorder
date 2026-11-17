@@ -1172,6 +1172,14 @@ body {
     border-color: var(--slate-300);
 }
 
+select.custom-select-trigger {
+    appearance: none;
+}
+
+#btnTestSttApi[hidden] {
+    display: none;
+}
+
 .custom-select-trigger:focus {
     outline: none;
     border-color: var(--accent);
@@ -1558,6 +1566,21 @@ body {
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+}
+
+#btnStartRecording .loading-spinner {
+    width: 18px;
+    height: 18px;
+    border-width: 2px;
+    border-color: transparent;
+    border-top-color: currentColor;
+}
+
+#btnStartRecording[aria-busy="true"] svg,
+#btnStartRecording[aria-busy="true"] [data-i18n="startRecording"],
+#btnStartRecording:not([aria-busy="true"]) .loading-spinner,
+#btnStartRecording:not([aria-busy="true"]) [data-i18n="startingRecording"] {
+    display: none;
 }
 
 .audio-player {

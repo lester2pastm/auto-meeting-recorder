@@ -92,10 +92,7 @@ async function handleTranscribeNow() {
         // 设置录音时长
         setLastRecordingDuration(formatDuration(meta.duration));
 
-        let meeting = null;
-        if (typeof saveEmptyMeetingRecord === 'function') {
-            meeting = await saveEmptyMeetingRecord(audioBlob);
-        }
+        const meeting = await saveEmptyMeetingRecord(audioBlob);
 
         // 在转写前先清理恢复标记，避免下次启动重复提示
         // 此时录音已经有持久化记录，即使后续转写失败也不会丢失音频
@@ -105,8 +102,8 @@ async function handleTranscribeNow() {
         showToast('录音已恢复，开始转写...', 'info');
         await processRecording(
             audioBlob,
-            meeting ? meeting.id : null,
-            meeting ? (meeting.audioFilename || null) : null
+            meeting.id,
+            meeting.audioFilename || null
         );
         
     } catch (error) {
@@ -311,7 +308,7 @@ async function saveRecoveryToHistory(meta) {
         if (window.electronAPI && window.electronAPI.saveAudio) {
             const arrayBuffer = await audioBlob.arrayBuffer();
             const saveResult = await window.electronAPI.saveAudio(
-                Array.from(new Uint8Array(arrayBuffer)),
+                new Uint8Array(arrayBuffer),
                 filename
             );
             

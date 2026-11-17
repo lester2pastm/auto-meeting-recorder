@@ -2,8 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen } = require
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execFile } = require('child_process');
 const { promisify } = require('util');
+const { startLocalAsr, supported: localAsrSupported } = require('./local-asr');
 const {
   checkLinuxDependencies,
   parsePulseSourceList,
@@ -27,9 +28,22 @@ const isMac = process.platform === 'darwin';
 let ffmpegSystemAudioProcess = null;
 let recordingStartTime = null;
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // 音频文件保存目录
 const AUDIO_DIR = path.join(app.getPath('userData'), 'audio_files');
+const AUDIO_FILE_TYPES = {
+  '.webm': 'audio/webm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.flac': 'audio/flac'
+};
 
 // 确保音频目录存在
 if (!fs.existsSync(AUDIO_DIR)) {
@@ -62,6 +76,80 @@ async function cleanupOrphanFFmpeg() {
 }
 
 let mainWindow;
+let localAsrSession = null;
+
+function beginLocalAsr(sender, sampleRate, filePath = '', live = false) {
+  if (localAsrSession) throw new Error('Local speech recognition is already running');
+  const job = startLocalAsr({
+    resourcesPath: app.isPackaged ? process.resourcesPath : null,
+    sampleRate,
+    filePath,
+    onText: (data) => {
+      if (live && !sender.isDestroyed()) sender.send('local-asr-text', data);
+    }
+  });
+  const session = { sender, job, live };
+  localAsrSession = session;
+  return session;
+}
+
+function cancelLocalAsr(sender, live = localAsrSession?.live) {
+  if (!localAsrSession || localAsrSession.sender !== sender) return;
+  if (localAsrSession.live !== live) return;
+  localAsrSession.job.cancel();
+  localAsrSession = null;
+}
+
+ipcMain.handle('start-local-asr', async ({ sender }, { sampleRate, live }) => {
+  try {
+    if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) {
+      throw new Error('Invalid ASR sample rate');
+    }
+    const session = beginLocalAsr(sender, sampleRate, '', live === true);
+    if (session.live) return { success: true };
+    const result = await session.job.ready;
+    if (!result.success && localAsrSession === session) localAsrSession = null;
+    return result;
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle('write-local-asr', ({ sender }, { samples, live }) => {
+  if (!localAsrSession || localAsrSession.sender !== sender || localAsrSession.live !== live
+      || !(samples instanceof Float32Array) || samples.length > 65536) {
+    return false;
+  }
+  const pcm = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
+  return localAsrSession.job.write(pcm);
+});
+
+ipcMain.handle('finish-local-asr', async ({ sender }, live) => {
+  const session = localAsrSession;
+  if (!session || session.sender !== sender || session.live !== live) return null;
+  try {
+    return await session.job.finish();
+  } finally {
+    if (localAsrSession === session) localAsrSession = null;
+  }
+});
+
+ipcMain.handle('cancel-local-asr', ({ sender }, live) => cancelLocalAsr(sender, live === true));
+
+ipcMain.handle('transcribe-local-file', async ({ sender }, filePath) => {
+  let session;
+  try {
+    if (!isLinux) throw new Error('Local file decoding is unavailable on this platform');
+    const file = fs.realpathSync(resolveManagedAudioPath(AUDIO_DIR, filePath));
+    const managed = resolveManagedAudioPath(fs.realpathSync(AUDIO_DIR), file);
+    session = beginLocalAsr(sender, 16000, managed);
+    return await session.job.result;
+  } catch (error) {
+    return { success: false, message: error.message };
+  } finally {
+    if (session && localAsrSession === session) localAsrSession = null;
+  }
+});
 
 // 安全日志函数，完全避免 EPIPE 错误
 // 由于 Electron 打包后可能出现 stdout 管道问题，直接禁用日志
@@ -78,10 +166,6 @@ function normalizeBinaryPayload(data) {
     return data;
   }
 
-  if (data instanceof Uint8Array) {
-    return Buffer.from(data);
-  }
-
   if (data instanceof ArrayBuffer) {
     return Buffer.from(data);
   }
@@ -95,6 +179,15 @@ function normalizeBinaryPayload(data) {
   }
 
   throw new Error('Unsupported audio payload type');
+}
+
+function audioFilePayload(buffer, filePath) {
+  const ownsBuffer = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength;
+  return {
+    success: true,
+    data: ownsBuffer ? new Uint8Array(buffer.buffer) : new Uint8Array(buffer),
+    type: AUDIO_FILE_TYPES[path.extname(filePath).toLowerCase()]
+  };
 }
 
 function createWindow() {
@@ -141,6 +234,8 @@ function createWindow() {
 
   // 加载应用
   mainWindow.loadFile(path.join(__dirname, '../src/index.html'));
+  const sender = mainWindow.webContents;
+  mainWindow.on('closed', () => cancelLocalAsr(sender));
 
   // 开发模式下打开开发者工具
   if (process.argv.includes('--dev')) {
@@ -255,7 +350,7 @@ ipcMain.handle('get-audio', async (event, filePathOrName) => {
     const filePath = resolveManagedAudioPath(AUDIO_DIR, filePathOrName);
     if (fs.existsSync(filePath)) {
       const buffer = fs.readFileSync(filePath);
-      return { success: true, data: new Uint8Array(buffer) };
+      return audioFilePayload(buffer, filePath);
     }
     return { success: false, error: 'File not found' };
   } catch (error) {
@@ -410,12 +505,14 @@ async function getDefaultPulseAudioDevice(type = 'output') {
 }
 
 // 在 Linux 下使用 ffmpeg 开始录制系统音频
-ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device = null, microphoneDevice: preferredMicrophoneDevice = null }) => {
+ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device = null, microphoneDevice: preferredMicrophoneDevice = null, localAsr = false }) => {
   if (!isLinux) {
     return { success: false, error: 'FFmpeg system audio recording is only supported on Linux' };
   }
 
+  let speechSession;
   try {
+    outputPath = resolveManagedAudioPath(AUDIO_DIR, outputPath);
     // 如果已有录制进程，先停止
     if (ffmpegSystemAudioProcess) {
       ffmpegSystemAudioProcess.kill('SIGTERM');
@@ -476,9 +573,31 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       throw new Error('未检测到可用的 PulseAudio 输入源或 monitor 源');
     }
 
+    if (localAsr && localAsrSupported) {
+      try {
+        speechSession = beginLocalAsr(event.sender, 16000, '', true);
+      } catch (error) {
+        safeWarn('Could not start live transcription:', error.message);
+      }
+    }
+    if (speechSession) {
+      let input = '0:a:0';
+      const filter = args.indexOf('-filter_complex');
+      if (filter !== -1) {
+        args[filter + 1] += ';[aout]asplit=2[record][speech]';
+        args[args.indexOf('-map') + 1] = '[record]';
+        input = '[speech]';
+      }
+      args.push('-map', input, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_f32le', '-f', 'f32le', 'pipe:1');
+    }
+
     safeLog('Starting ffmpeg mixed audio recording:', args.join(' '));
 
-    ffmpegSystemAudioProcess = spawn('ffmpeg', args);
+    const recordingProcess = spawn('ffmpeg', args);
+    ffmpegSystemAudioProcess = recordingProcess;
+    if (speechSession) {
+      recordingProcess.stdout.on('data', (chunk) => speechSession.job.write(chunk));
+    }
     
     let errorOutput = '';
     const MAX_ERROR_OUTPUT = 102400; // 100KB
@@ -528,10 +647,12 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       } catch (e) {}
     });
 
-    ffmpegSystemAudioProcess.on('exit', (code) => {
+    recordingProcess.on('close', (code) => {
       safeLog(`FFmpeg system audio process exited with code ${code}`);
-      ffmpegSystemAudioProcess = null;
-      try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
+      if (ffmpegSystemAudioProcess === recordingProcess) {
+        ffmpegSystemAudioProcess = null;
+        try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
+      }
     });
 
     // 等待 ffmpeg 启动
@@ -541,10 +662,10 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       }, 5000);
 
       const checkStarted = () => {
-        if (ffmpegSystemAudioProcess && ffmpegSystemAudioProcess.pid) {
+        if (ffmpegSystemAudioProcess === recordingProcess && recordingProcess.pid) {
           clearTimeout(timeout);
           try {
-            fs.writeFileSync(PID_FILE, String(ffmpegSystemAudioProcess.pid));
+            fs.writeFileSync(PID_FILE, String(recordingProcess.pid));
           } catch (e) {}
           resolve();
         }
@@ -553,8 +674,9 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       setTimeout(checkStarted, 500);
     });
 
-    return { success: true, pid: ffmpegSystemAudioProcess.pid };
+    return { success: true, pid: recordingProcess.pid };
   } catch (error) {
+    if (speechSession) cancelLocalAsr(event.sender);
     safeError('Failed to start ffmpeg system audio recording:', error);
     return { success: false, error: error.message };
   }
@@ -563,51 +685,26 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
 // 停止 ffmpeg 音频录制
 ipcMain.handle('stop-ffmpeg-recording', async () => {
   try {
-    const results = {
-      systemAudio: false
-    };
+    const recordingProcess = ffmpegSystemAudioProcess;
+    if (!recordingProcess) {
+      return { success: false, error: 'FFmpeg 录音进程已退出' };
+    }
 
-    const stopPromises = [];
-
-    // 停止系统音频录制
-    if (ffmpegSystemAudioProcess) {
-      const systemAudioPromise = new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          // 超时后强制终止
-          try {
-            ffmpegSystemAudioProcess.kill('SIGKILL');
-          } catch (e) {}
-          results.systemAudio = true;
-          ffmpegSystemAudioProcess = null;
-          try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
-          resolve();
-        }, 3000);
-
-        ffmpegSystemAudioProcess.on('exit', () => {
-          clearTimeout(timeout);
-          results.systemAudio = true;
-          ffmpegSystemAudioProcess = null;
-          try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch (e) {}
-          resolve();
-        });
-
-        // 发送 'q' 命令优雅地停止 ffmpeg
-        try {
-          ffmpegSystemAudioProcess.stdin.write('q');
-        } catch (e) {
-          // 如果 stdin 已关闭，直接 kill
-          ffmpegSystemAudioProcess.kill('SIGTERM');
-        }
+    const code = await new Promise((resolve) => {
+      const timeout = setTimeout(() => recordingProcess.kill('SIGKILL'), 3000);
+      recordingProcess.once('close', (code) => {
+        clearTimeout(timeout);
+        resolve(code);
       });
-      stopPromises.push(systemAudioPromise);
-    }
 
-    // 等待所有录制进程停止
-    if (stopPromises.length > 0) {
-      await Promise.all(stopPromises);
-    }
+      recordingProcess.stdin.once('error', () => recordingProcess.kill('SIGTERM'));
+      recordingProcess.stdin.write('q');
+    });
 
-    return { success: true, results };
+    if (code !== 0) {
+      return { success: false, error: 'FFmpeg 未能正常结束录音，请尝试恢复临时文件' };
+    }
+    return { success: true, results: { systemAudio: true } };
   } catch (error) {
     safeError('Error stopping ffmpeg recording:', error);
     return { success: false, error: error.message };
@@ -848,7 +945,7 @@ ipcMain.handle('read-audio-file', async (event, filePath) => {
     }
     
     const buffer = await fs.promises.readFile(managedFilePath);
-    return { success: true, data: new Uint8Array(buffer) };
+    return audioFilePayload(buffer, managedFilePath);
   } catch (error) {
     safeError('Error reading audio file:', error);
     return { success: false, error: error.message };
@@ -856,6 +953,7 @@ ipcMain.handle('read-audio-file', async (event, filePath) => {
 });
 
 ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => {
+  let targetDir;
   try {
     const managedSourcePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
 
@@ -863,18 +961,37 @@ ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => 
       return { success: false, error: 'File not found: ' + managedSourcePath };
     }
 
-    const segmentCount = Math.max(1, options.segmentCount || 1);
-    const segmentDuration = Math.max(1, Math.ceil(options.segmentDuration || 1));
-    const sourceName = path.basename(managedSourcePath, path.extname(managedSourcePath));
-    const targetDir = createManagedSplitOutputDir(AUDIO_DIR, managedSourcePath);
-
-    fs.mkdirSync(targetDir, { recursive: true });
-
-    const outputPattern = path.join(targetDir, `${sourceName}_%03d.webm`);
+    let segmentDuration = Number(options.segmentDuration);
+    if (options.segmentDuration === null) {
+      // Some WebM recordings lack duration metadata. Scan audio packets without decoding.
+      const { stdout } = await execFileAsync('ffmpeg', [
+        '-nostdin', '-hide_banner', '-loglevel', 'error', '-progress', 'pipe:1',
+        '-i', managedSourcePath, '-map', '0:a:0', '-c', 'copy', '-f', 'null', '-'
+      ]);
+      const lastTime = [...stdout.matchAll(/^out_time_us=(\d+)\r?$/gm)].at(-1);
+      const duration = Number(lastTime?.[1]) / 1e6;
+      const segmentCount = Math.max(Number(options.segmentCount) || 1, Math.ceil(duration / (55 * 60)));
+      segmentDuration = duration / segmentCount;
+    }
+    if (!Number.isFinite(segmentDuration) || segmentDuration <= 0) {
+      throw new Error('Invalid audio segment duration');
+    }
+    const sourceExtension = path.extname(managedSourcePath).toLowerCase();
+    const copyCodec = Object.hasOwn(AUDIO_FILE_TYPES, sourceExtension);
+    const outputExtension = {
+      '.aac': '.m4a',
+      '.oga': '.ogg',
+      '.opus': '.ogg'
+    }[sourceExtension] || (copyCodec ? sourceExtension : '.webm');
+    const targetPrefix = createManagedSplitOutputDir(AUDIO_DIR, managedSourcePath);
+    fs.mkdirSync(path.dirname(targetPrefix), { recursive: true });
+    targetDir = fs.mkdtempSync(`${targetPrefix}-`);
+    const outputPattern = `segment_%06d${outputExtension}`;
     const args = [
+      '-nostdin', '-hide_banner', '-loglevel', 'error',
       '-i', managedSourcePath,
-      '-vn',
-      '-c', 'copy',
+      '-map', '0:a:0',
+      '-c', copyCodec ? 'copy' : 'libopus',
       '-f', 'segment',
       '-segment_time', String(segmentDuration),
       '-reset_timestamps', '1',
@@ -883,7 +1000,7 @@ ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => 
     ];
 
     await new Promise((resolve, reject) => {
-      const ffmpeg = spawn('ffmpeg', args);
+      const ffmpeg = spawn('ffmpeg', args, { cwd: targetDir });
       let stderr = '';
 
       ffmpeg.stderr.on('data', (data) => {
@@ -905,17 +1022,23 @@ ipcMain.handle('split-audio-file', async (event, { filePath, options = {} }) => 
     });
 
     const files = fs.readdirSync(targetDir)
-      .filter((name) => name.endsWith('.webm'))
+      .filter((name) => name.endsWith(outputExtension))
       .sort()
-      .slice(0, segmentCount)
       .map((name) => path.join(targetDir, name));
 
     if (files.length === 0) {
-      return { success: false, error: 'No split audio segments created' };
+      throw new Error('No split audio segments created');
     }
 
     return { success: true, files };
   } catch (error) {
+    if (targetDir) {
+      try {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        safeWarn('Error cleaning up audio segments:', cleanupError);
+      }
+    }
     safeError('Error splitting audio file:', error);
     return { success: false, error: error.message };
   }
@@ -964,7 +1087,7 @@ ipcMain.handle('append-audio-to-path', async (event, { data, filePath }) => {
 // 解决 fetch API 在发送大文件 multipart/form-data 时与 SiliconFlow 服务端不兼容的问题
 // 支持 filePath 参数进行流式上传，避免渲染进程侧全量复制二进制数据
 ipcMain.handle('http-post', async (event, options) => {
-  const { url, headers, body, filePath, timeout = 600000, model, filename } = options;
+  const { url, headers, body, filePath, timeout = 600000, model, filename, fileType } = options;
 
   return new Promise((resolve) => {
     try {
@@ -1012,8 +1135,9 @@ ipcMain.handle('http-post', async (event, options) => {
         }
 
         const fileStats = fs.statSync(managedFilePath);
-        const fileType = 'audio/webm';
-        const uploadFilename = filename || path.basename(managedFilePath);
+        const contentType = AUDIO_FILE_TYPES[path.extname(managedFilePath).toLowerCase()]
+          || (typeof fileType === 'string' && /^audio\/[\w.+-]+$/.test(fileType) ? fileType : 'application/octet-stream');
+        const uploadFilename = (filename || path.basename(managedFilePath)).replace(/["\r\n]/g, '_');
 
         const boundary = '----FormBoundary' + Math.random().toString(36).substring(2, 17);
         const crlf = '\r\n';
@@ -1021,7 +1145,7 @@ ipcMain.handle('http-post', async (event, options) => {
         const preamble =
           '--' + boundary + crlf +
           'Content-Disposition: form-data; name="file"; filename="' + uploadFilename + '"' + crlf +
-          'Content-Type: ' + fileType + crlf +
+          'Content-Type: ' + contentType + crlf +
           crlf;
 
         const postamble =
@@ -1067,6 +1191,7 @@ ipcMain.handle('http-post', async (event, options) => {
         req.write(preambleBuffer);
 
         const fileStream = fs.createReadStream(managedFilePath, { highWaterMark: 64 * 1024 });
+        req.on('close', () => fileStream.destroy());
         fileStream.on('error', (err) => {
           req.destroy(err);
         });
@@ -1181,6 +1306,14 @@ ipcMain.handle('delete-file', async (event, filePath) => {
     const managedFilePath = resolveManagedAudioPath(AUDIO_DIR, filePath);
     if (fs.existsSync(managedFilePath)) {
       fs.unlinkSync(managedFilePath);
+      const parentDir = path.dirname(managedFilePath);
+      if (path.dirname(parentDir) === path.join(AUDIO_DIR, 'segments')) {
+        try {
+          fs.rmdirSync(parentDir);
+        } catch (error) {
+          if (error.code !== 'ENOTEMPTY' && error.code !== 'ENOENT') throw error;
+        }
+      }
     }
     return { success: true };
   } catch (error) {

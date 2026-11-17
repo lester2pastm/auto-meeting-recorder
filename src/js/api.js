@@ -498,6 +498,7 @@ async function dispatchTranscriptionViaIPC(audioBlob, apiUrl, apiKey, model, tim
             filePath: audioFilePath,
             model: model,
             filename: filename,
+            fileType: audioBlob?.type,
             timeout: timeout
         });
 
@@ -600,7 +601,7 @@ async function dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, ti
 
     console.log(`发送 ${providerLabel} 请求:`, { url: audioEndpoint, model });
 
-    if (isElectron && isElectron() && window.electronAPI && typeof window.electronAPI.httpPost === 'function') {
+    if (typeof isElectron === 'function' && isElectron() && typeof window.electronAPI?.httpPost === 'function') {
         return await dispatchTranscriptionViaIPC(audioBlob, audioEndpoint, apiKey, effectiveModel, timeout, uploadFilename, audioFilePath);
     }
 
@@ -663,7 +664,7 @@ async function transcribeAudio(audioBlob, apiUrl, apiKey, model = 'whisper-1', a
         const durationMinutes = isValidAudioDuration(durationSeconds) ? durationSeconds / 60 : null;
         if (durationMinutes !== null && durationMinutes > 60) {
             console.log('音频时长超过 60 分钟限制，使用分段转写...');
-            return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress);
+            return await transcribeAudioSegments(audioBlob, apiUrl, apiKey, model, audioFilePath, onProgress, durationSeconds);
         }
 
         const response = await dispatchTranscriptionRequest(audioBlob, apiUrl, apiKey, model, 600000, null, audioFilePath);
@@ -715,6 +716,8 @@ function detectAudioFormat(audioBlob) {
     if (mimeType.includes('mp4') || mimeType.includes('m4a')) return 'mp4';
     if (mimeType.includes('ogg')) return 'ogg';
     if (mimeType.includes('webm')) return 'webm';
+    if (mimeType.includes('flac')) return 'flac';
+    if (mimeType.includes('aac')) return 'aac';
 
     return 'webm';
 }
@@ -787,7 +790,7 @@ async function createBlobFromFilePath(filePath) {
     }
 
     const binary = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
-    return new Blob([binary], { type: 'audio/webm' });
+    return new Blob([binary], { type: readResult.type || 'audio/webm' });
 }
 
 async function splitAudioByFilePath(filePath, totalDuration, totalSizeMB) {
@@ -800,7 +803,7 @@ async function splitAudioByFilePath(filePath, totalDuration, totalSizeMB) {
 
     const result = await window.electronAPI.splitAudioFile(filePath, {
         segmentCount,
-        segmentDuration: totalDuration / segmentCount
+        segmentDuration: isValidAudioDuration(totalDuration) ? totalDuration / segmentCount : null
     });
 
     if (!result.success) {
@@ -880,16 +883,15 @@ async function audioBufferToWebm(audioBuffer) {
 }
 
 // 分段转写音频
-async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null, onProgress = null) {
+async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisper-1', audioFilePath = null, onProgress = null, knownDuration = null) {
     const requestTimeout = 600000;
     // 直接使用原始 webm，不需要转换为 WAV
     const sizeMB = audioBlob.size / (1024 * 1024);
     
     // 获取音频时长（使用 audio 元素）
-    const duration = await getAudioDuration(audioBlob);
+    const duration = knownDuration ?? await getAudioDuration(audioBlob, !audioFilePath);
     const hasKnownDuration = isValidAudioDuration(duration);
     const durationMinutes = hasKnownDuration ? duration / 60 : 0;
-    const durationLabel = durationMinutes === null ? 'unknown' : `${durationMinutes.toFixed(2)}åˆ†é’Ÿ`;
     
     console.log(`音频信息: ${durationMinutes.toFixed(2)}分钟, ${sizeMB.toFixed(2)}MB`);
     
@@ -900,7 +902,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     
     if (!needsSplit) {
         // 不需要分割，直接转写
-        return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, requestTimeout);
+        return await transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, requestTimeout, audioFilePath);
     }
     
     // 需要分割
@@ -908,7 +910,7 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     let segments = null;
     let segmentPaths = [];
 
-    if (audioFilePath && hasKnownDuration && window.electronAPI && typeof window.electronAPI.splitAudioFile === 'function') {
+    if (audioFilePath && typeof window.electronAPI?.splitAudioFile === 'function') {
         try {
             segmentPaths = await splitAudioByFilePath(audioFilePath, duration, sizeMB);
             console.log(`主进程已分割为 ${segmentPaths.length} 个片段`);
@@ -919,62 +921,68 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
     } else if (!audioFilePath) {
         segments = await splitAudio(audioBlob, 45, hasKnownDuration ? duration : null);
     } else {
-        return { success: false, message: 'Audio segmentation requires a file path' };
+        return { success: false, message: 'Audio segmentation requires FFmpeg' };
     }
 
     // 逐个转写每个片段
     const transcripts = [];
     const totalSegments = segmentPaths.length || (segments ? segments.length : 0);
     let lastFailedMessage = '';
-    const loadSegmentBlob = async (index) => (
-        segmentPaths.length > 0
-            ? createBlobFromFilePath(segmentPaths[index])
-            : segments[index]
-    );
+    const canStream = segmentPaths.length > 0 && !resolveTranscriptionProvider(apiUrl).isBailian
+        && typeof isElectron === 'function' && isElectron() && typeof window.electronAPI?.httpPost === 'function';
+    const maxAttempts = 3;
 
-    for (let i = 0; i < totalSegments; i++) {
-        console.log(`转写片段 ${i + 1}/${totalSegments}...`);
-        const segmentFilePath = segmentPaths.length > 0 ? segmentPaths[i] : null;
-        let segmentBlob = await loadSegmentBlob(i);
-
-        let result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout, segmentFilePath);
-        segmentBlob = null;
-
-        let retryCount = 0;
-        const maxRetries = 2;
-        while (!result.success && retryCount < maxRetries) {
-            retryCount++;
-            console.log(getTranscriptionRetryProgressMessage(result, retryCount + 1, maxRetries + 1));
-            if (typeof onProgress === 'function') {
-                onProgress(getTranscriptionRetryProgressMessage(result, retryCount + 1, maxRetries + 1));
+    try {
+        for (let i = 0; i < totalSegments; i++) {
+            console.log(`转写片段 ${i + 1}/${totalSegments}...`);
+            const segmentFilePath = segmentPaths[i] || null;
+            let result;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const segmentBlob = segmentFilePath
+                        ? (canStream ? null : await createBlobFromFilePath(segmentFilePath))
+                        : segments[i];
+                    result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout, segmentFilePath);
+                } catch (error) {
+                    result = { success: false, message: getErrorMessage(error) };
+                }
+                if (result.success || attempt === maxAttempts) break;
+                const message = getTranscriptionRetryProgressMessage(result, attempt + 1, maxAttempts);
+                console.log(message);
+                if (typeof onProgress === 'function') onProgress(message);
+                await delay(attempt * 5000);
             }
-            await new Promise(resolve => setTimeout(resolve, retryCount * 5000));
-            segmentBlob = await loadSegmentBlob(i);
-            result = await transcribeSingleSegment(segmentBlob, apiUrl, apiKey, model, requestTimeout, segmentFilePath);
-            segmentBlob = null;
-        }
 
-        if (segments && segments[i]) {
-            segments[i] = null;
+            if (segments) segments[i] = null;
+            if (result.success) {
+                transcripts.push(result.text);
+            } else {
+                lastFailedMessage = getTranscriptionRetryExhaustedMessage(result);
+                console.error(`片段 ${i + 1} 转写失败:`, lastFailedMessage);
+            }
         }
-
-        if (result.success) {
-            transcripts.push(result.text);
-            console.log(`片段 ${i + 1} 转写完成`);
-        } else {
-            lastFailedMessage = getTranscriptionRetryExhaustedMessage(result);
-            console.error(`片段 ${i + 1} 转写失败:`, lastFailedMessage);
+    } finally {
+        if (segmentPaths.length > 0 && typeof window.electronAPI?.deleteFile === 'function') {
+            await Promise.allSettled(segmentPaths.map(async (filePath) => {
+                const result = await window.electronAPI.deleteFile(filePath);
+                if (result?.success === false) console.warn('清理音频片段失败:', result.error);
+            }));
         }
     }
 
-    segments = null;
-    
     if (transcripts.length === 0) {
         return { success: false, message: lastFailedMessage || getI18nValue('transcriptionRetryExhaustedGeneric') };
     }
-    
-    if (segmentPaths.length > 0 && window.electronAPI && typeof window.electronAPI.deleteFile === 'function') {
-        await Promise.all(segmentPaths.map((filePath) => window.electronAPI.deleteFile(filePath).catch(() => null)));
+    if (transcripts.length < totalSegments) {
+        return {
+            success: false,
+            incomplete: true,
+            message: getI18nValue('transcriptionIncomplete', {
+                completed: transcripts.length,
+                total: totalSegments,
+                reason: lastFailedMessage
+            })
+        };
     }
 
     const combinedText = transcripts.join('\n\n');
@@ -984,11 +992,16 @@ async function transcribeAudioSegments(audioBlob, apiUrl, apiKey, model = 'whisp
 }
 
 // 获取音频时长（使用 audio 元素，避免解码整个文件）
-async function getAudioDuration(audioBlob) {
-    return new Promise((resolve, reject) => {
+async function getAudioDuration(audioBlob, allowDecodeFallback = true) {
+    return new Promise((resolve) => {
         const audio = new Audio();
+        audio.preload = 'metadata';
         const url = URL.createObjectURL(audioBlob);
         const resolveWithFallback = () => {
+            if (!allowDecodeFallback) {
+                resolve(0);
+                return;
+            }
             getAudioDurationFallback(audioBlob)
                 .then((duration) => resolve(isValidAudioDuration(duration) ? duration : 0))
                 .catch(() => resolve(0));
@@ -1035,7 +1048,7 @@ async function transcribeSingleSegment(audioBlob, apiUrl, apiKey, model, timeout
             apiKey,
             model,
             timeout,
-            'segment.webm',
+            audioFilePath ? audioFilePath.split(/[\\/]/).pop() : `segment.${detectAudioFormat(audioBlob)}`,
             audioFilePath
         );
 

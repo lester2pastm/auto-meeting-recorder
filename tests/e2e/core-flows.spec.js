@@ -211,6 +211,100 @@ async function showRecoveryDialogWithMocks(page, { processResult = 'transcribe' 
   }, { recoveryAction: processResult });
 }
 
+test('shows recording startup progress and re-enables retry after a failure', async ({ page }) => {
+  await gotoApp(page);
+  await installRecordingMocks(page);
+  await page.evaluate(() => {
+    const start = startRecording;
+    startRecording = () => new Promise((resolve, reject) => {
+      window.rejectRecordingStart = () => {
+        startRecording = start;
+        reject(new Error('设备暂时不可用'));
+      };
+    });
+  });
+
+  const start = page.locator('#btnStartRecording');
+  const stop = page.locator('#btnStopRecording');
+  await start.click();
+  await expect(start).toBeDisabled();
+  await expect(start).toHaveAttribute('aria-busy', 'true');
+  await expect(start.getByText('正在启动录音…')).toBeVisible();
+  await expect(start.locator('.loading-spinner')).toBeVisible();
+  await expect(stop).toBeHidden();
+
+  await page.evaluate(() => window.rejectRecordingStart());
+  await expect(page.locator('#toast')).toContainText('录音启动失败');
+  await expect(start).toBeEnabled();
+  await expect(start.getByText('开始录音')).toBeVisible();
+  await expect(start.locator('.loading-spinner')).toBeHidden();
+
+  await start.click();
+  await expect(start).toBeHidden();
+  await expect(stop).toBeEnabled();
+  await expect(stop).toBeVisible();
+});
+
+test('shows transcription API settings only in custom API mode', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.electronAPI = {
+      localAsrSupported: true,
+      loadConfig: async () => ({ success: false }),
+      saveConfig: async () => ({ success: true }),
+      readRecoveryMeta: async () => ({ success: false })
+    };
+  });
+  await mockApiResponses(page);
+  await gotoApp(page);
+  await openSettings(page);
+
+  const mode = page.locator('#sttMode');
+  const apiFields = page.locator('#sttApiFields');
+  const testButton = page.locator('#btnTestSttApi');
+  await expect(mode).toHaveValue('local');
+  const audioSourceFont = await page.locator('[data-select-trigger="preferredMicSource"]')
+    .evaluate(element => getComputedStyle(element).fontFamily);
+  await expect(mode).toHaveCSS('font-family', audioSourceFont);
+  await expect(apiFields).toBeHidden();
+  await expect(testButton).toBeHidden();
+  await expect(page.locator('#summaryApiUrl')).toBeVisible();
+  await expect(page.locator('#btnSaveSttSettings')).toBeVisible();
+
+  await mode.selectOption('api');
+  await expect(apiFields).toBeVisible();
+  await expect(testButton).toBeVisible();
+  await page.fill('#sttApiUrl', 'https://stt.example.com/v1/audio/transcriptions');
+  await page.fill('#sttApiKey', 'test-key');
+  await page.fill('#sttModel', 'whisper-1');
+  await testButton.click();
+  await expect(page.locator('#toast')).toContainText('设置已自动保存');
+  await page.click('#btnSaveTemplate');
+  await expect(page.locator('#toast')).toContainText('模板已保存');
+
+  await page.reload();
+  await waitForAppReady(page);
+  await openSettings(page);
+  await expect(mode).toHaveValue('api');
+  await expect(page.locator('#sttApiKey')).toHaveValue('test-key');
+  await page.fill('#sttApiUrl', 'invalid-unsaved-url');
+  await mode.selectOption('local');
+  await expect(apiFields).toBeHidden();
+  await expect(testButton).toBeHidden();
+  await page.click('#btnSaveSttSettings');
+  await expect(page.locator('#toast')).toContainText('已启用本地语音转写');
+  await page.click('#btnSaveTemplate');
+  await expect(page.locator('#toast')).toContainText('模板已保存');
+
+  await page.reload();
+  await waitForAppReady(page);
+  await openSettings(page);
+  await expect(mode).toHaveValue('local');
+  await expect(apiFields).toBeHidden();
+  await mode.selectOption('api');
+  await expect(page.locator('#sttApiUrl')).toHaveValue('https://stt.example.com/v1/audio/transcriptions');
+  await expect(page.locator('#sttApiKey')).toHaveValue('test-key');
+});
+
 test.describe('Core E2E flows', () => {
   test.beforeEach(async ({ page }) => {
     await mockApiResponses(page);

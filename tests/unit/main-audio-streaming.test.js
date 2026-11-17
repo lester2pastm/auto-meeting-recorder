@@ -66,6 +66,7 @@ describe('Main process audio streaming optimization', () => {
         return str.includes('audio_files') || str.includes('/proc/');
       }),
       mkdirSync: jest.fn(),
+      mkdtempSync: jest.fn((prefix) => prefix + 'test'),
       unlinkSync: jest.fn(),
       statSync: jest.fn(() => ({ size: 1024 })),
       readFileSync: jest.fn((filePath) => {
@@ -126,16 +127,23 @@ describe('Main process audio streaming optimization', () => {
     jest.doMock('electron-store', () => jest.fn(() => ({})));
     jest.doMock('child_process', () => ({
       spawn: spawnSpy,
-      exec: jest.fn()
+      exec: jest.fn(),
+      execFile: jest.fn()
     }));
     jest.doMock('util', () => ({
-      promisify: jest.fn(() => jest.fn())
+      promisify: jest.fn(() => jest.fn().mockResolvedValue({
+        stdout: 'out_time_us=30000000\nprogress=continue\nout_time_us=150000000\nprogress=end\n'
+      }))
     }));
     jest.doMock('../../electron/linux-audio-helper', () => ({
       checkLinuxDependencies: jest.fn(),
       parsePulseSourceList: jest.fn(() => []),
       chooseRecordingSources: jest.fn(() => ({})),
       getAlsaSourceLoadCandidates: jest.fn(() => [])
+    }));
+    jest.doMock('../../electron/local-asr', () => ({
+      supported: true,
+      startLocalAsr: jest.fn()
     }));
 
     // Mock https/http modules
@@ -266,18 +274,158 @@ describe('Main process audio streaming optimization', () => {
 
       expect(result.success).toBe(true);
     });
+
+    test.each([
+      ['mp3', 'mp3', 'copy'],
+      ['wav', 'wav', 'copy'],
+      ['m4a', 'm4a', 'copy'],
+      ['aac', 'm4a', 'copy'],
+      ['aiff', 'webm', 'libopus']
+    ])('splits %s into %s on Linux without dropping the final segment', async (input, output, codec) => {
+      loadMainModule({ platform: 'linux' });
+      fsMock.readdirSync.mockReturnValue([0, 1, 2].map(index => 'segment_00000' + index + '.' + output));
+
+      const result = await handlers['split-audio-file']({}, {
+        filePath: 'meeting.' + input,
+        options: { segmentCount: 2, segmentDuration: 30.25 }
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.files).toHaveLength(3);
+      const args = spawnSpy.mock.calls[0][1];
+      expect(args[args.indexOf('-c') + 1]).toBe(codec);
+      expect(args[args.indexOf('-segment_time') + 1]).toBe('30.25');
+      expect(args.at(-1)).toMatch(new RegExp('\\.' + output + '$'));
+    });
+
+    test('removes the split directory when FFmpeg produces no files', async () => {
+      loadMainModule({ platform: 'linux' });
+      fsMock.readdirSync.mockReturnValue([]);
+
+      const result = await handlers['split-audio-file']({}, {
+        filePath: 'meeting.webm',
+        options: { segmentCount: 2, segmentDuration: 30 }
+      });
+
+      expect(result.success).toBe(false);
+      expect(fsMock.rmSync).toHaveBeenCalledWith(fsMock.mkdtempSync.mock.results[0].value, {
+        recursive: true,
+        force: true
+      });
+    });
+
+    test('uses packet timestamps for Linux recordings without a declared duration', async () => {
+      loadMainModule({ platform: 'linux' });
+
+      const result = await handlers['split-audio-file']({}, {
+        filePath: 'meeting.webm',
+        options: { segmentCount: 3, segmentDuration: null }
+      });
+
+      expect(result.success).toBe(true);
+      const args = spawnSpy.mock.calls[0][1];
+      expect(args[args.indexOf('-segment_time') + 1]).toBe('50');
+    });
+  });
+
+  test.each([0, 1])('Linux stop waits for FFmpeg to close and checks exit code %s', async (exitCode) => {
+    loadMainModule({ platform: 'linux' });
+    const { EventEmitter } = require('events');
+    const ffmpeg = new EventEmitter();
+    ffmpeg.pid = 12345;
+    ffmpeg.kill = jest.fn();
+    ffmpeg.stderr = new EventEmitter();
+    ffmpeg.stdin = new EventEmitter();
+    ffmpeg.stdin.write = jest.fn();
+    spawnSpy.mockReturnValueOnce(ffmpeg);
+
+    const started = await handlers['start-ffmpeg-system-audio']({}, {
+      outputPath: 'recording.webm',
+      microphoneDevice: 'mic'
+    });
+    expect(started.success).toBe(true);
+
+    const stop = handlers['stop-ffmpeg-recording']();
+    expect(ffmpeg.stdin.write).toHaveBeenCalledWith('q');
+    let stopped = false;
+    stop.then(() => { stopped = true; });
+    ffmpeg.emit('exit', exitCode);
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    ffmpeg.emit('close', exitCode);
+
+    expect((await stop).success).toBe(exitCode === 0);
+  });
+
+  test('Linux recording shares one FFmpeg mix between the saved audio and local captions', async () => {
+    loadMainModule({ platform: 'linux' });
+    const { EventEmitter } = require('events');
+    const ffmpeg = new EventEmitter();
+    ffmpeg.pid = 12345;
+    ffmpeg.stderr = new EventEmitter();
+    ffmpeg.stdout = new EventEmitter();
+    spawnSpy.mockReturnValueOnce(ffmpeg);
+    const job = {
+      ready: Promise.resolve({ success: true }),
+      write: jest.fn(),
+      finish: jest.fn().mockResolvedValue({ success: true, text: '本地字幕' })
+    };
+    require('../../electron/local-asr').startLocalAsr.mockReturnValue(job);
+    const sender = { send: jest.fn(), isDestroyed: () => false };
+
+    const result = await handlers['start-ffmpeg-system-audio']({ sender }, {
+      outputPath: 'recording.webm',
+      microphoneDevice: 'mic',
+      device: 'speaker.monitor',
+      localAsr: true
+    });
+
+    expect(result.success).toBe(true);
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const args = spawnSpy.mock.calls[0][1];
+    expect(args[args.indexOf('-filter_complex') + 1]).toContain('[aout]asplit=2[record][speech]');
+    expect(args.slice(-11)).toEqual([
+      '-map', '[speech]', '-ar', '16000', '-ac', '1', '-c:a', 'pcm_f32le', '-f', 'f32le', 'pipe:1'
+    ]);
+    const tail = Buffer.alloc(4);
+    ffmpeg.stdout.emit('data', tail);
+    ffmpeg.emit('close', 0);
+    expect(job.write).toHaveBeenCalledWith(tail);
+    expect(await handlers['finish-local-asr']({ sender }, true)).toEqual({ success: true, text: '本地字幕' });
   });
 
   describe('P0-2: http-post supports filePath for streaming upload', () => {
-    test('http-post handler is registered and accepts filePath parameter', () => {
+    test('streams an MP3 with a matching filename and MIME type', async () => {
       loadMainModule({ platform: 'linux' });
+      const { Readable, Writable } = require('stream');
+      const chunks = [];
+      fsMock.statSync.mockReturnValue({ size: Buffer.byteLength('mock-audio-data') });
+      const request = require('https').request;
+      request.mockImplementationOnce((options, callback) => {
+        const destination = new Writable({
+          write(chunk, encoding, done) {
+            chunks.push(chunk);
+            done();
+          }
+        });
+        destination.on('finish', () => {
+          const response = Readable.from([Buffer.from('{"text":"ok"}')]);
+          response.statusCode = 200;
+          response.headers = {};
+          callback(response);
+        });
+        return destination;
+      });
 
-      const handler = handlers['http-post'];
-      expect(handler).toBeDefined();
-      expect(typeof handler).toBe('function');
+      const result = await handlers['http-post']({}, {
+        url: 'https://example.invalid/transcribe',
+        filePath: 'segment.mp3'
+      });
 
-      // Verify the handler destructures filePath from options
-      // (verified by structure: if handler didn't accept filePath, providing it wouldn't break)
+      const body = Buffer.concat(chunks);
+      expect(result.ok).toBe(true);
+      expect(body.toString()).toContain('filename="segment.mp3"\r\nContent-Type: audio/mpeg\r\n\r\nmock-audio-data');
+      expect(request.mock.calls[0][0].headers['Content-Length']).toBe(String(body.length));
     });
 
     test('http-post handler with direct body still works for backward compatibility', () => {
@@ -293,5 +441,15 @@ describe('Main process audio streaming optimization', () => {
       // The key code structure is: if (filePath) { readStream.pipe(req) } else { req.write(buffer) }
       expect(typeof handler).toBe('function');
     });
+  });
+
+  test('only exposes audio bytes when reading a slice of a shared buffer', async () => {
+    loadMainModule({ platform: 'linux' });
+    fsMock.promises.readFile.mockResolvedValue(Buffer.from([99, 1, 2, 99]).subarray(1, 3));
+
+    const result = await handlers['read-audio-file']({}, 'segment.wav');
+
+    expect(result.type).toBe('audio/wav');
+    expect([...new Uint8Array(result.data.buffer)]).toEqual([1, 2]);
   });
 });

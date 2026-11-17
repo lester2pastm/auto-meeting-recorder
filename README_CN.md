@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.7.6-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.8.0-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -42,14 +42,15 @@
 |---|---|
 | 恢复优先 | 启动时自动检测中断录音，并允许继续录制、立即转写或丢弃 |
 | 本地优先 | 音频、设置、历史记录和纪要默认保存在本机 |
-| 接口灵活 | 支持你自行配置的 OpenAI 兼容转写接口和聊天式纪要接口 |
+| 离线转写 | Windows 和 Linux 默认使用内置 X-ASR，支持中英实时转写，无需配置转写 API Key |
+| 接口灵活 | 可选用 OpenAI 兼容转写接口，也可配置聊天式纪要接口 |
 | 面向桌面录音 | 支持 Windows、macOS、Linux，并为 Linux 提供 FFmpeg 录音路径 |
 | 历史可复用 | 可以重新打开历史会议、回放音频、复制全文，并重新生成纪要 |
 
 ### 为什么当前版本值得关注
 
-- 当前版本：`2.6.17`
-- 最近的工作重点是恢复流程正确性、设置校验安全性、用户可见错误提示国际化，以及端到端回归覆盖
+- 当前版本：`2.8.0`
+- Windows 和 Linux 内置中英离线转写。本版也改进了录音启动提示、Linux 音频采集和录音恢复。
 - `src/index.html` 仍适合 UI 开发和浏览器 E2E 检查，但完整产品能力依赖 Electron IPC
 
 ---
@@ -65,7 +66,7 @@
 
 ### 处理
 
-- 将音频发送到你配置的 STT 接口
+- 在 Windows 和 Linux 上默认本地转写，也可切换到自定义转写 API
 - 转写完成后自动进入纪要生成
 - 支持失败后重新转写
 - 对超长音频或大于 `50 MB` 的文件自动分段处理
@@ -96,8 +97,8 @@
 
 - 开发环境建议使用 Node.js `18`
 - `npm`
-- 一个语音转写 API 地址、密钥和模型
-- 一个纪要生成 API 地址、密钥和模型
+- Windows 和 Linux 源码启动或打包时，脚本用 curl 和 tar 下载并校验 X-ASR 模型
+- 需要自动生成纪要时，配置纪要 API 地址、密钥和模型
 
 ### 安装依赖
 
@@ -129,8 +130,8 @@ npm run build:linux
 ## 典型使用流程
 
 1. 打开桌面应用。
-2. 在设置页配置转写和纪要 API。
-3. 按需测试两个接口的连通性。
+2. 在 Windows 和 Linux 上可以直接开始转写。自定义转写服务和自动纪要可在设置页配置。
+3. 使用自定义接口时，按需测试连接。
 4. 如果需要，选择首选音频源。
 5. 开始录音，或者直接上传音频文件。
 6. 等待全文生成。
@@ -177,6 +178,8 @@ npm run use:win
 ## 配置说明
 
 ### 语音转写设置
+
+Windows 和 Linux 安装包内含 X-ASR 1920 ms INT8 模型，支持录音时实时显示字幕，以及导入、恢复和重试转写。模型核心文件约 162 MiB，源码运行时会缓存到工作区。可在设置页切换到自定义转写 API。Windows 的文件导入和重试使用 Chromium 音频解码，Linux 使用 FFmpeg。 [模型与许可证](https://huggingface.co/GilgameshWind/X-ASR-zh-en)
 
 - API 地址
 - API Key
@@ -259,7 +262,7 @@ auto-meeting-recorder/
 ## 数据与隐私
 
 - 音频、全文、纪要和设置默认保存在本地
-- AI 处理不是离线完成的，音频和文本会发送到你配置的接口
+- 本地转写的音频留在设备上。自定义转写 API 接收音频，云端纪要 API 接收转写文本。
 - 主应用流程中没有分析统计或遥测逻辑
 - API Key 保存在本地；如果你需要更严格的密钥管理，建议结合运行环境进一步审查
 

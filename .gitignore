@@ -36,6 +36,7 @@ Thumbs.db
 
 # Audio files (user generated)
 audio_files/
+assets/local-asr/
 
 # Config files (user specific)
 config.json

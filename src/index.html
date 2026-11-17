@@ -103,6 +103,8 @@
                                     <circle cx="12" cy="12" r="4" fill="currentColor"/>
                                 </svg>
                                 <span data-i18n="startRecording">开始录音</span>
+                                <span class="loading-spinner" aria-hidden="true"></span>
+                                <span data-i18n="startingRecording">正在启动录音…</span>
                             </button>
                             <button id="btnPauseRecording" class="btn btn-secondary" style="display: none;">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -276,22 +278,32 @@
                                 </svg>
                             </div>
                             <div class="settings-title">
-                                <h3 data-i18n="sttConfig">语音识别API配置</h3>
-                                <p>配置语音转文字服务</p>
+                                <h3 data-i18n="sttConfig">语音转写</h3>
                             </div>
                         </div>
                         <div class="settings-form">
-                            <div class="form-field">
-                                <label for="sttApiUrl" data-i18n="apiUrl">API地址</label>
-                                <input type="text" id="sttApiUrl" placeholder="https://api.example.com/v1/audio/transcriptions">
+                            <div class="form-field" id="sttModeGroup" hidden>
+                                <label for="sttMode" data-i18n="sttModeLabel">转写方式</label>
+                                <div class="custom-select">
+                                    <select id="sttMode" class="custom-select-trigger">
+                                        <option value="local" data-i18n="sttModeLocal">本地 X-ASR（无需 API Key）</option>
+                                        <option value="api" data-i18n="sttModeApi">自定义转写 API</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="form-field">
-                                <label for="sttApiKey">API Key</label>
-                                <input type="password" id="sttApiKey" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx">
-                            </div>
-                            <div class="form-field">
-                                <label for="sttModel" data-i18n="modelName">模型名称</label>
-                                <input type="text" id="sttModel" placeholder="whisper-1">
+                            <div id="sttApiFields" class="form-field">
+                                <div class="form-field">
+                                    <label for="sttApiUrl" data-i18n="apiUrl">API地址</label>
+                                    <input type="text" id="sttApiUrl" placeholder="https://api.example.com/v1/audio/transcriptions">
+                                </div>
+                                <div class="form-field">
+                                    <label for="sttApiKey">API Key</label>
+                                    <input type="password" id="sttApiKey" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx">
+                                </div>
+                                <div class="form-field">
+                                    <label for="sttModel" data-i18n="modelName">模型名称</label>
+                                    <input type="text" id="sttModel" placeholder="whisper-1">
+                                </div>
                             </div>
                             <button id="btnTestSttApi" class="btn btn-outline">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -571,6 +583,7 @@
     <script src="js/meeting-title.js"></script>
     <script src="js/recorder.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/local-asr.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/recovery-ui.js"></script>
     <script src="js/transcription-manager.js"></script>

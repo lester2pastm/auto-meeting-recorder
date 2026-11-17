@@ -7,7 +7,7 @@ const {
 } = require('../../electron/managed-paths');
 
 describe('Managed path guards', () => {
-  const audioDir = path.join(path.sep, 'app', 'audio_files');
+  const audioDir = path.resolve(path.sep, 'app', 'audio_files');
 
   test('accepts absolute audio path inside managed audio directory', () => {
     const target = path.join(audioDir, '2026-03-26_10-00-00.webm');

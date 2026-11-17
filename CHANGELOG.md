@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.8.0] - 2026-11-17
+
+### Added
+
+- Bundled X-ASR 1920 ms INT8 for offline Chinese and English live transcription on Windows and Linux without a transcription API key.
+- Added immediate recording startup feedback while the local model loads in the background.
+
+### Changed
+
+- Show transcription API settings when custom API mode is selected.
+
+### Fixed
+
+- Improved Linux FFmpeg recording, file handling, and recovery after interruptions.
+- Preserve audio captured during model startup and flush the final audio chunk when recording stops.
+
 ## [2.7.3] - 2026-04-29
 
 ### Changed

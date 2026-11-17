@@ -20,7 +20,8 @@ function showToast(message, type = 'info') {
     const normalizedType = icons[type] ? type : 'info';
     const iconMarkup = icons[normalizedType];
     
-    toast.innerHTML = iconMarkup + '<span>' + message + '</span>';
+    toast.innerHTML = iconMarkup + '<span></span>';
+    toast.lastElementChild.textContent = message;
     toast.className = `toast ${normalizedType} show`;
 
     if (toastTimer) {
@@ -129,7 +130,7 @@ function updateSubtitleContent(text) {
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function resolveMeetingTitleHelpers() {
@@ -149,7 +150,7 @@ function getLoadingMarkup(message) {
     return `
         <div class="loading-state">
             <div class="loading-spinner"></div>
-            <p>${message}</p>
+            <p>${escapeHtml(message)}</p>
         </div>
     `;
 }
@@ -351,10 +352,10 @@ async function renderMeetingDetail(meeting) {
     const shortTitle = meetingTitleHelpers.truncateMeetingTitle(fullTitle);
     const transcriptContent = isTranscriptProcessing
         ? getLoadingMarkup('正在重新转写，请稍候...')
-        : (meeting.transcript || '暂无转写文本');
+        : escapeHtml(meeting.transcript || '暂无转写文本');
     const summaryContent = isSummaryProcessing
         ? getLoadingMarkup('正在重新生成纪要，请稍候...')
-        : (meeting.summary || '暂无会议纪要');
+        : escapeHtml(meeting.summary || '暂无会议纪要');
 
     detailContent.innerHTML = `
         <div class="detail-page-title-row">
@@ -402,7 +403,7 @@ async function renderMeetingDetail(meeting) {
             </h3>
             ${hasAudioFile ? `
             <audio controls class="audio-player">
-                <source src="${audioUrl}" type="audio/webm">
+                <source src="${audioUrl}">
                 您的浏览器不支持音频播放
             </audio>
             ` : '<p style="color: #888;">音频文件不可用</p>'}
@@ -509,7 +510,9 @@ function updateRecordingButtons(state, options = {}) {
     const btnStop = document.getElementById('btnStopRecording');
     const audioBars = document.getElementById('audioBars');
     const recordingIndicator = document.getElementById('recordingIndicator');
+    const isStarting = options.isStarting === true;
     const isProcessing = options.isProcessing === true;
+    btnStart.setAttribute('aria-busy', String(isStarting));
     const isLinuxElectron = document.body?.dataset?.platform === 'linux' ||
         (typeof window !== 'undefined' &&
             window.electronAPI &&
@@ -549,7 +552,7 @@ function updateRecordingButtons(state, options = {}) {
             return;
         }
 
-        button.disabled = isProcessing;
+        button.disabled = isStarting || isProcessing;
         button.classList.toggle('btn-loading', isProcessing && button === btnStop && state.isRecording);
     });
 }
@@ -612,6 +615,20 @@ function hideLoading() {
 }
 
 function loadSettings(settings) {
+    const sttMode = document.getElementById('sttMode');
+    if (sttMode) {
+        const supportsLocal = !!window.electronAPI?.localAsrSupported;
+        document.getElementById('sttModeGroup').hidden = !supportsLocal;
+        sttMode.value = !supportsLocal || settings?.sttMode === 'api' ? 'api' : 'local';
+
+        const updateApiVisibility = () => {
+            const hideApi = sttMode.value === 'local';
+            document.getElementById('sttApiFields').hidden = hideApi;
+            document.getElementById('btnTestSttApi').hidden = hideApi;
+        };
+        sttMode.onchange = updateApiVisibility;
+        updateApiVisibility();
+    }
     if (!settings) return;
 
     const sttApiUrl = document.getElementById('sttApiUrl');
@@ -658,9 +675,11 @@ function validateOptionalUrl(value, label) {
 
 function getSettingsFromUI() {
     return {
-        sttApiUrl: validateOptionalUrl(readInputValue('sttApiUrl'), 'STT API URL'),
-        sttApiKey: readInputValue('sttApiKey'),
-        sttModel: readInputValue('sttModel'),
+        ...(!document.getElementById('sttApiFields')?.hidden && {
+            sttApiUrl: validateOptionalUrl(readInputValue('sttApiUrl'), 'STT API URL'),
+            sttApiKey: readInputValue('sttApiKey'),
+            sttModel: readInputValue('sttModel')
+        }),
         summaryApiUrl: validateOptionalUrl(readInputValue('summaryApiUrl'), '纪要 API URL'),
         summaryApiKey: readInputValue('summaryApiKey'),
         summaryModel: readInputValue('summaryModel'),

@@ -79,6 +79,12 @@ async function checkTempFilesExist(meta) {
  * 开始录音时创建恢复元数据
  */
 async function startRecoveryTracking(platform, isLinux) {
+    if (recoveryMeta) {
+        const previousRecording = await window.electronAPI.fileExists(recoveryMeta.tempFile);
+        if (!previousRecording.success || previousRecording.exists) {
+            throw new Error('请先处理上一次未归档的录音');
+        }
+    }
     const timestamp = Date.now();
     const audioDirResult = await window.electronAPI.getAudioDirectory();
     
@@ -88,7 +94,7 @@ async function startRecoveryTracking(platform, isLinux) {
     
     const audioDir = audioDirResult.path;
     
-    recoveryMeta = {
+    const nextMeta = {
         id: timestamp.toString(),
         startTime: new Date().toISOString(),
         platform: platform,
@@ -101,7 +107,9 @@ async function startRecoveryTracking(platform, isLinux) {
     };
     
     // 保存元数据
-    await window.electronAPI.writeRecoveryMeta(recoveryMeta);
+    const result = await window.electronAPI.writeRecoveryMeta(nextMeta);
+    if (!result.success) throw new Error(result.error || '无法保存录音恢复信息');
+    recoveryMeta = nextMeta;
     
     // 启动定期保存
     startTempSaveTimer();
@@ -213,15 +221,12 @@ async function recoverAudioBlob(meta) {
  * 增量保存音频 chunk
  */
 async function appendAudioChunk(chunkData) {
-    if (!recoveryMeta) return;
-    
-    try {
-        await window.electronAPI.appendAudioToPath(chunkData, recoveryMeta.tempFile);
-        recoveryMeta.chunkCount++;
-        recoveryMeta.lastSaveTime = Date.now();
-    } catch (error) {
-        console.error('[Recovery] Error appending audio chunk:', error);
-    }
+    const meta = recoveryMeta;
+    if (!meta) throw new Error('录音恢复信息不可用');
+    const result = await window.electronAPI.appendAudioToPath(chunkData, meta.tempFile);
+    if (!result.success) throw new Error(result.error || '录音片段写入失败');
+    meta.chunkCount++;
+    meta.lastSaveTime = Date.now();
 }
 
 // 导出函数

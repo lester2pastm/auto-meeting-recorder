@@ -1,0 +1,5 @@
+X-ASR-zh-en, 1920 ms INT8, punctuation model
+Model authors and source: https://github.com/Gilgamesh-J/X-ASR
+Model card: https://huggingface.co/GilgameshWind/X-ASR-zh-en
+ONNX export: https://github.com/k2-fsa/sherpa-onnx/pull/3662
+X-ASR weights and sherpa-onnx are licensed under the Apache License, Version 2.0.

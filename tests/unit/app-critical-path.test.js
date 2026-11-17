@@ -36,6 +36,7 @@ module.exports = {
   handleTestSummaryApi,
   handleRetryTranscription,
   handleRefreshSummary,
+  handleStopRecording,
   closeDetailModal,
   processRecording,
   processAudioFile,
@@ -63,7 +64,68 @@ describe('App critical path regressions', () => {
       <div id="summaryContent"></div>
       <button id="btnRetryTranscription" style="display: inline-flex;"></button>
       <button id="btnRefreshSummary"></button>
+      <button id="btnStopRecording"></button>
     `;
+  });
+
+  test('Windows and Linux use the local recognizer by default with empty STT settings', async () => {
+    const previous = window.electronAPI;
+    const local = jest.fn().mockResolvedValue({ success: true, text: '本地会议记录' });
+    const cloud = jest.fn();
+    const updateSubtitleContent = jest.fn();
+    window.electronAPI = { localAsrSupported: true };
+    try {
+      const app = loadAppModule({
+        i18n: null,
+        transcribeLocalAudio: local,
+        transcribeAudio: cloud,
+        updateSubtitleContent,
+        updateMeeting: jest.fn().mockResolvedValue(undefined),
+        updateSummaryContent: jest.fn(),
+        showToast: jest.fn(),
+        hideLoading: jest.fn()
+      });
+      const audio = new Blob(['audio'], { type: 'audio/webm' });
+      app.__setCurrentSettings({ sttApiUrl: '', sttApiKey: '' });
+
+      await app.processRecording(audio, 'local-1', '/managed/recording.webm');
+
+      expect(local).toHaveBeenCalledWith(audio, '/managed/recording.webm');
+      expect(cloud).not.toHaveBeenCalled();
+      expect(updateSubtitleContent).toHaveBeenCalledWith('本地会议记录');
+    } finally {
+      window.electronAPI = previous;
+    }
+  });
+
+  test.each([true, false])('clears recovery data only after a successful archive (saved: %s)', async (saved) => {
+    const audioBlob = new Blob(['audio'], { type: 'audio/webm' });
+    const order = [];
+    const clearRecoveryData = jest.fn(async () => { order.push('clear'); });
+    const app = loadAppModule({
+      i18n: null,
+      stopRecording: jest.fn().mockResolvedValue(audioBlob),
+      getRecordingDuration: () => '00:10:00',
+      getRecordingState: () => ({ isRecording: false }),
+      getRecoveryMeta: () => ({ tempFile: '/tmp/recording.webm' }),
+      updateRecordingButtons: jest.fn(),
+      clearRecoveryData,
+      saveMeeting: jest.fn(async () => {
+        order.push('save');
+        return saved
+          ? { id: 'record', audioFilename: '/tmp/archived.webm', audioStorageStatus: 'saved' }
+          : { id: 'record', audioStorageStatus: 'failed', audioStorageError: 'Disk full' };
+      }),
+      showToast: jest.fn(),
+      showLoading: jest.fn(),
+      hideLoading: jest.fn(),
+      updateMeeting: jest.fn().mockResolvedValue(undefined)
+    });
+    app.__setCurrentSettings({});
+
+    await app.handleStopRecording();
+
+    expect(order).toEqual(saved ? ['save', 'clear'] : ['save']);
   });
 
   test('handleRetryTranscription should reuse retryTranscription workflow and close loading', async () => {
@@ -399,12 +461,9 @@ describe('App critical path regressions', () => {
       sttModel: 'whisper-1'
     });
 
-    const file = {
-      name: 'meeting.webm',
-      type: 'audio/webm',
-      size: 4,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
-    };
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const file = new File([bytes], 'meeting.webm', { type: 'audio/webm' });
+    file.arrayBuffer = async () => bytes.buffer;
 
     await app.processAudioFile(file);
 
@@ -457,12 +516,9 @@ describe('App critical path regressions', () => {
       sttModel: 'whisper-1'
     });
 
-    const file = {
-      name: 'meeting.webm',
-      type: 'audio/webm',
-      size: 4,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
-    };
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const file = new File([bytes], 'meeting.webm', { type: 'audio/webm' });
+    file.arrayBuffer = async () => bytes.buffer;
 
     await app.processAudioFile(file);
 

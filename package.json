@@ -1,6 +1,6 @@
 {
   "name": "meeting-minutes-app",
-  "version": "2.7.6",
+  "version": "2.8.0",
   "author": {
     "name": "lester2pastm",
     "email": "25032501+lester2pastm@users.noreply.github.com"
@@ -8,9 +8,13 @@
   "description": "自动会议纪要桌面应用",
   "main": "electron/main.js",
   "scripts": {
+    "prepare:local-asr": "node scripts/prepare-local-asr.js",
+    "prestart": "npm run prepare:local-asr",
     "start": "electron .",
+    "predev": "npm run prepare:local-asr",
     "dev": "electron . --dev",
     "dev:win": "echo 'Switch to Windows environment first: npm run use:win' && exit 1",
+    "predev:linux": "npm run prepare:local-asr",
     "dev:linux": "electron . --dev",
     "use:win": "node scripts/use-win.js",
     "use:linux": "node scripts/use-linux.js",
@@ -23,6 +27,7 @@
     "test": "jest",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
+    "test:local-asr": "npm run prepare:local-asr && node tests/integration/local-asr-runtime.js",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:watch": "jest --watch",
@@ -40,9 +45,15 @@
     "serve": "^14.2.5"
   },
   "dependencies": {
-    "electron-store": "^8.1.0"
+    "electron-store": "^8.1.0",
+    "sherpa-onnx-node": "2.0.1"
   },
   "build": {
+    "beforePack": "./scripts/prepare-local-asr.js",
+    "asarUnpack": [
+      "electron/local-asr-worker.js",
+      "node_modules/sherpa-onnx-*/**/*"
+    ],
     "appId": "com.meetingminutes.app",
     "productName": "AutoMeetingRecorder",
     "directories": {
@@ -52,7 +63,8 @@
       "src/**/*",
       "electron/**/*",
       "node_modules/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "!assets/local-asr/**/*"
     ],
     "icon": "assets/icons/icon.png",
     "extraResources": [
@@ -63,6 +75,7 @@
     ],
     "win": {
       "target": "nsis",
+      "extraResources": [{ "from": "assets/local-asr/x-asr", "to": "local-asr/x-asr" }],
       "artifactName": "${productName}-${version}-win.${ext}"
     },
     "mac": {
@@ -70,6 +83,7 @@
       "artifactName": "${productName}-${version}-mac.${ext}"
     },
     "linux": {
+      "extraResources": [{ "from": "assets/local-asr/x-asr", "to": "local-asr/x-asr" }],
       "target": [
         "AppImage",
         "deb"

@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.7.6-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.8.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -42,14 +42,15 @@
 |---|---|
 | Recovery-first workflow | Detects interrupted recordings on next launch and lets you continue, transcribe, or discard them |
 | Local-first storage | Audio, settings, transcript history, and summaries stay on device by default |
-| Flexible AI backends | Works with OpenAI-compatible STT and chat-style summary endpoints you configure yourself |
+| Offline transcription | Windows and Linux default to bundled X-ASR for live Chinese and English transcription without an STT API key |
+| Flexible AI backends | Supports optional OpenAI-compatible STT and chat-style summary endpoints |
 | Built for desktop recording | Windows, macOS, and Linux support with a dedicated Linux FFmpeg path |
 | History that stays useful | Re-open meetings, replay audio, copy transcript, and refresh summaries later |
 
 ### Why this version matters
 
-- Current app version: `2.7.6`
-- Recent work focused on recovery flow correctness, safer settings validation, localized user-facing error messages, and broader end-to-end regression coverage
+- Current app version: `2.8.0`
+- Windows and Linux include offline Chinese and English transcription. This release also improves recording startup feedback and Linux audio capture and recovery.
 - `src/index.html` is still useful for UI development and browser-based E2E checks, but the full product experience depends on Electron IPC
 
 ---
@@ -96,8 +97,8 @@ For normal use, download the latest packaged build directly from the [Releases](
 
 - Node.js `18` recommended for development
 - `npm`
-- A speech-to-text API endpoint, key, and model
-- A summary-generation API endpoint, key, and model
+- On Windows and Linux, source runs and builds use curl and tar to download and verify the X-ASR model
+- A summary API endpoint, key, and model if automatic summaries are needed
 
 ### Install dependencies
 
@@ -129,8 +130,8 @@ Build artifacts are generated in `dist/` and use the current package version in 
 ## Typical Flow
 
 1. Open the desktop app.
-2. Configure STT and summary APIs in Settings.
-3. Optionally test both connections.
+2. On Windows and Linux, start transcribing with the bundled model. Configure custom transcription or summary APIs in Settings if needed.
+3. Test the connections when using custom APIs.
 4. Pick preferred audio sources if you want manual control.
 5. Start recording or upload an audio file.
 6. Wait for transcript generation.
@@ -177,6 +178,8 @@ If you maintain both `node_modules_linux/` and `node_modules_win/`, see [DUAL_EN
 ## Configuration
 
 ### Speech-to-text settings
+
+Windows and Linux installers ship X-ASR 1920 ms INT8 for live Chinese and English captions, imported files, and transcription retries. The model files occupy about 162 MiB. Source runs cache the model in the workspace. A custom transcription API can be selected in Settings. Windows uses Chromium to decode imported and saved audio, while Linux uses FFmpeg. [Model and license](https://huggingface.co/GilgameshWind/X-ASR-zh-en)
 
 - API URL
 - API key
@@ -259,7 +262,7 @@ For browser-based E2E checks, serve `src/` locally and point Playwright at that 
 ## Data and Privacy
 
 - Audio, transcripts, summaries, and settings are stored locally by default
-- AI processing is not offline: audio and text are sent to the endpoints you configure
+- Local transcription keeps audio on the device. Custom STT endpoints receive audio, and cloud summary endpoints receive transcript text.
 - The main app flow does not include analytics or telemetry logic
 - API keys are stored locally; if you need stricter secret handling, review the code and your deployment environment carefully
 

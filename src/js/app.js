@@ -433,6 +433,25 @@ function clearCurrentMeetingContext() {
     currentMeetingId = null;
 }
 
+function useLocalTranscription() {
+    return !!window.electronAPI?.localAsrSupported && currentSettings?.sttMode !== 'api';
+}
+
+function canTranscribeAudio(local = useLocalTranscription()) {
+    return local || !!(currentSettings?.sttApiUrl && currentSettings.sttApiKey);
+}
+
+function transcribeMeetingAudio(audioBlob, audioFilePath, onProgress, local = useLocalTranscription()) {
+    if (local) return transcribeLocalAudio(audioBlob, audioFilePath);
+    return transcribeAudio(
+        audioBlob, currentSettings.sttApiUrl, currentSettings.sttApiKey, currentSettings.sttModel, audioFilePath,
+        ...(onProgress ? [onProgress] : [])
+    );
+}
+
+let recordingUsesLocalAsr = false;
+let liveTranscript = '';
+
 async function recoverInterruptedMeetingStates() {
     if (typeof getAllMeetings !== 'function' || typeof updateMeeting !== 'function') {
         return;
@@ -509,14 +528,24 @@ async function loadHistoryList() {
 }
 
 async function handleStartRecording() {
+    const state = getRecordingState();
+    if (state.isRecording || isRecordingWorkflowBusy) return;
+
+    isRecordingWorkflowBusy = true;
     try {
+        updateRecordingButtons(state, { isStarting: true });
         clearCurrentMeetingContext();
-        await startRecording();
-        updateRecordingButtons(getRecordingState());
+        recordingUsesLocalAsr = useLocalTranscription();
+        liveTranscript = '';
+        if (recordingUsesLocalAsr) updateSubtitleContent('');
+        await startRecording(recordingUsesLocalAsr);
         showToast('录音已开始', 'success');
     } catch (error) {
+        recordingUsesLocalAsr = false;
         console.error('Failed to start recording:', error);
         showToast(buildUserFacingErrorToast(getLocalizedMessage('toastRecordingStartFailed', '录音启动失败'), error.message), 'error');
+    } finally {
+        clearRecordingWorkflowState();
     }
 }
 
@@ -565,15 +594,27 @@ async function handleStopRecording() {
 
         updateRecordingWorkflowState(true, i18n ? i18n.get('workflowSaving') : '正在保存录音...');
         const meeting = await saveEmptyMeetingRecord(audioBlob);
+        if (typeof getRecoveryMeta === 'function' && getRecoveryMeta()) {
+            await clearRecoveryData();
+        }
         updateRecordingWorkflowState(true, i18n ? i18n.get('workflowTranscribing') : '正在转写...');
         showToast(i18n ? i18n.get('toastRecordingStopped') : '录音已停止，正在转写...', 'info');
-        await processRecording(audioBlob, meeting.id, meeting.audioFilename || null);
+        const local = recordingUsesLocalAsr;
+        const liveResult = local ? await window.electronAPI.finishLocalAsr(true).catch(() => null) : null;
+        await processRecording(audioBlob, meeting.id, meeting.audioFilename || null, liveResult, local);
     } catch (error) {
         console.error('Failed to stop recording:', error);
         clearRecordingWorkflowState();
         hideLoading();
-        showToast('停止录音失败', 'error');
+        showToast(buildUserFacingErrorToast('停止录音失败', error.message), 'error');
+        if (typeof checkUnfinishedRecording === 'function' && await checkUnfinishedRecording()) {
+            await showRecoveryDialog(getRecoveryMeta());
+        }
     } finally {
+        if (recordingUsesLocalAsr) {
+            recordingUsesLocalAsr = false;
+            await window.electronAPI.cancelLocalAsr(true).catch(() => {});
+        }
         stopBtn.classList.remove('btn-loading');
         stopBtn.disabled = false;
         clearRecordingWorkflowState();
@@ -597,12 +638,16 @@ async function saveEmptyMeetingRecord(audioBlob) {
         titleUpdatedAt: ''
     };
     
-    return await saveMeeting(meeting);
+    const savedMeeting = await saveMeeting(meeting);
+    if (savedMeeting.audioStorageStatus === 'failed') {
+        throw new Error(savedMeeting.audioStorageError || '无法保存录音文件');
+    }
+    return savedMeeting;
 }
 
-async function processRecording(audioBlob, meetingId, audioFilePath = null) {
+async function processRecording(audioBlob, meetingId, audioFilePath = null, liveResult = null, local = useLocalTranscription()) {
     try {
-        console.log('处理录音, meetingId:', meetingId, '当前设置:', currentSettings);
+        console.log('处理录音, meetingId:', meetingId);
 
         const transcriptLoadingTargets = {
             transcript: true,
@@ -610,7 +655,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             summaryMessage: i18n ? i18n.get('workflowSummaryPending') : '转写完成后自动生成纪要...'
         };
 
-        if (!currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
+        if (!canTranscribeAudio(local)) {
             console.error('API 未配置:', { url: currentSettings.sttApiUrl, key: currentSettings.sttApiKey ? '已设置' : '未设置' });
             if (meetingId) {
                 await updateMeeting(meetingId, {
@@ -633,13 +678,9 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             transcriptStatus: TRANSCRIPT_STATUS.TRANSCRIBING 
         });
 
-        const result = await transcribeAudio(
-            audioBlob,
-            currentSettings.sttApiUrl,
-            currentSettings.sttApiKey,
-            currentSettings.sttModel,
-            audioFilePath,
-            (message) => updateRecordingWorkflowState(true, message, transcriptLoadingTargets)
+        const result = liveResult?.success && liveResult.text.trim() ? liveResult : await transcribeMeetingAudio(
+            audioBlob, audioFilePath,
+            (message) => updateRecordingWorkflowState(true, message, transcriptLoadingTargets), local
         );
 
         console.log('转写结果:', result);
@@ -652,7 +693,9 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             
             // 在全文区域显示清晰错误提示
             let errorHint = '转写失败，请重新转写';
-            if (result.message && (result.message.includes('超时') || result.message.includes('网络') || result.message.includes('连接'))) {
+            if (result.incomplete) {
+                errorHint = result.message;
+            } else if (result.message && (result.message.includes('超时') || result.message.includes('网络') || result.message.includes('连接'))) {
                 errorHint = '网络不稳定，转写失败，请重新转写';
             }
             updateSubtitleContent(errorHint);
@@ -663,7 +706,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null) {
             currentAudioFilePath = audioFilePath;
             showRetryTranscriptionButton();
             
-            showToast(buildUserFacingErrorToast('转写失败', result.message), 'error');
+            showToast(result.incomplete ? result.message : buildUserFacingErrorToast('转写失败', result.message), 'error');
             return;
         }
 
@@ -903,6 +946,13 @@ async function persistSettings(settings) {
 }
 
 async function handleSaveSttSettings() {
+    const mode = document.getElementById('sttMode')?.value;
+    if (window.electronAPI?.localAsrSupported && mode === 'local') {
+        currentSettings.sttMode = 'local';
+        await persistSettings(currentSettings);
+        showToast(getLocalizedMessage('localAsrSaved', '已启用本地语音转写'), 'success');
+        return;
+    }
     const apiUrl = document.getElementById('sttApiUrl').value.trim();
     const apiKey = document.getElementById('sttApiKey').value.trim();
     const model = document.getElementById('sttModel').value.trim() || 'whisper-1';
@@ -915,6 +965,7 @@ async function handleSaveSttSettings() {
     currentSettings.sttApiUrl = apiUrl;
     currentSettings.sttApiKey = apiKey;
     currentSettings.sttModel = model;
+    if (window.electronAPI?.localAsrSupported) currentSettings.sttMode = 'api';
     await persistSettings(currentSettings);
     showToast('语音识别设置已保存', 'success');
 }
@@ -937,6 +988,9 @@ async function handleTestSttApi() {
         currentSettings.sttApiUrl = apiUrl;
         currentSettings.sttApiKey = apiKey;
         currentSettings.sttModel = model;
+        if (window.electronAPI?.localAsrSupported && document.getElementById('sttMode')?.value === 'api') {
+            currentSettings.sttMode = 'api';
+        }
         await persistSettings(currentSettings);
         showToast(`${normalizeUserFacingMessage(result.message, getLocalizedMessage('toastConnectionTestSuccess', '连接测试成功'))}，设置已自动保存`, 'success');
     } else {
@@ -971,7 +1025,7 @@ async function handleTestSummaryApi() {
 
 async function handleSaveTemplate() {
     try {
-        const settings = getSettingsFromUI();
+        const settings = { ...currentSettings, ...getSettingsFromUI() };
         await persistSettings(settings);
         currentSettings = settings;
         showToast('模板已保存', 'success');
@@ -1299,7 +1353,7 @@ async function handleRetryTranscription() {
         return;
     }
     
-    if (!currentSettings || !currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
+    if (!canTranscribeAudio()) {
         showToast(i18n ? i18n.get('testFailed') : '请先配置语音识别API', 'error');
         return;
     }
@@ -1322,17 +1376,11 @@ async function handleRetryTranscription() {
             return;
         }
 
-        const result = await transcribeAudio(
-            currentAudioBlob,
-            currentSettings.sttApiUrl,
-            currentSettings.sttApiKey,
-            currentSettings.sttModel,
-            currentAudioFilePath
-        );
+        const result = await transcribeMeetingAudio(currentAudioBlob, currentAudioFilePath);
 
         if (!result.success) {
             showRetryTranscriptionButton();
-            showToast(buildUserFacingErrorToast(i18n ? i18n.get('testFailed') : '转写失败', result.message), 'error');
+            showToast(result.incomplete ? result.message : buildUserFacingErrorToast(i18n ? i18n.get('testFailed') : '转写失败', result.message), 'error');
             return;
         }
 
@@ -1356,7 +1404,7 @@ async function processAudioFile(file) {
 
     clearCurrentMeetingContext();
     
-    if (!currentSettings || !currentSettings.sttApiUrl || !currentSettings.sttApiKey) {
+    if (!canTranscribeAudio()) {
         console.log('[App] API not configured, showing error');
         showToast(i18n ? i18n.get('testFailed') : '请先配置语音识别API', 'error');
         return;
@@ -1368,8 +1416,7 @@ async function processAudioFile(file) {
         const audioArrayBuffer = await file.arrayBuffer();
         const managedAudioFilePath = await persistUploadedAudioForTranscription(file, audioArrayBuffer);
 
-        // 将 File 对象转换为 Blob
-        const audioBlob = new Blob([audioArrayBuffer], { type: file.type });
+        const audioBlob = file;
         currentAudioBlob = audioBlob;
         currentAudioFilePath = managedAudioFilePath;
         
@@ -1383,21 +1430,15 @@ async function processAudioFile(file) {
             apiUrl: currentSettings.sttApiUrl 
         });
 
-        const result = await transcribeAudio(
-            audioBlob,
-            currentSettings.sttApiUrl,
-            currentSettings.sttApiKey,
-            currentSettings.sttModel,
-            managedAudioFilePath
-        );
+        const result = await transcribeMeetingAudio(audioBlob, managedAudioFilePath);
 
         console.log('转写结果:', result);
 
         if (!result.success) {
             // 转写失败，显示重试按钮
-            updateSubtitleContent('转写失败，请重新转写');
+            updateSubtitleContent(result.incomplete ? result.message : '转写失败，请重新转写');
             showRetryTranscriptionButton();
-            showToast(buildUserFacingErrorToast(i18n ? i18n.get('testFailed') : '转写失败', result.message), 'error');
+            showToast(result.incomplete ? result.message : buildUserFacingErrorToast(i18n ? i18n.get('testFailed') : '转写失败', result.message), 'error');
             hideLoading();
             return;
         }
@@ -1524,6 +1565,11 @@ async function handleRefreshSummary() {
 // ============================================
 
 function setupAppControl() {
+    window.electronAPI?.onLocalAsrText?.(({ text, final }) => {
+        if (!recordingUsesLocalAsr) return;
+        if (final) liveTranscript += text + '\n';
+        updateSubtitleContent(final ? liveTranscript : liveTranscript + text);
+    });
     if (window.electronAPI && window.electronAPI.onCheckRecordingStatus) {
         window.electronAPI.onCheckRecordingStatus(() => {
             if (isExitProtectionActive()) {

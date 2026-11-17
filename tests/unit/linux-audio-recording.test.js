@@ -6,6 +6,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 describe('Linux System Audio Recording', () => {
@@ -244,7 +245,8 @@ describe('Audio Source Detection', () => {
 describe('File Reading for Blob Conversion', () => {
   test('should read file and return Uint8Array for IPC serialization', () => {
     // Create a test file
-    const testFile = '/tmp/test-audio-jest.bin';
+    const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-audio-test-'));
+    const testFile = path.join(testDir, 'audio.bin');
     const testData = Buffer.from([0x00, 0x01, 0x02, 0x03, 0xFF]);
     fs.writeFileSync(testFile, testData);
     
@@ -261,6 +263,7 @@ describe('File Reading for Blob Conversion', () => {
       if (fs.existsSync(testFile)) {
         fs.unlinkSync(testFile);
       }
+      fs.rmdirSync(testDir);
     }
   });
 });

@@ -363,16 +363,8 @@ describe('Storage 模块测试', () => {
     test('音频文件保存失败时应删除 Blob 并记录失败状态', async () => {
       const mockBlob = new Blob(['test audio'], { type: 'audio/webm' });
 
-      let putOnsuccessHandler = null;
-
-      const mockPutRequest = {};
-      Object.defineProperty(mockPutRequest, 'onsuccess', {
-        set: (handler) => { putOnsuccessHandler = handler; },
-        get: () => putOnsuccessHandler
-      });
-
       const mockObjectStore = {
-        put: jest.fn().mockReturnValue(mockPutRequest)
+        put: jest.fn().mockReturnValue({})
       };
 
       const mockTransaction = {
@@ -402,9 +394,7 @@ describe('Storage 模块测试', () => {
 
       await new Promise(resolve => setTimeout(resolve, 20));
 
-      if (putOnsuccessHandler) {
-        putOnsuccessHandler({ target: { result: meeting } });
-      }
+      mockTransaction.oncomplete();
 
       const result = await savePromise;
 
@@ -417,16 +407,8 @@ describe('Storage 模块测试', () => {
     test('音频文件保存成功时应删除 Blob 并记录成功状态', async () => {
       const mockBlob = new Blob(['test audio'], { type: 'audio/webm' });
 
-      let putOnsuccessHandler = null;
-
-      const mockPutRequest = {};
-      Object.defineProperty(mockPutRequest, 'onsuccess', {
-        set: (handler) => { putOnsuccessHandler = handler; },
-        get: () => putOnsuccessHandler
-      });
-
       const mockObjectStore = {
-        put: jest.fn().mockReturnValue(mockPutRequest)
+        put: jest.fn().mockReturnValue({})
       };
 
       const mockTransaction = {
@@ -456,9 +438,7 @@ describe('Storage 模块测试', () => {
 
       await new Promise(resolve => setTimeout(resolve, 20));
 
-      if (putOnsuccessHandler) {
-        putOnsuccessHandler({ target: { result: meeting } });
-      }
+      mockTransaction.oncomplete();
 
       const result = await savePromise;
 

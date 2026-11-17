@@ -72,6 +72,31 @@ describe('UI loading state targeting', () => {
     expect(toast.classList.contains('show')).toBe(false);
   });
 
+  test('treats API text and filenames as text in history details and toasts', async () => {
+    const ui = require('../../src/js/ui');
+    const payload = '<img src=x onerror="window.electronAPI.loadConfig()">';
+    const title = 'Review " onmouseover="window.electronAPI.loadConfig()';
+    await ui.renderMeetingDetail({
+      id: 'api-text',
+      date: '2026-11-17',
+      duration: '00:10:00',
+      title,
+      titleStatus: 'completed',
+      transcript: payload,
+      summary: payload
+    });
+    ui.showToast(payload, 'error');
+
+    for (const id of ['detailTranscriptContent_api-text', 'detailSummaryContent_api-text', 'toast']) {
+      const element = document.getElementById(id);
+      expect(element.textContent).toContain(payload);
+      expect(element.querySelector('img')).toBeNull();
+    }
+    const heading = document.getElementById('detailMeetingTitle');
+    expect(heading.title).toBe(title);
+    expect(heading.hasAttribute('onmouseover')).toBe(false);
+  });
+
   test('showToast should support warning messages without rendering undefined', () => {
     const ui = require('../../src/js/ui');
 

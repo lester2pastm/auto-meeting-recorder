@@ -140,6 +140,59 @@ describe('API streaming optimization', () => {
   });
 
   describe('transcribeAudioSegments should always use main-process splitting', () => {
+    test('lets FFmpeg probe an oversized WebM with no duration metadata', async () => {
+      const originalAudio = global.Audio;
+      global.Audio = class {
+        set src(value) {
+          this.duration = Infinity;
+          this.onloadedmetadata();
+        }
+      };
+      const splitAudioFile = jest.fn().mockResolvedValue({ success: true, files: ['segment.webm'] });
+      window.electronAPI = {
+        splitAudioFile,
+        httpPost: jest.fn().mockResolvedValue({ ok: true, body: '{"text":"segment"}' }),
+        deleteFile: jest.fn().mockResolvedValue({ success: true })
+      };
+      try {
+        const result = await api.transcribeAudio(
+          createLargeAudioBlob(), 'https://api.openai.com/v1/audio/transcriptions', 'key', 'whisper-1', '/tmp/recording.webm'
+        );
+        expect(result).toEqual({ success: true, text: 'segment' });
+        expect(splitAudioFile).toHaveBeenCalledWith('/tmp/recording.webm', { segmentCount: 2, segmentDuration: null });
+      } finally {
+        global.Audio = originalAudio;
+      }
+    });
+
+    test.each([true, false])('rejects incomplete transcripts and removes all segments (partial success: %s)', async (firstSucceeds) => {
+      jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => realSetTimeout(fn, 0, ...args));
+      const files = ['seg-1.mp3', 'seg-2.mp3'];
+      const readAudioFile = jest.fn().mockResolvedValue({ success: true, data: Uint8Array.of(1) });
+      const deleteFile = jest.fn().mockResolvedValue({ success: true });
+      const httpPost = jest.fn(async ({ filePath }) => (
+        firstSucceeds && filePath === files[0]
+          ? { ok: true, body: '{"text":"First segment"}' }
+          : { ok: false, status: 400, body: '{"error":"failed segment"}' }
+      ));
+      window.electronAPI = {
+        splitAudioFile: jest.fn().mockResolvedValue({ success: true, files }),
+        readAudioFile,
+        deleteFile,
+        httpPost
+      };
+
+      const result = await api.transcribeAudioSegments(
+        createLargeAudioBlob(), 'https://api.openai.com/v1/audio/transcriptions', 'key', 'whisper-1', '/audio.mp3'
+      );
+
+      expect(result.success).toBe(false);
+      if (firstSucceeds) expect(result.message).toContain('1/2');
+      expect(result.text).toBeUndefined();
+      expect(deleteFile.mock.calls.map(([file]) => file)).toEqual(files);
+      expect(readAudioFile).not.toHaveBeenCalled();
+    });
+
     test('uses splitAudioFile IPC for oversized audio even on non-Linux platforms', async () => {
       const originalAudio = global.Audio;
 
@@ -249,16 +302,8 @@ describe('API streaming optimization', () => {
       global.Audio = originalAudio;
     });
 
-    test('releases segment blob references after each segment is processed', async () => {
-      const readAudioFile = jest.fn()
-        .mockResolvedValueOnce({
-          success: true,
-          data: new Uint8Array(new Array(1024 * 1024).fill(1))
-        })
-        .mockResolvedValueOnce({
-          success: true,
-          data: new Uint8Array(new Array(1024 * 1024).fill(2))
-        });
+    test('streams each segment from disk without reading it into the renderer', async () => {
+      const readAudioFile = jest.fn();
 
       const httpPost = jest.fn()
         .mockResolvedValueOnce({
@@ -295,8 +340,8 @@ describe('API streaming optimization', () => {
       expect(result.success).toBe(true);
       expect(result.text).toBe('segment 1\n\nsegment 2');
 
-      // Each segment was read once
-      expect(readAudioFile).toHaveBeenCalledTimes(2);
+      expect(readAudioFile).not.toHaveBeenCalled();
+      expect(httpPost.mock.calls.map(([{ filePath }]) => filePath)).toEqual(['seg-1.webm', 'seg-2.webm']);
 
       // Temporary segment files were cleaned up
       expect(global.window.electronAPI.deleteFile).toHaveBeenCalledTimes(2);

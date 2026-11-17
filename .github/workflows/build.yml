@@ -28,6 +28,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
+    - name: Verify bundled speech recognition on Windows
+      run: npm run test:local-asr
+
     - name: Build Windows app
       run: node scripts/run-with-retry.js --attempts 3 --delay-ms 15000 -- npm run build:win
       env:
@@ -89,6 +92,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Verify bundled speech recognition on Linux x64
+      run: npm run test:local-asr
+
     - name: Build Linux x64 app
       run: node scripts/run-with-retry.js --attempts 3 --delay-ms 15000 -- npm run build:linux
       env:
@@ -104,7 +110,7 @@ jobs:
         retention-days: 7
 
   build-linux-arm64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-arm
 
     steps:
     - name: Checkout code
@@ -119,22 +125,19 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xdg-utils libatspi2.0-dev libsecret-1-dev libdbus-1-dev
+        sudo apt-get install -y libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xdg-utils libatspi2.0-dev libsecret-1-dev libdbus-1-dev
         sudo apt-get install -y libarchive-tools rpm
 
     - name: Install dependencies
       run: npm ci
 
+    - name: Verify bundled speech recognition on Linux ARM64
+      run: npm run test:local-asr
+
     - name: Build Linux ARM64 app
       run: node scripts/run-with-retry.js --attempts 3 --delay-ms 15000 -- npm run build:linux -- --arm64
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        AR: aarch64-linux-gnu-ar
-        CC: aarch64-linux-gnu-gcc
-        CXX: aarch64-linux-gnu-g++
-        CFLAGS: -DGklkiniHQ_remove_GDK_pi_Context=1
-        CXXFLAGS: -DGklkiniHQ_remove_GDK_pi_Context=1
-        LD: aarch64-linux-gnu-ld
 
     - name: Upload Linux ARM64 artifact
       uses: actions/upload-artifact@v4

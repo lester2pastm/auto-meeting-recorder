@@ -3,6 +3,16 @@ const { contextBridge, ipcRenderer, clipboard } = require('electron');
 // 安全地暴露 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   isDevMode: process.argv.includes('--dev'),
+  localAsrSupported: ['linux', 'win32'].includes(process.platform) && ['x64', 'arm64'].includes(process.arch),
+  localAsrFileDecoder: process.platform === 'linux',
+  startLocalAsr: (sampleRate, live = false) => ipcRenderer.invoke('start-local-asr', { sampleRate, live }),
+  writeLocalAsr: (samples, live = false) => ipcRenderer.invoke('write-local-asr', { samples, live }),
+  finishLocalAsr: (live = false) => ipcRenderer.invoke('finish-local-asr', live),
+  cancelLocalAsr: (live = false) => ipcRenderer.invoke('cancel-local-asr', live),
+  transcribeLocalFile: (filePath) => ipcRenderer.invoke('transcribe-local-file', filePath),
+  onLocalAsrText: (callback) => {
+    ipcRenderer.on('local-asr-text', (event, data) => callback(data));
+  },
 
   // 音频文件操作
   saveAudio: (blob, filename) => ipcRenderer.invoke('save-audio', { blob, filename }),
@@ -32,7 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // FFmpeg 相关接口（Linux 系统音频录制）
   checkFFmpeg: () => ipcRenderer.invoke('check-ffmpeg'),
   checkLinuxDependencies: () => ipcRenderer.invoke('check-linux-dependencies'),
-  startFFmpegSystemAudio: (outputPath, device, microphoneDevice) => ipcRenderer.invoke('start-ffmpeg-system-audio', { outputPath, device, microphoneDevice }),
+  startFFmpegSystemAudio: (outputPath, device, microphoneDevice, localAsr) => ipcRenderer.invoke('start-ffmpeg-system-audio', { outputPath, device, microphoneDevice, localAsr }),
   stopFFmpegRecording: () => ipcRenderer.invoke('stop-ffmpeg-recording'),
   mergeAudioFiles: (microphonePath, systemAudioPath, outputPath) => ipcRenderer.invoke('merge-audio-files', { microphonePath, systemAudioPath, outputPath }),
   getPulseAudioSources: () => ipcRenderer.invoke('get-pulseaudio-sources'),

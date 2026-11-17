@@ -72,7 +72,7 @@ async function getAudioFile(filename) {
   const result = await window.electronAPI.getAudio(filename);
   if (result.success) {
     const uint8Array = result.data instanceof Uint8Array ? result.data : new Uint8Array(result.data);
-    result.blob = new Blob([uint8Array], { type: 'audio/webm' });
+    result.blob = new Blob([uint8Array], { type: result.type || 'audio/webm' });
   }
   return result;
 }
@@ -183,7 +183,7 @@ async function saveMeeting(meeting) {
             const objectStore = transaction.objectStore(STORE_NAME);
             const request = objectStore.put(meeting);
 
-            request.onsuccess = () => {
+            transaction.oncomplete = () => {
                 console.log('[Storage] Meeting saved to IndexedDB successfully');
                 resolve(meeting);
             };
@@ -193,8 +193,8 @@ async function saveMeeting(meeting) {
                 reject(new Error('Failed to save meeting: ' + (event.target.error ? event.target.error.message : 'Unknown error')));
             };
             
-            transaction.onerror = (event) => {
-                console.error('[Storage] IndexedDB transaction error:', event.target.error);
+            transaction.onabort = () => {
+                reject(transaction.error || new Error('Failed to commit meeting'));
             };
         } catch (error) {
             console.error('[Storage] saveMeeting catch error:', error);

@@ -1,11 +1,13 @@
 let mediaRecorder = null;
 let isRecording = false;
+let isStartingRecording = false;
 let isPaused = false;
 let recordingStartTime = null;
 let pauseStartTime = null;
 let recordingPausedTime = 0;
 let timerInterval = null;
 let audioBlob = null;
+let liveSpeechInput = null;
 let onAudioFileReady = null; // 回调：音频文件读取完成后触发
 
 // 音频可视化相关变量
@@ -99,7 +101,11 @@ function resolvePreferredSourceId(preferredSource, recommendedSource, sources = 
     return recommendedSource || null;
 }
 
-async function startRecording() {
+async function startRecording(localAsr = false) {
+    if (isRecording || isStartingRecording) {
+        throw new Error('录音已启动或正在启动');
+    }
+    isStartingRecording = true;
     try {
         if (window.DEBUG_AUDIO) {
             console.log('=== 开始录音 ===');
@@ -123,23 +129,32 @@ async function startRecording() {
                 if (window.DEBUG_AUDIO) {
                     console.log('Linux 平台使用 FFmpeg 录制');
                 }
-                return await startLinuxRecording();
+                return await startLinuxRecording(localAsr);
             } else {
                 console.warn('Linux: 未检测到 ffmpeg，使用标准方式录制');
-                return await startStandardRecording();
+                return await startStandardRecording(localAsr);
             }
         }
         
         // 标准录制方式（Windows/Mac）
-        return await startStandardRecording();
+        return await startStandardRecording(localAsr);
     } catch (error) {
         console.error('录音启动失败:', error);
+        isRecording = false;
+        await disconnectLiveSpeechInput();
+        stopTimer();
+        if (typeof stopTempSaveTimer === 'function') {
+            stopTempSaveTimer();
+        }
         stopAllStreams();
+        stopWaveform();
         throw error;
+    } finally {
+        isStartingRecording = false;
     }
 }
 
-async function startLinuxRecording() {
+async function startLinuxRecording(localAsr) {
     try {
         if (window.DEBUG_AUDIO) {
             console.log('=== 开始 Linux FFmpeg 录音 ===');
@@ -260,7 +275,8 @@ async function startLinuxRecording() {
         const sysResult = await window.electronAPI.startFFmpegSystemAudio(
             linuxRecordingPaths.output,
             preferredLinuxSystemSource,
-            preferredLinuxMicSource
+            preferredLinuxMicSource,
+            localAsr
         );
         if (!sysResult.success) {
             throw new Error('启动 Linux 录音失败: ' + sysResult.error);
@@ -273,13 +289,13 @@ async function startLinuxRecording() {
         
     } catch (error) {
         console.error('Linux 录制启动失败:', error);
-        await stopLinuxRecording();
+        linuxRecordingPaths = null;
         throw error;
     }
 }
 
 // 标准录制方式（Windows/Mac）
-async function startStandardRecording() {
+async function startStandardRecording(localAsr) {
     if (window.DEBUG_AUDIO) {
         console.log('=== 开始标准录音 ===');
     }
@@ -398,21 +414,27 @@ async function startStandardRecording() {
         mimeType: 'audio/webm'
     });
 
-    mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0) {
-            const arrayBuffer = await event.data.arrayBuffer();
-            const chunkData = new Uint8Array(arrayBuffer);
-            
-            if (typeof appendAudioChunk === 'function') {
-                await appendAudioChunk(chunkData);
-            }
-        }
+    if (localAsr) await startLiveSpeechInput(combinedStream);
+
+    let pendingWrites = Promise.resolve();
+    let writeError = null;
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size === 0) return;
+        pendingWrites = pendingWrites.then(async () => {
+            const chunkData = new Uint8Array(await event.data.arrayBuffer());
+            await appendAudioChunk(chunkData);
+        }).catch((error) => {
+            writeError = writeError || error;
+        });
     };
 
     mediaRecorder.onstop = async () => {
         const handlers = takePendingStopHandlers();
 
         try {
+            await finishLiveSpeechInput();
+            await pendingWrites;
+            if (writeError) throw writeError;
             const meta = typeof getRecoveryMeta === 'function' ? getRecoveryMeta() : null;
             if (!meta || !meta.tempFile) {
                 throw new Error('Temporary recording file is not available');
@@ -447,10 +469,6 @@ async function startStandardRecording() {
             stopAllStreams();
             stopWaveform();
             mediaRecorder = null;
-
-            if (typeof clearRecoveryData === 'function') {
-                await clearRecoveryData();
-            }
         }
     };
     
@@ -508,6 +526,67 @@ function stopAllStreams() {
     }
 }
 
+async function startLiveSpeechInput(stream) {
+    const api = window.electronAPI;
+    let started = false;
+    try {
+        await audioContext.audioWorklet.addModule(new URL('./js/local-asr-worklet.js', document.baseURI).href);
+        const ready = await api.startLocalAsr(audioContext.sampleRate, true);
+        if (!ready.success) throw new Error(ready.message);
+        started = true;
+        const capture = new AudioWorkletNode(audioContext, 'local-speech-capture', {
+            channelCount: 1,
+            channelCountMode: 'explicit'
+        });
+        const input = audioContext.createMediaStreamSource(stream);
+        liveSpeechInput = { capture, input, lastWrite: null, finish: null };
+        const session = liveSpeechInput;
+        capture.port.onmessage = ({ data }) => {
+            if (data === 'finished') {
+                session.finish?.();
+            } else {
+                session.lastWrite = api.writeLocalAsr(data, true).catch(() => false);
+            }
+        };
+        input.connect(capture);
+        capture.connect(audioContext.destination);
+    } catch (error) {
+        await disconnectLiveSpeechInput();
+        if (started) await api.cancelLocalAsr(true).catch(() => {});
+        console.warn('Could not start live subtitles:', error.message);
+    }
+}
+
+async function disconnectLiveSpeechInput() {
+    const session = liveSpeechInput;
+    if (!session) return;
+    liveSpeechInput = null;
+    session.capture.port.onmessage = null;
+    session.input.disconnect();
+    session.capture.disconnect();
+    await window.electronAPI.cancelLocalAsr(true).catch(() => {});
+}
+
+async function finishLiveSpeechInput() {
+    const session = liveSpeechInput;
+    if (!session) return;
+    liveSpeechInput = null;
+    const flushed = await new Promise((resolve) => {
+        const timeout = setTimeout(() => resolve(false), 250);
+        session.finish = () => {
+            clearTimeout(timeout);
+            resolve(true);
+        };
+        session.capture.port.postMessage('finish');
+    });
+    session.capture.port.onmessage = null;
+    session.input.disconnect();
+    session.capture.disconnect();
+    if (!flushed || (session.lastWrite && !(await session.lastWrite))) {
+        await window.electronAPI.cancelLocalAsr(true).catch(() => {});
+    }
+}
+
 function pauseRecording() {
     if (isFFmpegRecording) {
         // Linux ffmpeg 录制不支持暂停
@@ -517,6 +596,7 @@ function pauseRecording() {
     
     if (mediaRecorder && isRecording && !isPaused) {
         mediaRecorder.pause();
+        liveSpeechInput?.capture.port.postMessage('pause');
         isPaused = true;
         pauseStartTime = Date.now();
         stopTimer();
@@ -532,6 +612,7 @@ function resumeRecording() {
     
     if (mediaRecorder && isRecording && isPaused) {
         mediaRecorder.resume();
+        liveSpeechInput?.capture.port.postMessage('resume');
         isPaused = false;
         recordingPausedTime += Date.now() - pauseStartTime;
         startTimer();
@@ -579,6 +660,7 @@ async function stopRecording() {
         } catch (error) {
             pendingStopResolve = null;
             pendingStopReject = null;
+            void disconnectLiveSpeechInput();
             reject(error);
         }
     });
@@ -590,7 +672,10 @@ async function stopLinuxRecording() {
             throw new Error('录音路径未设置');
         }
 
-        await window.electronAPI.stopFFmpegRecording();
+        const stopResult = await window.electronAPI.stopFFmpegRecording();
+        if (!stopResult.success) {
+            throw new Error(stopResult.error || 'FFmpeg 未能正常结束录音');
+        }
 
         const readResult = await window.electronAPI.readAudioFile(linuxRecordingPaths.output);
         if (!readResult.success) {
@@ -600,22 +685,13 @@ async function stopLinuxRecording() {
         const buffer = readResult.data instanceof Uint8Array ? readResult.data : new Uint8Array(readResult.data);
         audioBlob = new Blob([buffer], { type: 'audio/webm' });
         
+        return audioBlob;
+        
+    } finally {
         stopAllStreams();
         stopWaveform();
         isFFmpegRecording = false;
         linuxRecordingPaths = null;
-        
-        if (typeof clearRecoveryData === 'function') {
-            await clearRecoveryData();
-        }
-        
-        return audioBlob;
-        
-    } catch (error) {
-        console.error('停止 Linux 录制失败:', error);
-        isFFmpegRecording = false;
-        linuxRecordingPaths = null;
-        throw error;
     }
 }
 
