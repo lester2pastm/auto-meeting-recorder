@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.8.1] - 2026-11-17
+
+### Added
+
+- Render Markdown in new and saved meeting summaries. Copying a summary returns its original Markdown.
+- Add a setup button to the summary tab when no summary API is configured. The editable settings default to the DeepSeek API and `deepseek-flash`.
+
+### Changed
+
+- Finish recording and save the full transcript without a summary API. After configuration, a summary can be generated for the saved meeting.
+
 ## [2.8.0] - 2026-11-17
 
 ### Added

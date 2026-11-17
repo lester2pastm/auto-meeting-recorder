@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.8.0-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.8.1-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -49,8 +49,8 @@
 
 ### 为什么当前版本值得关注
 
-- 当前版本：`2.8.0`
-- Windows 和 Linux 内置中英离线转写。本版也改进了录音启动提示、Linux 音频采集和录音恢复。
+- 当前版本：`2.8.1`
+- 首页和历史详情支持纪要 Markdown 排版。未配置纪要 API 时也可以录音、转写并保存全文。
 - `src/index.html` 仍适合 UI 开发和浏览器 E2E 检查，但完整产品能力依赖 Electron IPC
 
 ---

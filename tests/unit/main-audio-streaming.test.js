@@ -171,6 +171,7 @@ describe('Main process audio streaming optimization', () => {
         webContents: {
           openDevTools: jest.fn(),
           send: jest.fn(),
+          setWindowOpenHandler: jest.fn(),
           session: {
             setPermissionRequestHandler: jest.fn()
           }

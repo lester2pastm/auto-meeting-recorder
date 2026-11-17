@@ -443,6 +443,12 @@ async function testSttApi(apiUrl, apiKey, model = 'whisper-1') {
     }
 }
 
+function getSummaryThinkingControls(apiUrl, model) {
+    return model === 'deepseek-flash' && /^https:\/\/api\.deepseek\.com\//i.test(apiUrl)
+        ? { thinking: { type: 'disabled' } }
+        : {};
+}
+
 async function testSummaryApi(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     try {
         const response = await fetch(apiUrl, {
@@ -456,7 +462,8 @@ async function testSummaryApi(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
                 messages: [
                     { role: 'user', content: 'test' }
                 ],
-                max_tokens: 10
+                max_tokens: 10,
+                ...getSummaryThinkingControls(apiUrl, model)
             })
         });
 
@@ -1099,7 +1106,8 @@ ${transcript}
                             { role: 'user', content: prompt }
                         ],
                         temperature: 0.7,
-                        max_tokens: 2000
+                        max_tokens: 2000,
+                        ...getSummaryThinkingControls(apiUrl, model)
                     })
                 }, requestTimeout);
 

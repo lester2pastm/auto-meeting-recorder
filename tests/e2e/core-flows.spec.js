@@ -101,8 +101,8 @@ async function installRecordingMocks(page) {
   });
 }
 
-async function installProcessingMocks(page) {
-  await page.evaluate(() => {
+async function installProcessingMocks(page, summary) {
+  await page.evaluate((summary) => {
     transcribeAudio = async () => ({
       success: true,
       text: '这是 E2E 转写结果'
@@ -110,9 +110,9 @@ async function installProcessingMocks(page) {
 
     generateSummary = async () => ({
       success: true,
-      summary: '这是 E2E 纪要结果'
+      summary
     });
-  });
+  }, summary);
 }
 
 async function installTranscriptionFailureMock(page, message = '服务暂时不可用') {
@@ -245,6 +245,73 @@ test('shows recording startup progress and re-enables retry after a failure', as
   await expect(stop).toBeVisible();
 });
 
+test('saves a local transcript before binding the summary API and saves a summary after binding', async ({ page }) => {
+  const transcript = '这是无需纪要 API 保存的会议全文';
+  const summary = '这是绑定后生成的会议纪要';
+  await page.addInitScript((text) => {
+    window.electronAPI = {
+      localAsrSupported: true,
+      loadConfig: async () => ({
+        success: true,
+        config: { summaryApiUrl: '', summaryApiKey: '', summaryModel: 'gpt-3.5-turbo' }
+      }),
+      saveConfig: async () => ({ success: true }),
+      readRecoveryMeta: async () => ({ success: false }),
+      saveAudio: async () => ({ success: true, filePath: 'meeting.webm' }),
+      finishLocalAsr: async () => ({ success: true, text }),
+      cancelLocalAsr: async () => {}
+    };
+  }, transcript);
+  const requests = [];
+  await page.route('https://api.deepseek.com/v1/chat/completions', async (route) => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({ json: { choices: [{ message: { content: summary } }] } });
+  });
+  await gotoApp(page);
+  await installRecordingMocks(page);
+
+  const summaryTab = page.locator('.tab-btn[data-tab="summary"]');
+  const binding = page.locator('#summaryApiBinding');
+  const bindButton = binding.getByRole('button', { name: '去绑定' });
+  await summaryTab.click();
+  await expect(binding).toContainText('未绑定会议纪要 API');
+  await expect(bindButton).toBeVisible();
+
+  await page.click('#btnStartRecording');
+  await page.click('#btnStopRecording');
+  await expect(page.locator('#toast')).toContainText('会议记录已保存');
+  await expect(binding).toBeVisible();
+  await page.click('.tab-btn[data-tab="subtitle"]');
+  await expect(page.locator('#subtitleContent')).toHaveText(transcript);
+  expect(await page.evaluate(() => getAllMeetings())).toMatchObject([
+    { transcript, summary: '', transcriptStatus: 'completed', audioStorageStatus: 'saved' }
+  ]);
+  expect(requests).toHaveLength(0);
+
+  await summaryTab.click();
+  await bindButton.click();
+  await expect(page.locator('#settingsView')).toHaveClass(/active/);
+  await expect(page.locator('#summaryApiSettings')).toBeInViewport();
+  await expect(page.locator('#summaryApiKey')).toBeFocused();
+  await expect(page.locator('#summaryApiUrl')).toHaveValue('https://api.deepseek.com/v1/chat/completions');
+  await expect(page.locator('#summaryModel')).toHaveValue('deepseek-flash');
+  await page.fill('#summaryApiKey', 'test-summary-key');
+  await page.click('#btnTestSummaryApi');
+  await expect(page.locator('#toast')).toContainText('设置已自动保存');
+
+  await page.click('.nav-item[data-view="recorder"]');
+  await summaryTab.click();
+  await expect(binding).toBeHidden();
+  await page.click('#btnRefreshSummary');
+  await expect(page.locator('#summaryContent')).toHaveText(summary);
+  await expect(page.locator('#toast')).toContainText('会议纪要已更新');
+  expect(requests.slice(0, 2)).toMatchObject([
+    { model: 'deepseek-flash', thinking: { type: 'disabled' } },
+    { model: 'deepseek-flash', thinking: { type: 'disabled' } }
+  ]);
+  expect(await page.evaluate(() => getAllMeetings())).toMatchObject([{ transcript, summary }]);
+});
+
 test('shows transcription API settings only in custom API mode', async ({ page }) => {
   await page.addInitScript(() => {
     window.electronAPI = {
@@ -327,8 +394,15 @@ test.describe('Core E2E flows', () => {
   });
 
   test('should complete the happy-path recording flow and save the result to history', async ({ page }) => {
+    const summary = [
+      '# 这是 E2E 纪要结果', '', '- **核对版本**', '',
+      '| 待办 | 负责人 |', '| --- | --- |', '| 复核纪要 | 张三 |', '',
+      '[会议资料](https://example.com/meeting)', '',
+      '<script>window.summaryScriptRan = true</script>', '',
+      '![会议截图](https://example.com/meeting.png)'
+    ].join('\n');
     await installRecordingMocks(page);
-    await installProcessingMocks(page);
+    await installProcessingMocks(page, summary);
     await configureApiSettings(page);
 
     await page.click('.nav-item[data-view="recorder"]');
@@ -342,11 +416,26 @@ test.describe('Core E2E flows', () => {
 
     await expect(page.locator('#subtitleContent')).toContainText('这是 E2E 转写结果');
     await page.click('.tab-btn[data-tab="summary"]');
-    await expect(page.locator('#summaryContent')).toContainText('这是 E2E 纪要结果');
+    const summaryContent = page.locator('#summaryContent');
+    await expect(summaryContent.getByRole('heading', { name: '这是 E2E 纪要结果' })).toBeVisible();
+    await expect(summaryContent.locator('li strong')).toHaveText('核对版本');
+    await expect(summaryContent.getByRole('table')).toContainText('张三');
+    await expect(summaryContent.getByRole('link', { name: '会议资料' })).toHaveAttribute('target', '_blank');
+    await expect(summaryContent.locator('script, img')).toHaveCount(0);
+
+    await page.evaluate(() => {
+      Object.defineProperty(navigator.clipboard, 'writeText', {
+        value: async (text) => { window.copiedSummary = text; }
+      });
+    });
+    await page.click('#btnCopySummary');
+    expect(await page.evaluate(() => window.copiedSummary)).toBe(summary);
 
     await page.click('.nav-item[data-view="history"]');
     await expect(page.locator('.history-item')).toHaveCount(1);
     await expect(page.locator('.history-item-duration')).toContainText('00:00:03');
+    await page.locator('.history-item .btn.btn-outline').click();
+    await expect(page.locator('#detailModal').getByRole('table')).toContainText('复核纪要');
   });
 
   test('should show retry entry when transcription fails after recording', async ({ page }) => {

@@ -107,10 +107,9 @@ test.describe('录音视图功能测试', () => {
     const subtitleContent = await page.locator('#subtitleContent');
     await expect(subtitleContent).toBeVisible();
 
-    // 切换到摘要标签页后检查摘要内容区域
+    // 切换到摘要标签页后检查未绑定提示
     await openSummaryTab(page);
-    const summaryContent = await page.locator('#summaryContent');
-    await expect(summaryContent).toBeVisible();
+    await expect(page.locator('#summaryApiBinding')).toBeVisible();
   });
 });
 

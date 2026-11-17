@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -232,9 +232,16 @@ function createWindow() {
     }
   });
 
+  const sender = mainWindow.webContents;
+  sender.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url).catch((error) => safeWarn('Could not open summary link:', error.message));
+    }
+    return { action: 'deny' };
+  });
+
   // 加载应用
   mainWindow.loadFile(path.join(__dirname, '../src/index.html'));
-  const sender = mainWindow.webContents;
   mainWindow.on('closed', () => cancelLocalAsr(sender));
 
   // 开发模式下打开开发者工具

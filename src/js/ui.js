@@ -1,6 +1,19 @@
 let toastTimer = null;
 let currentDetailAudioUrl = null;
 
+const createMarkdownIt = typeof module !== 'undefined' && module.exports
+    ? require('../vendor/markdown-it.umd.min.js')
+    : globalThis.markdownit;
+const summaryMarkdown = createMarkdownIt({ html: false, breaks: true });
+summaryMarkdown.validateLink = url => /^https?:\/\//i.test(url);
+summaryMarkdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
+    tokens[index].attrSet('target', '_blank');
+    tokens[index].attrSet('rel', 'noopener noreferrer');
+    return renderer.renderToken(tokens, index, options);
+};
+// Render the alt text without fetching images from stored summaries.
+summaryMarkdown.renderer.rules.image = (tokens, index) => escapeHtml(tokens[index].content);
+
 function cleanupDetailAudioPreview() {
     if (currentDetailAudioUrl) {
         URL.revokeObjectURL(currentDetailAudioUrl);
@@ -155,11 +168,17 @@ function getLoadingMarkup(message) {
     `;
 }
 
+function renderSummaryMarkdown(summary) {
+    if (!summary?.trim()) return '暂无会议纪要';
+    return `<div class="content-text summary-markdown">${summaryMarkdown.render(summary)}</div>`;
+}
+
 function updateSummaryContent(summary) {
     const summaryContent = document.getElementById('summaryContent');
     if (summaryContent) {
         if (summary && summary.trim()) {
-            summaryContent.innerHTML = `<div class="content-text">${escapeHtml(summary)}</div>`;
+            summaryContent.innerHTML = renderSummaryMarkdown(summary);
+            summaryContent.firstElementChild.dataset.markdown = summary;
             // 如果当前不在会议纪要标签页，显示小红点提示
             const summaryTab = document.getElementById('summaryTab');
             if (summaryTab && !summaryTab.classList.contains('active')) {
@@ -355,7 +374,7 @@ async function renderMeetingDetail(meeting) {
         : escapeHtml(meeting.transcript || '暂无转写文本');
     const summaryContent = isSummaryProcessing
         ? getLoadingMarkup('正在重新生成纪要，请稍候...')
-        : escapeHtml(meeting.summary || '暂无会议纪要');
+        : renderSummaryMarkdown(meeting.summary);
 
     detailContent.innerHTML = `
         <div class="detail-page-title-row">
@@ -567,7 +586,7 @@ function showLoading(message, targets = { transcript: true, summary: true }) {
         subtitleContent.innerHTML = loadingHTML;
     }
     
-    if (summaryContent && targets.summary !== false) {
+    if (summaryContent && !summaryContent.hidden && targets.summary !== false) {
         const loadingGenerating = i18n ? i18n.get('loadingGenerating') : '生成中...';
         const summaryMessage = targets.summaryMessage || loadingGenerating;
         summaryContent.innerHTML = getLoadingMarkup(summaryMessage);

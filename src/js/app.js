@@ -4,6 +4,9 @@ let currentAudioBlob = null;
 let currentAudioFilePath = null;
 let currentAudioSourceState = null;
 
+const DEFAULT_SUMMARY_API_URL = 'https://api.deepseek.com/v1/chat/completions';
+const DEFAULT_SUMMARY_MODEL = 'deepseek-flash';
+
 const TRANSCRIPT_STATUS = {
     PENDING: 'pending',
     TRANSCRIBING: 'transcribing',
@@ -104,9 +107,9 @@ async function initApp() {
                 sttApiUrl: '',
                 sttApiKey: '',
                 sttModel: 'whisper-1',
-                summaryApiUrl: '',
+                summaryApiUrl: DEFAULT_SUMMARY_API_URL,
                 summaryApiKey: '',
-                summaryModel: 'gpt-3.5-turbo',
+                summaryModel: DEFAULT_SUMMARY_MODEL,
                 summaryTemplate: DEFAULT_TEMPLATE,
                 ...defaultAudioSourceSettings
             };
@@ -121,9 +124,16 @@ async function initApp() {
                 ...currentSettings,
                 ...defaultAudioSourceSettings
             };
+            if (!currentSettings.summaryApiUrl?.trim() && !currentSettings.summaryApiKey?.trim()) {
+                currentSettings.summaryApiUrl = DEFAULT_SUMMARY_API_URL;
+                if (!currentSettings.summaryModel?.trim() || currentSettings.summaryModel === 'gpt-3.5-turbo') {
+                    currentSettings.summaryModel = DEFAULT_SUMMARY_MODEL;
+                }
+            }
         }
         
         loadSettings(currentSettings);
+        updateSummaryApiAvailability(currentSettings);
         loadDefaultTemplate();
         await refreshAudioSourceOptions({ silent: true });
         
@@ -384,6 +394,11 @@ function setupEventListeners() {
     
     // 刷新纪要按钮
     document.getElementById('btnRefreshSummary').addEventListener('click', handleRefreshSummary);
+    document.getElementById('btnBindSummaryApi').addEventListener('click', () => {
+        switchView('settings');
+        document.getElementById('summaryApiSettings').scrollIntoView({ block: 'start' });
+        document.getElementById('summaryApiKey').focus({ preventScroll: true });
+    });
     
     // 设置页面按钮
     document.getElementById('btnTestSttApi').addEventListener('click', handleTestSttApi);
@@ -439,6 +454,19 @@ function useLocalTranscription() {
 
 function canTranscribeAudio(local = useLocalTranscription()) {
     return local || !!(currentSettings?.sttApiUrl && currentSettings.sttApiKey);
+}
+
+function canGenerateSummary(settings = currentSettings) {
+    return !!(settings?.summaryApiUrl?.trim() && settings.summaryApiKey?.trim());
+}
+
+function updateSummaryApiAvailability(settings) {
+    const binding = document.getElementById('summaryApiBinding');
+    if (!binding) return;
+    const configured = canGenerateSummary(settings);
+    binding.hidden = configured;
+    document.getElementById('summaryContent').hidden = !configured;
+    document.getElementById('summaryActions').hidden = !configured;
 }
 
 function transcribeMeetingAudio(audioBlob, audioFilePath, onProgress, local = useLocalTranscription()) {
@@ -724,11 +752,9 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null, live
             transcript: result.text,
             transcriptStatus: TRANSCRIPT_STATUS.COMPLETED
         });
+        currentMeetingId = meetingId;
 
-        // 检查转写内容是否为空，空内容不生成纪要
-        console.log('[DEBUG] result.text length:', (result.text || '').length, 'content:', JSON.stringify(result.text));
-        if (!result.text || result.text.trim().length === 0) {
-            console.log('[DEBUG] Empty transcript branch entered');
+        if (!result.text?.trim() || !canGenerateSummary()) {
             if (typeof updateSummaryContent === 'function') {
                 updateSummaryContent('');
             }
@@ -759,11 +785,7 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
     let titleUpdates = {};
 
     try {
-        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowGeneratingSummary') : '正在生成会议纪要...', { transcript: false, summary: true });
-
-        // 检查转写内容是否为空
-        if (!transcript || transcript.trim().length === 0) {
-            console.log('[App] Transcript is empty, skipping summary generation');
+        if (!transcript?.trim() || !canGenerateSummary()) {
             if (typeof updateSummaryContent === 'function') {
                 updateSummaryContent('');
             }
@@ -772,37 +794,33 @@ async function generateMeetingSummary(transcript, audioBlob, meetingId) {
             return;
         }
 
-        if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
-            console.log('[App] Summary API not configured, skipping summary generation');
-            showToast('未配置纪要生成API，仅保存转写内容', 'info');
-        } else {
-            const result = await generateSummary(
-                transcript,
-                currentSettings.summaryTemplate,
-                currentSettings.summaryApiUrl,
-                currentSettings.summaryApiKey,
-                currentSettings.summaryModel,
-                (message) => updateRecordingWorkflowState(true, message, { transcript: false, summary: true })
-            );
+        updateRecordingWorkflowState(true, i18n ? i18n.get('workflowGeneratingSummary') : '正在生成会议纪要...', { transcript: false, summary: true });
+        const result = await generateSummary(
+            transcript,
+            currentSettings.summaryTemplate,
+            currentSettings.summaryApiUrl,
+            currentSettings.summaryApiKey,
+            currentSettings.summaryModel,
+            (message) => updateRecordingWorkflowState(true, message, { transcript: false, summary: true })
+        );
 
-            if (!result.success) {
-                console.log('[App] Summary generation failed:', result.message);
-                showToast(buildUserFacingErrorToast('生成纪要失败', result.message), 'error');
-            } else {
-                summary = result.summary;
-                updateSummaryContent(summary);
-                if (typeof generateMeetingTitle === 'function') {
-                    const titleResult = await generateMeetingTitle(
-                        summary,
-                        currentSettings.summaryApiUrl,
-                        currentSettings.summaryApiKey,
-                        currentSettings.summaryModel,
-                        (message) => updateRecordingWorkflowState(true, message, { transcript: false, summary: true })
-                    );
-                    titleUpdates = buildMeetingTitleUpdates(titleResult);
-                }
-                showToast('纪要生成成功', 'success');
+        if (!result.success) {
+            console.log('[App] Summary generation failed:', result.message);
+            showToast(buildUserFacingErrorToast('生成纪要失败', result.message), 'error');
+        } else {
+            summary = result.summary;
+            updateSummaryContent(summary);
+            if (typeof generateMeetingTitle === 'function') {
+                const titleResult = await generateMeetingTitle(
+                    summary,
+                    currentSettings.summaryApiUrl,
+                    currentSettings.summaryApiKey,
+                    currentSettings.summaryModel,
+                    (message) => updateRecordingWorkflowState(true, message, { transcript: false, summary: true })
+                );
+                titleUpdates = buildMeetingTitleUpdates(titleResult);
             }
+            showToast('纪要生成成功', 'success');
         }
 
         // 无论纪要生成成功与否，都保存会议记录
@@ -929,9 +947,9 @@ function handleCopySubtitle() {
 }
 
 function handleCopySummary() {
-    const summaryContent = document.getElementById('summaryContent');
-    if (summaryContent && summaryContent.textContent) {
-        copyToClipboard(summaryContent.textContent);
+    const markdown = document.querySelector('#summaryContent .summary-markdown')?.dataset.markdown;
+    if (markdown) {
+        copyToClipboard(markdown);
     } else {
         showToast('暂无纪要内容', 'info');
     }
@@ -943,6 +961,7 @@ async function persistSettings(settings) {
     if (typeof window !== 'undefined' && window.electronAPI) {
         await saveConfigToFile(settings);
     }
+    updateSummaryApiAvailability(settings);
 }
 
 async function handleSaveSttSettings() {
@@ -1001,7 +1020,7 @@ async function handleTestSttApi() {
 async function handleTestSummaryApi() {
     const apiUrl = document.getElementById('summaryApiUrl').value.trim();
     const apiKey = document.getElementById('summaryApiKey').value.trim();
-    const model = document.getElementById('summaryModel').value.trim() || 'gpt-3.5-turbo';
+    const model = document.getElementById('summaryModel').value.trim() || DEFAULT_SUMMARY_MODEL;
 
     if (!apiUrl || !apiKey) {
         showToast('请输入API地址和API Key', 'error');
@@ -1058,7 +1077,6 @@ async function viewMeetingDetail(id) {
     try {
         const meeting = await getMeeting(id);
         if (meeting) {
-            currentMeetingId = id;
             await renderMeetingDetail(meeting);
             openDetailModal();
         } else {
@@ -1226,7 +1244,7 @@ async function handleRefreshSummaryInDetail(meetingId) {
             return;
         }
 
-        if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
+        if (!canGenerateSummary()) {
             showToast('请先配置纪要生成API', 'error');
             return;
         }
@@ -1447,7 +1465,9 @@ async function processAudioFile(file) {
         hideRetryTranscriptionButton();
 
         updateSubtitleContent(result.text);
-        showToast(i18n ? i18n.get('generatingSummary') : '转写完成，正在生成纪要...', 'info');
+        if (canGenerateSummary()) {
+            showToast(i18n ? i18n.get('generatingSummary') : '转写完成，正在生成纪要...', 'info');
+        }
 
         // 保存当前转写文本，用于刷新纪要
         currentTranscript = result.text;
@@ -1514,7 +1534,7 @@ async function handleRefreshSummary() {
         return;
     }
 
-    if (!currentSettings.summaryApiUrl || !currentSettings.summaryApiKey) {
+    if (!canGenerateSummary()) {
         showToast('请先配置纪要生成API', 'error');
         return;
     }

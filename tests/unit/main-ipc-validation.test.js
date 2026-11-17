@@ -43,6 +43,7 @@ describe('Main process IPC handler validation', () => {
         webContents: {
           openDevTools: jest.fn(),
           send: jest.fn(),
+          setWindowOpenHandler: jest.fn(),
           session: {
             setPermissionRequestHandler: jest.fn()
           }

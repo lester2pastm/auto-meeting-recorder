@@ -216,7 +216,7 @@
                                     </svg>
                                     <span data-i18n="meetingSummary">会议纪要</span>
                                 </div>
-                                <div class="tab-content-actions">
+                                <div id="summaryActions" class="tab-content-actions" hidden>
                                     <button id="btnRefreshSummary" class="btn btn-icon" title="重新生成纪要">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <polyline points="23 4 23 10 17 10"/>
@@ -232,7 +232,13 @@
                                     </button>
                                 </div>
                             </div>
-                            <div id="summaryContent" class="tab-content-body">
+                            <div id="summaryApiBinding" class="tab-content-body">
+                                <div class="empty-state">
+                                    <p data-i18n="summaryApiUnbound">未绑定会议纪要 API</p>
+                                    <button id="btnBindSummaryApi" type="button" class="btn btn-primary" data-i18n="bindSummaryApi">去绑定</button>
+                                </div>
+                            </div>
+                            <div id="summaryContent" class="tab-content-body" hidden>
                                 <div class="empty-state">
                                     <div class="empty-icon">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -323,7 +329,7 @@
                     </div>
 
                     <!-- 纪要生成配置 -->
-                    <div class="settings-card">
+                    <div class="settings-card" id="summaryApiSettings">
                         <div class="settings-card-header">
                             <div class="settings-icon">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -347,7 +353,7 @@
                             </div>
                             <div class="form-field">
                                 <label for="summaryModel" data-i18n="modelName">模型名称</label>
-                                <input type="text" id="summaryModel" placeholder="gpt-3.5-turbo">
+                                <input type="text" id="summaryModel">
                             </div>
                             <button id="btnTestSummaryApi" class="btn btn-outline">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -584,6 +590,7 @@
     <script src="js/recorder.js"></script>
     <script src="js/api.js"></script>
     <script src="js/local-asr.js"></script>
+    <script src="vendor/markdown-it.umd.min.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/recovery-ui.js"></script>
     <script src="js/transcription-manager.js"></script>

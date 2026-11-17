@@ -66,21 +66,19 @@ test.describe('字幕和摘要功能测试', () => {
     await expect(subtitleContent).toBeVisible();
   });
 
-  test('应该显示摘要内容区域', async ({ page }) => {
+  test('未配置纪要 API 时应该显示绑定入口', async ({ page }) => {
     await openSummaryTab(page);
-    const summaryContent = await page.locator('#summaryContent');
-    await expect(summaryContent).toBeVisible();
+    await expect(page.locator('#btnBindSummaryApi')).toBeVisible();
   });
 
-  test('应该显示复制按钮', async ({ page }) => {
+  test('未配置纪要 API 时应该只显示字幕复制按钮', async ({ page }) => {
     // 检查复制字幕按钮
     const copySubtitleBtn = await page.locator('#btnCopySubtitle');
     await expect(copySubtitleBtn).toBeVisible();
 
-    // 检查复制摘要按钮
     await openSummaryTab(page);
     const copySummaryBtn = await page.locator('#btnCopySummary');
-    await expect(copySummaryBtn).toBeVisible();
+    await expect(copySummaryBtn).toBeHidden();
   });
 });
 
