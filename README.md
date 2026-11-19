@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.8.1-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.8.2-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -49,7 +49,8 @@
 
 ### Why this version matters
 
-- Current app version: `2.8.1`
+- Current app version: `2.8.2`
+- A compact toolbar leaves more room for the transcript and summary during and after recording. Going back keeps the latest meeting on screen until the next recording starts.
 - Meeting summaries display formatted Markdown on the recording screen and in history. Recording and transcription work before a summary API is configured.
 - `src/index.html` is still useful for UI development and browser-based E2E checks, but the full product experience depends on Electron IPC
 

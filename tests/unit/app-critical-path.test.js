@@ -106,7 +106,7 @@ describe('App critical path regressions', () => {
       i18n: null,
       stopRecording: jest.fn().mockResolvedValue(audioBlob),
       getRecordingDuration: () => '00:10:00',
-      getRecordingState: () => ({ isRecording: false }),
+      getRecordingState: jest.fn().mockReturnValueOnce({ isRecording: true }).mockReturnValue({ isRecording: false }),
       getRecoveryMeta: () => ({ tempFile: '/tmp/recording.webm' }),
       updateRecordingButtons: jest.fn(),
       clearRecoveryData,

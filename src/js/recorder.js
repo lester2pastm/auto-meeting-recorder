@@ -10,18 +10,7 @@ let audioBlob = null;
 let liveSpeechInput = null;
 let onAudioFileReady = null; // 回调：音频文件读取完成后触发
 
-// 音频可视化相关变量
 let audioContext = null;
-let analyser = null;
-let dataArray = null;
-let source = null;
-let animationId = null;
-let systemAudioLevel = 0;    // FFmpeg 系统音频音量级别 (Linux)
-let systemAudioLastUpdateTime = 0;  // FFmpeg 音量最后更新时间
-const SYSTEM_AUDIO_TIMEOUT = 300;   // 超时阈值（毫秒），超过此时间开始衰减
-const SYSTEM_AUDIO_DECAY_RATE = 0.2; // 衰减率，每次更新衰减的比例
-const SYSTEM_AUDIO_SILENCE_THRESHOLD = 0.15; // 静音阈值，低于此值认为是静音
-
 // 音频流相关变量
 let microphoneStream = null;
 let systemAudioStream = null;
@@ -147,7 +136,7 @@ async function startRecording(localAsr = false) {
             stopTempSaveTimer();
         }
         stopAllStreams();
-        stopWaveform();
+        closeRecordingAudioContext();
         throw error;
     } finally {
         isStartingRecording = false;
@@ -189,9 +178,6 @@ async function startLinuxRecording(localAsr) {
         
         console.log('[Recorder] Linux recording paths:', linuxRecordingPaths);
 
-        // 创建音频上下文
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
         // 1. 检测并修复 PulseAudio 输入设备（ARM Linux 常见问题）
         if (window.electronAPI && window.electronAPI.checkPulseAudioInput && !preferredLinuxMicSource) {
             const checkResult = await window.electronAPI.checkPulseAudioInput();
@@ -208,70 +194,6 @@ async function startLinuxRecording(localAsr) {
             }
         }
 
-        // 3. 获取麦克风音频（用于录制和可视化）
-        microphoneStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            }
-        });
-
-        // 4. 设置录音状态（必须在初始化波形可视化之前）
-        isRecording = true;
-        isPaused = false;
-        recordingStartTime = Date.now();
-        recordingPausedTime = 0;
-        startTimer();
-
-        // 5. 获取系统音频用于可视化（通过 Web Audio API 捕获 monitor 设备）
-        let visualizerStream = microphoneStream;
-        try {
-            // 尝试获取系统音频 - 在 Linux 上需要使用 desktopCapturer
-            if (window.electronAPI && window.electronAPI.getDesktopCapturerSources) {
-                const result = await window.electronAPI.getDesktopCapturerSources();
-                if (result.success && result.sources.length > 0) {
-                    const screenSource = result.sources.find(s => s.name === 'Entire screen') || result.sources[0];
-                    
-                    systemAudioStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            mandatory: {
-                                chromeMediaSource: 'desktop',
-                                chromeMediaSourceId: screenSource.id
-                            }
-                        },
-                        video: {
-                            mandatory: {
-                                chromeMediaSource: 'desktop',
-                                chromeMediaSourceId: screenSource.id
-                            }
-                        }
-                    });
-                    
-                    // 停止视频轨道
-                    systemAudioStream.getVideoTracks().forEach(track => track.stop());
-                    const audioTrack = systemAudioStream.getAudioTracks()[0];
-                    if (audioTrack) {
-                        // 合并麦克风和系统音频用于可视化
-                        visualizerStream = await combineAudioStreams(
-                            microphoneStream, 
-                            systemAudioStream, 
-                            audioContext
-                        );
-                    } else {
-                        systemAudioStream = null;
-                    }
-                }
-            }
-        } catch (sysAudioError) {
-            // 回退到仅使用麦克风
-            visualizerStream = microphoneStream;
-            systemAudioStream = null;
-        }
-        
-        // 4. 初始化波形可视化（使用合并后的音频流）
-        await initWaveform(visualizerStream);
-        
         const sysResult = await window.electronAPI.startFFmpegSystemAudio(
             linuxRecordingPaths.output,
             preferredLinuxSystemSource,
@@ -282,8 +204,12 @@ async function startLinuxRecording(localAsr) {
             throw new Error('启动 Linux 录音失败: ' + sysResult.error);
         }
         
-        // 设置 FFmpeg 录制标志（isRecording 已经在前面设置）
         isFFmpegRecording = true;
+        isRecording = true;
+        isPaused = false;
+        recordingStartTime = Date.now();
+        recordingPausedTime = 0;
+        startTimer();
         
         return true;
         
@@ -408,6 +334,7 @@ async function startStandardRecording(localAsr) {
         throw new Error('获取系统音频失败: ' + err.message);
     }
 
+    if (audioContext.state === 'suspended') await audioContext.resume();
     const combinedStream = await combineAudioStreams(microphoneStream, systemAudioStream, audioContext);
 
     mediaRecorder = new MediaRecorder(combinedStream, {
@@ -467,7 +394,7 @@ async function startStandardRecording(localAsr) {
             }
         } finally {
             stopAllStreams();
-            stopWaveform();
+            closeRecordingAudioContext();
             mediaRecorder = null;
         }
     };
@@ -483,7 +410,6 @@ async function startStandardRecording(localAsr) {
 
     mediaRecorder.start(1000);
     
-    // 先设置录音状态，再初始化波形可视化
     isRecording = true;
     isPaused = false;
     isFFmpegRecording = false;
@@ -491,7 +417,6 @@ async function startStandardRecording(localAsr) {
     recordingPausedTime = 0;
     startTimer();
 
-    await initWaveform(combinedStream);
     console.log('=== 录音启动完成 ===');
 
     return true;
@@ -616,12 +541,6 @@ function resumeRecording() {
         isPaused = false;
         recordingPausedTime += Date.now() - pauseStartTime;
         startTimer();
-        // 重启波形动画（先停止之前的动画）
-        if (animationId) {
-            cancelAnimationFrame(animationId);
-            animationId = null;
-        }
-        drawWaveform();
     }
 }
 
@@ -688,8 +607,6 @@ async function stopLinuxRecording() {
         return audioBlob;
         
     } finally {
-        stopAllStreams();
-        stopWaveform();
         isFFmpegRecording = false;
         linuxRecordingPaths = null;
     }
@@ -699,6 +616,7 @@ function getRecordingState() {
     return {
         isRecording,
         isPaused,
+        canPause: isRecording && !isFFmpegRecording && typeof mediaRecorder?.pause === 'function' && typeof mediaRecorder?.resume === 'function',
         duration: getRecordingDuration()
     };
 }
@@ -726,6 +644,7 @@ function formatRecordingTime(ms) {
 }
 
 function startTimer() {
+    updateRecordingTime(getRecordingDuration());
     timerInterval = setInterval(async () => {
         const duration = getRecordingDuration();
         updateRecordingTime(duration);
@@ -761,242 +680,10 @@ function setAudioFileReadyCallback(callback) {
     onAudioFileReady = callback;
 }
 
-// 初始化音频波形可视化
-async function initWaveform(stream) {
-    try {
-        console.log('=== 初始化波形可视化 ===');
-        
-        // 验证传入的流
-        if (!stream) {
-            console.error('错误: 传入的音频流为空');
-            return;
-        }
-        
-        // 创建或恢复音频上下文（必须在用户交互后创建）
-        if (!audioContext || audioContext.state === 'closed') {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        
-        // 如果音频上下文被暂停，尝试恢复
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
-
-        // 创建分析器
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.8;
-        
-        // 创建数据数组用于存储时域数据
-        dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        // 连接音频源
-        if (source) {
-            try {
-                source.disconnect();
-            } catch (e) {
-                console.warn('[Recorder] Failed to disconnect previous waveform source:', e);
-            }
-        }
-        
-        source = audioContext.createMediaStreamSource(stream);
-        
-        // 连接到 analyser（用于波形可视化）
-        source.connect(analyser);
-        
-        // 注意：不使用 ScriptProcessorNode，因为它在 Electron 中会导致渲染进程卡死
-        // 改为使用 AnalyserNode.getByteTimeDomainData() 实时获取音频振幅
-
-        // 在 Linux 平台设置 FFmpeg 音量监听
-        if (isLinuxPlatform && window.electronAPI && window.electronAPI.onAudioLevel) {
-            window.electronAPI.onAudioLevel((data) => {
-                if (data.type === 'system') {
-                    // 更新最后接收时间
-                    systemAudioLastUpdateTime = Date.now();
-                    
-                    // 将 RMS dB 转换为 0-1 范围
-                    // -70 dB (静音) -> 0
-                    // -30 dB (轻声) -> 0.3
-                    // -10 dB (正常) -> 0.7
-                    // 0 dB (最大) -> 1
-                    const rmsDb = data.rms || -70;
-                    const minDb = -70;
-                    const maxDb = -5;
-                    let normalizedLevel = Math.max(0, Math.min(1, (rmsDb - minDb) / (maxDb - minDb)));
-                    
-                    // 如果音量低于静音阈值，直接设为0
-                    if (normalizedLevel < SYSTEM_AUDIO_SILENCE_THRESHOLD) {
-                        normalizedLevel = 0;
-                    }
-                    
-                    systemAudioLevel = normalizedLevel;
-                }
-            });
-        }
-
-        // 开始绘制
-        drawWaveform();
-    } catch (error) {
-        console.error('初始化波形可视化时出错:', error);
-    }
-}
-
-// 更新音频条 - 根据实际音频数据
-function drawWaveform() {
-    const audioBars = document.getElementById('audioBars');
-    if (!audioBars) {
-        return;
-    }
-
-    const bars = audioBars.querySelectorAll('.audio-bar');
-    if (bars.length === 0) {
-        return;
-    }
-
-    // 用于平滑过渡的历史数据
-    const smoothedData = new Array(bars.length).fill(4);
-    const smoothingFactor = 0.15;
-    let frameCount = 0;
-    let hasDetectedAudio = false;
-
-    function update() {
-        if (!isRecording || isPaused) {
-            return;
-        }
-
-        animationId = requestAnimationFrame(update);
-
-        // 从 AnalyserNode 获取麦克风振幅（替代 ScriptProcessorNode，避免 Electron 黑屏）
-        let micAmplitude = 0;
-        if (analyser && dataArray) {
-            analyser.getByteTimeDomainData(dataArray);
-            
-            // 计算 RMS (均方根) 振幅
-            let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-                // 将 0-255 映射到 -1 到 1
-                const value = (dataArray[i] - 128) / 128;
-                sum += value * value;
-            }
-            const rms = Math.sqrt(sum / dataArray.length);
-            micAmplitude = Math.min(rms * 4, 1); // 放大4倍使波形更明显
-        }
-        
-        // 在 Linux 平台，也获取 FFmpeg 系统音频音量
-        let sysAmplitude = 0;
-        if (isLinuxPlatform) {
-            const now = Date.now();
-            const timeSinceLastUpdate = now - systemAudioLastUpdateTime;
-            
-            // 如果超过 300ms 没有收到新数据，开始衰减
-            if (timeSinceLastUpdate > SYSTEM_AUDIO_TIMEOUT && systemAudioLevel > 0) {
-                // 每次衰减一定比例，让波形平滑减小
-                systemAudioLevel = systemAudioLevel * (1 - SYSTEM_AUDIO_DECAY_RATE);
-                if (systemAudioLevel < 0.01) {
-                    systemAudioLevel = 0;
-                }
-            }
-            sysAmplitude = systemAudioLevel || 0;
-        }
-        
-        // 合并两个声源的振幅（取最大值）
-        const amplitude = Math.max(micAmplitude, sysAmplitude);
-        
-        // 每300帧（约5秒）输出一次调试信息，避免性能问题
-        frameCount++;
-        if (frameCount % 600 === 0) {
-            if (amplitude > 0.01 && !hasDetectedAudio) {
-                hasDetectedAudio = true;
-                console.log('✓ 检测到音频输入! 麦克风:', micAmplitude.toFixed(3), '系统:', sysAmplitude.toFixed(3));
-            }
-            // 仅在调试模式下输出详细日志
-            if (window.DEBUG_AUDIO) {
-                if (isLinuxPlatform) {
-                    const now = Date.now();
-                    const timeout = now - systemAudioLastUpdateTime;
-                    console.log(`音频振幅 - 麦克风: ${micAmplitude.toFixed(3)} 系统: ${sysAmplitude.toFixed(3)} (${timeout}ms)`, 
-                                hasDetectedAudio ? '[已检测到音频]' : '[未检测到音频]');
-                } else {
-                    console.log('音频振幅:', amplitude.toFixed(3), hasDetectedAudio ? '[已检测到音频]' : '[未检测到音频]');
-                }
-            }
-        }
-
-        // 生成波形效果 - 使用振幅值创建波动
-        const barCount = bars.length;
-        const time = Date.now() / 200; // 时间因子用于创建波动动画
-        
-        for (let i = 0; i < barCount; i++) {
-            // 基于位置和振幅创建波形
-            const position = i / barCount;
-            const waveOffset = Math.sin(time + position * Math.PI * 4) * 0.3;
-            
-            // 结合麦克风和系统音频振幅
-            // Linux: 合并两个声源，非 Linux: 只使用麦克风
-            let combinedAmplitude;
-            if (isLinuxPlatform) {
-                // 在 Linux 上，根据波形条位置混合两个声源
-                // 左侧条主要显示麦克风，右侧条主要显示系统音频
-                const micWeight = 1 - position * 0.5;  // 左侧权重高
-                const sysWeight = 0.5 + position * 0.5; // 右侧权重高
-                combinedAmplitude = micAmplitude * micWeight + sysAmplitude * sysWeight;
-            } else {
-                combinedAmplitude = micAmplitude;
-            }
-            
-            // 结合音频振幅和波形动画
-            let normalizedValue = combinedAmplitude * (0.7 + waveOffset * 0.3);
-            
-            // 确保有最小波动（即使没有音频输入）
-            normalizedValue = Math.max(normalizedValue, 0.05);
-            
-            // 计算目标高度 (最小4px，最大48px)
-            const targetHeight = 4 + normalizedValue * 44;
-
-            // 平滑过渡
-            smoothedData[i] = smoothedData[i] * (1 - smoothingFactor) + targetHeight * smoothingFactor;
-
-            // 应用高度
-            bars[i].style.height = `${smoothedData[i]}px`;
-
-            // 根据音量调整透明度
-            const opacity = 0.3 + normalizedValue * 0.7;
-            bars[i].style.opacity = opacity;
-        }
-    }
-
-    update();
-}
-
-// 停止波形可视化
-function stopWaveform() {
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-    }
-
+function closeRecordingAudioContext() {
     if (audioContext) {
         audioContext.close();
         audioContext = null;
-    }
-
-    // 重置音频级别变量
-    systemAudioLevel = 0;
-    systemAudioLastUpdateTime = 0;
-
-    // 移除 FFmpeg 监听器
-    if (window.electronAPI && window.electronAPI.removeAudioLevelListener) {
-        window.electronAPI.removeAudioLevelListener();
-    }
-
-    // 重置音频条
-    const audioBars = document.getElementById('audioBars');
-    if (audioBars) {
-        const bars = audioBars.querySelectorAll('.audio-bar');
-        bars.forEach(bar => {
-            bar.style.height = '4px';
-            bar.style.opacity = '0.4';
-        });
     }
 }
 

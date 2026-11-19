@@ -21,8 +21,6 @@ function loadRecorderModule(overrides = {}) {
     clearInterval,
     setTimeout,
     clearTimeout,
-    requestAnimationFrame: jest.fn(() => 1),
-    cancelAnimationFrame: jest.fn(),
     MediaStream: class MediaStream {
       constructor(tracks = []) {
         this._tracks = tracks;
@@ -66,7 +64,7 @@ module.exports = {
   startRecording,
   startStandardRecording,
   stopRecording,
-  initWaveform,
+  getRecordingState,
   stopAllStreams
 };`);
 
@@ -78,7 +76,29 @@ module.exports = {
 describe('Recorder cleanup regressions', () => {
   beforeEach(() => {
     jest.resetModules();
-    document.body.innerHTML = '<div id="audioBars"></div><div id="recordingTime"></div>';
+    document.body.innerHTML = '<div id="recordingTime"></div>';
+  });
+
+  test('Linux FFmpeg records without a second capture for the waveform and exposes no pause', async () => {
+    const tempFile = '/tmp/recording.webm';
+    navigator.mediaDevices = { getUserMedia: jest.fn() };
+    window.electronAPI = {
+      getPlatform: jest.fn().mockResolvedValue({ success: true, platform: 'linux', isLinux: true }),
+      checkFFmpeg: jest.fn().mockResolvedValue({ success: true, available: true }),
+      startFFmpegSystemAudio: jest.fn().mockResolvedValue({ success: true }),
+      stopFFmpegRecording: jest.fn().mockResolvedValue({ success: true }),
+      readAudioFile: jest.fn().mockResolvedValue({ success: true, data: new Uint8Array([1, 2, 3]) })
+    };
+    const recorder = loadRecorderModule({
+      recoveryMeta: { tempFile },
+      startRecoveryTracking: jest.fn().mockResolvedValue({ tempFile })
+    });
+
+    await recorder.startRecording(true);
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(window.electronAPI.startFFmpegSystemAudio).toHaveBeenCalledWith(tempFile, null, null, true);
+    expect(recorder.getRecordingState()).toMatchObject({ isRecording: true, canPause: false });
+    expect((await recorder.stopRecording()).size).toBe(3);
   });
 
   test('startStandardRecording should keep system audio stream reachable for stopAllStreams cleanup', async () => {
@@ -98,12 +118,6 @@ describe('Recorder cleanup regressions', () => {
 
     const audioContextInstance = {
       state: 'running',
-      createAnalyser: jest.fn(() => ({
-        fftSize: 0,
-        smoothingTimeConstant: 0,
-        frequencyBinCount: 32,
-        getByteTimeDomainData: jest.fn()
-      })),
       createMediaStreamSource: jest.fn(() => ({ connect: jest.fn() })),
       createGain: jest.fn(() => ({ connect: jest.fn() })),
       createMediaStreamDestination: jest.fn(() => ({ stream: mixedStream })),
@@ -127,11 +141,10 @@ describe('Recorder cleanup regressions', () => {
     window.AudioContext = jest.fn(() => audioContextInstance);
     window.webkitAudioContext = window.AudioContext;
 
-    const recorder = loadRecorderModule({
-      initWaveform: jest.fn().mockResolvedValue(undefined)
-    });
+    const recorder = loadRecorderModule();
 
     await recorder.startStandardRecording();
+    expect(recorder.getRecordingState().canPause).toBe(true);
     recorder.stopAllStreams();
 
     expect(micTrack.stop).toHaveBeenCalled();
@@ -154,12 +167,6 @@ describe('Recorder cleanup regressions', () => {
 
     const audioContextInstance = {
       state: 'running',
-      createAnalyser: jest.fn(() => ({
-        fftSize: 0,
-        smoothingTimeConstant: 0,
-        frequencyBinCount: 32,
-        getByteTimeDomainData: jest.fn()
-      })),
       createMediaStreamSource: jest.fn(() => ({ connect: jest.fn() })),
       createGain: jest.fn(() => ({ connect: jest.fn() })),
       createMediaStreamDestination: jest.fn(() => ({ stream: { id: 'mixed-stream' } })),
@@ -183,9 +190,7 @@ describe('Recorder cleanup regressions', () => {
     window.AudioContext = jest.fn(() => audioContextInstance);
     window.webkitAudioContext = window.AudioContext;
 
-    const recorder = loadRecorderModule({
-      initWaveform: jest.fn().mockResolvedValue(undefined)
-    });
+    const recorder = loadRecorderModule();
 
     await expect(recorder.startStandardRecording()).rejects.toThrow('系统音频轨道');
     expect(micTrack.stop).toHaveBeenCalled();
@@ -207,12 +212,6 @@ describe('Recorder cleanup regressions', () => {
     const mixedStream = { id: 'mixed-stream' };
     const audioContextInstance = {
       state: 'running',
-      createAnalyser: jest.fn(() => ({
-        fftSize: 0,
-        smoothingTimeConstant: 0,
-        frequencyBinCount: 32,
-        getByteTimeDomainData: jest.fn()
-      })),
       createMediaStreamSource: jest.fn(() => ({ connect: jest.fn() })),
       createGain: jest.fn(() => ({ connect: jest.fn() })),
       createMediaStreamDestination: jest.fn(() => ({ stream: mixedStream })),
@@ -242,8 +241,7 @@ describe('Recorder cleanup regressions', () => {
     window.webkitAudioContext = window.AudioContext;
 
     const recorder = loadRecorderModule({
-      startRecoveryTracking: jest.fn().mockResolvedValue(null),
-      initWaveform: jest.fn().mockResolvedValue(undefined)
+      startRecoveryTracking: jest.fn().mockResolvedValue(null)
     });
 
     await expect(recorder.startRecording()).rejects.toThrow('恢复录音初始化失败');
@@ -272,12 +270,6 @@ describe('Recorder cleanup regressions', () => {
 
     const audioContextInstance = {
       state: 'running',
-      createAnalyser: jest.fn(() => ({
-        fftSize: 0,
-        smoothingTimeConstant: 0,
-        frequencyBinCount: 32,
-        getByteTimeDomainData: jest.fn()
-      })),
       createMediaStreamSource: jest.fn(() => ({ connect: jest.fn() })),
       createGain: jest.fn(() => ({ connect: jest.fn() })),
       createMediaStreamDestination: jest.fn(() => ({ stream: mixedStream })),
@@ -338,8 +330,7 @@ describe('Recorder cleanup regressions', () => {
       appendAudioChunk: jest.fn(() => {
         notifyWriteStarted();
         return finalWrite;
-      }),
-      initWaveform: jest.fn().mockResolvedValue(undefined)
+      })
     });
 
     await recorder.startStandardRecording();
@@ -378,12 +369,6 @@ describe('Recorder cleanup regressions', () => {
 
     const audioContextInstance = {
       state: 'running',
-      createAnalyser: jest.fn(() => ({
-        fftSize: 0,
-        smoothingTimeConstant: 0,
-        frequencyBinCount: 32,
-        getByteTimeDomainData: jest.fn()
-      })),
       createMediaStreamSource: jest.fn(() => ({ connect: jest.fn() })),
       createGain: jest.fn(() => ({ connect: jest.fn() })),
       createMediaStreamDestination: jest.fn(() => ({ stream: mixedStream })),
@@ -435,60 +420,11 @@ describe('Recorder cleanup regressions', () => {
     const recorder = loadRecorderModule({
       MediaRecorder: FakeMediaRecorder,
       getRecoveryMeta: jest.fn(() => ({ tempFile: '/tmp/recovery.webm' })),
-      clearRecoveryData: jest.fn().mockResolvedValue(undefined),
-      initWaveform: jest.fn().mockResolvedValue(undefined)
+      clearRecoveryData: jest.fn().mockResolvedValue(undefined)
     });
 
     await recorder.startStandardRecording();
 
     await expect(recorder.stopRecording()).rejects.toThrow('disk unavailable');
-  });
-
-  test('initWaveform should warn when disconnecting the previous source fails and continue rebinding', async () => {
-    const disconnectError = new Error('disconnect failed');
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const firstSource = {
-      connect: jest.fn(),
-      disconnect: jest.fn(() => {
-        throw disconnectError;
-      })
-    };
-    const secondSource = {
-      connect: jest.fn(),
-      disconnect: jest.fn()
-    };
-    const analyserInstance = {
-      fftSize: 0,
-      smoothingTimeConstant: 0,
-      frequencyBinCount: 32,
-      getByteTimeDomainData: jest.fn()
-    };
-    const audioContextInstance = {
-      state: 'running',
-      createAnalyser: jest.fn(() => analyserInstance),
-      createMediaStreamSource: jest.fn()
-        .mockReturnValueOnce(firstSource)
-        .mockReturnValueOnce(secondSource),
-      close: jest.fn().mockResolvedValue(undefined),
-      resume: jest.fn().mockResolvedValue(undefined)
-    };
-
-    window.AudioContext = jest.fn(() => audioContextInstance);
-    window.webkitAudioContext = window.AudioContext;
-
-    const recorder = loadRecorderModule();
-    const firstStream = { id: 'stream-1' };
-    const secondStream = { id: 'stream-2' };
-
-    await recorder.initWaveform(firstStream);
-    await recorder.initWaveform(secondStream);
-
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      '[Recorder] Failed to disconnect previous waveform source:',
-      disconnectError
-    );
-    expect(secondSource.connect).toHaveBeenCalled();
-
-    consoleWarnSpy.mockRestore();
   });
 });

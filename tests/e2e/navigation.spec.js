@@ -92,12 +92,8 @@ test.describe('录音视图功能测试', () => {
     const startBtn = await page.locator('#btnStartRecording');
     await expect(startBtn).toBeVisible();
 
-    // 检查音频可视化区域
-    const audioBars = await page.locator('#audioBars');
-    await expect(audioBars).toBeVisible();
-
     // 检查录音时间显示
-    const recordingTime = await page.locator('#recordingTime');
+    const recordingTime = await page.locator('#idleRecordingTime');
     await expect(recordingTime).toBeVisible();
     await expect(recordingTime).toHaveText('00:00:00');
   });

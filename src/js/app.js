@@ -382,6 +382,10 @@ function setupEventListeners() {
     document.getElementById('btnPauseRecording').addEventListener('click', handlePauseRecording);
     document.getElementById('btnResumeRecording').addEventListener('click', handleResumeRecording);
     document.getElementById('btnStopRecording').addEventListener('click', handleStopRecording);
+    document.getElementById('btnReturnFromRecording').addEventListener('click', () => {
+        setRecordingLayout('idle');
+        updateRecordingButtons(getRecordingState(), { isProcessing: isRecordingWorkflowBusy });
+    });
     
     // 复制按钮
     document.getElementById('btnCopySubtitle').addEventListener('click', handleCopySubtitle);
@@ -410,6 +414,14 @@ function setupEventListeners() {
 }
 
 let isRecordingWorkflowBusy = false;
+
+function setRecordingLayout(layout) {
+    const view = document.getElementById('recorderView');
+    if (!view) return;
+    view.dataset.recordingLayout = layout;
+    document.getElementById('recorderIntro').inert = layout !== 'idle';
+    document.getElementById('recordingToolbar').inert = layout === 'idle';
+}
 
 function updateRecordingWorkflowState(isBusy, message = '', targets) {
     isRecordingWorkflowBusy = isBusy;
@@ -479,6 +491,7 @@ function transcribeMeetingAudio(audioBlob, audioFilePath, onProgress, local = us
 
 let recordingUsesLocalAsr = false;
 let liveTranscript = '';
+let livePreview = '';
 
 async function recoverInterruptedMeetingStates() {
     if (typeof getAllMeetings !== 'function' || typeof updateMeeting !== 'function') {
@@ -562,11 +575,20 @@ async function handleStartRecording() {
     isRecordingWorkflowBusy = true;
     try {
         updateRecordingButtons(state, { isStarting: true });
-        clearCurrentMeetingContext();
         recordingUsesLocalAsr = useLocalTranscription();
         liveTranscript = '';
-        if (recordingUsesLocalAsr) updateSubtitleContent('');
+        livePreview = '';
         await startRecording(recordingUsesLocalAsr);
+        clearCurrentMeetingContext();
+        currentTranscript = '';
+        currentAudioBlob = null;
+        currentAudioFilePath = null;
+        updateSubtitleContent(livePreview);
+        updateSummaryContent('');
+        hideSummaryBadge();
+        hideRetryTranscriptionButton();
+        switchToTab('subtitle');
+        setRecordingLayout('recording');
         showToast('录音已开始', 'success');
     } catch (error) {
         recordingUsesLocalAsr = false;
@@ -600,15 +622,19 @@ function handleResumeRecording() {
 }
 
 async function handleStopRecording() {
+    if (!getRecordingState().isRecording || isRecordingWorkflowBusy) return;
     const stopBtn = document.getElementById('btnStopRecording');
     
     try {
+        setRecordingLayout('stopping');
         stopBtn.classList.add('btn-loading');
         stopBtn.disabled = true;
         updateRecordingWorkflowState(true, i18n ? i18n.get('workflowStopping') : '正在停止录音...');
         
         const currentDuration = getRecordingDuration();
         setLastRecordingDuration(currentDuration);
+        const time = document.getElementById('recordingTime');
+        if (time) time.textContent = currentDuration;
 
         // 停止录音，并等待标准录音/ Linux 录音都返回最终音频
         const audioBlob = await stopRecording();
@@ -622,6 +648,7 @@ async function handleStopRecording() {
 
         updateRecordingWorkflowState(true, i18n ? i18n.get('workflowSaving') : '正在保存录音...');
         const meeting = await saveEmptyMeetingRecord(audioBlob);
+        setRecordingLayout('result');
         if (typeof getRecoveryMeta === 'function' && getRecoveryMeta()) {
             await clearRecoveryData();
         }
@@ -645,6 +672,9 @@ async function handleStopRecording() {
         }
         stopBtn.classList.remove('btn-loading');
         stopBtn.disabled = false;
+        if (document.getElementById('recorderView')?.dataset.recordingLayout === 'stopping') {
+            setRecordingLayout(getRecordingState().isRecording ? 'recording' : 'result');
+        }
         clearRecordingWorkflowState();
     }
 }
@@ -726,7 +756,7 @@ async function processRecording(audioBlob, meetingId, audioFilePath = null, live
             } else if (result.message && (result.message.includes('超时') || result.message.includes('网络') || result.message.includes('连接'))) {
                 errorHint = '网络不稳定，转写失败，请重新转写';
             }
-            updateSubtitleContent(errorHint);
+            if (!recordingUsesLocalAsr || !livePreview.trim()) updateSubtitleContent(errorHint);
             
             // 保存音频blob和meetingId用于重试
             currentAudioBlob = audioBlob;
@@ -1588,7 +1618,10 @@ function setupAppControl() {
     window.electronAPI?.onLocalAsrText?.(({ text, final }) => {
         if (!recordingUsesLocalAsr) return;
         if (final) liveTranscript += text + '\n';
-        updateSubtitleContent(final ? liveTranscript : liveTranscript + text);
+        livePreview = final ? liveTranscript : liveTranscript + text;
+        if (document.getElementById('recorderView')?.dataset.recordingLayout !== 'idle') {
+            updateSubtitleContent(livePreview, true);
+        }
     });
     if (window.electronAPI && window.electronAPI.onCheckRecordingStatus) {
         window.electronAPI.onCheckRecordingStatus(() => {

@@ -95,7 +95,7 @@ async function installRecordingMocks(page) {
       };
     };
 
-    getRecordingState = () => ({ ...window.__mockRecordingState });
+    getRecordingState = () => ({ ...window.__mockRecordingState, canPause: true });
     getRecordingDuration = () => '00:00:03';
     setAudioFileReadyCallback = () => {};
   });
@@ -215,6 +215,8 @@ test('shows recording startup progress and re-enables retry after a failure', as
   await gotoApp(page);
   await installRecordingMocks(page);
   await page.evaluate(() => {
+    updateSubtitleContent('上一场全文');
+    updateSummaryContent('上一场纪要');
     const start = startRecording;
     startRecording = () => new Promise((resolve, reject) => {
       window.rejectRecordingStart = () => {
@@ -238,11 +240,15 @@ test('shows recording startup progress and re-enables retry after a failure', as
   await expect(start).toBeEnabled();
   await expect(start.getByText('开始录音')).toBeVisible();
   await expect(start.locator('.loading-spinner')).toBeHidden();
+  await expect(page.locator('#subtitleContent')).toHaveText('上一场全文');
+  await expect(page.locator('#summaryContent')).toHaveText('上一场纪要');
 
   await start.click();
   await expect(start).toBeHidden();
   await expect(stop).toBeEnabled();
   await expect(stop).toBeVisible();
+  await expect(page.locator('#subtitleContent')).not.toContainText('上一场全文');
+  await expect(page.locator('#summaryContent')).not.toContainText('上一场纪要');
 });
 
 test('saves a local transcript before binding the summary API and saves a summary after binding', async ({ page }) => {
@@ -280,6 +286,7 @@ test('saves a local transcript before binding the summary API and saves a summar
   await page.click('#btnStartRecording');
   await page.click('#btnStopRecording');
   await expect(page.locator('#toast')).toContainText('会议记录已保存');
+  await summaryTab.click();
   await expect(binding).toBeVisible();
   await page.click('.tab-btn[data-tab="subtitle"]');
   await expect(page.locator('#subtitleContent')).toHaveText(transcript);
@@ -408,13 +415,56 @@ test.describe('Core E2E flows', () => {
     await page.click('.nav-item[data-view="recorder"]');
     await expect(page.locator('#recorderView')).toHaveClass(/active/);
 
+    const content = page.locator('#recorderView .content-tabs');
+    const idleHeight = (await content.boundingBox()).height;
+    await page.evaluate(() => {
+      window.recorderLayoutTransitions = [];
+      for (const id of ['recorderIntro', 'recordingToolbar']) {
+        const slot = document.getElementById(id);
+        slot.addEventListener('transitionrun', event => {
+          if (event.target === slot && event.propertyName === 'grid-template-rows') {
+            window.recorderLayoutTransitions.push(id);
+          }
+        });
+      }
+    });
     await page.click('#btnStartRecording');
     await expect(page.locator('#toast')).toContainText('录音已开始');
     await expect(page.locator('#btnStopRecording')).toBeVisible();
+    await expect(page.locator('#recorderIntro')).toBeHidden();
+    expect(await page.evaluate(() => window.recorderLayoutTransitions)).toEqual(expect.arrayContaining([
+      'recorderIntro', 'recordingToolbar'
+    ]));
+    await expect.poll(async () => (await content.boundingBox()).height).toBeGreaterThan(idleHeight + 100);
+    const recordingBox = await content.boundingBox();
 
+    await page.click('#btnPauseRecording');
+    await expect(page.locator('#recordingIndicator')).toHaveText('已暂停');
+    await page.click('#btnResumeRecording');
+    await expect(page.locator('#recordingIndicator')).toHaveText('录音中');
+
+    await page.evaluate(() => {
+      updateSubtitleContent('实时全文在保存时仍应可见');
+      const stop = stopRecording;
+      stopRecording = async () => {
+        const audio = await stop();
+        await new Promise(resolve => { window.finishRecordingStop = resolve; });
+        return audio;
+      };
+    });
     await page.click('#btnStopRecording');
+    await expect(page.locator('#transcriptProgress')).toContainText('正在停止录音');
+    await expect(page.locator('#subtitleContent')).toHaveText('实时全文在保存时仍应可见');
+    await expect(page.locator('#btnStopRecording')).toBeDisabled();
+    await page.evaluate(() => window.finishRecordingStop());
 
     await expect(page.locator('#subtitleContent')).toContainText('这是 E2E 转写结果');
+    await expect(page.locator('#recordingTime')).toHaveText('00:00:03');
+    await expect(page.locator('#recordingIndicator')).toHaveText('已停止');
+    const back = page.locator('#btnReturnFromRecording');
+    await expect(back).toBeVisible();
+    await expect(page.locator('#btnStopRecording')).toBeHidden();
+    expect(await content.boundingBox()).toEqual(recordingBox);
     await page.click('.tab-btn[data-tab="summary"]');
     const summaryContent = page.locator('#summaryContent');
     await expect(summaryContent.getByRole('heading', { name: '这是 E2E 纪要结果' })).toBeVisible();
@@ -430,6 +480,18 @@ test.describe('Core E2E flows', () => {
     });
     await page.click('#btnCopySummary');
     expect(await page.evaluate(() => window.copiedSummary)).toBe(summary);
+
+    await back.click();
+    await expect(page.locator('#btnStartRecording')).toBeVisible();
+    await expect(back).toBeHidden();
+    expect(await page.evaluate(() => window.recorderLayoutTransitions)).toHaveLength(4);
+    await expect(summaryContent.getByRole('heading', { name: '这是 E2E 纪要结果' })).toBeVisible();
+    await expect(page.locator('#subtitleContent')).toContainText('这是 E2E 转写结果');
+
+    await page.reload();
+    await waitForAppReady(page);
+    await expect(page.locator('#subtitleContent')).not.toContainText('这是 E2E 转写结果');
+    await expect(summaryContent).not.toContainText('这是 E2E 纪要结果');
 
     await page.click('.nav-item[data-view="history"]');
     await expect(page.locator('.history-item')).toHaveCount(1);

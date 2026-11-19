@@ -5,7 +5,9 @@ describe('UI loading state targeting', () => {
     document.body.innerHTML = `
       <div id="toast"></div>
       <div id="detailContent"></div>
+      <div id="transcriptProgress" hidden></div>
       <div id="subtitleContent"><div class="content-text">现有转写内容</div></div>
+      <div id="summaryProgress" hidden></div>
       <div id="summaryContent"><div class="content-text">现有纪要内容</div></div>
       <button id="summaryTab" class="tab-button"></button>
       <div id="summaryTabBadge"></div>
@@ -37,7 +39,9 @@ describe('UI loading state targeting', () => {
     ui.showLoading('正在生成纪要...', { summary: true, transcript: false });
 
     expect(document.getElementById('subtitleContent').textContent).toContain('现有转写内容');
-    expect(document.getElementById('summaryContent').textContent).toContain('生成中');
+    expect(document.getElementById('summaryContent').textContent).toContain('现有纪要内容');
+    expect(document.getElementById('summaryProgress').textContent).toContain('正在生成纪要');
+    expect(document.getElementById('transcriptProgress').hidden).toBe(true);
   });
 
   test('showLoading should allow a stage-specific summary message', () => {
@@ -49,8 +53,11 @@ describe('UI loading state targeting', () => {
       summaryMessage: '转写完成后自动生成纪要...'
     });
 
-    expect(document.getElementById('subtitleContent').textContent).toContain('正在识别录音内容');
-    expect(document.getElementById('summaryContent').textContent).toContain('转写完成后自动生成纪要');
+    expect(document.getElementById('transcriptProgress').textContent).toContain('正在识别录音内容');
+    expect(document.getElementById('summaryProgress').textContent).toContain('转写完成后自动生成纪要');
+    ui.hideLoading();
+    expect(document.getElementById('transcriptProgress').hidden).toBe(true);
+    expect(document.getElementById('subtitleContent').textContent).toContain('现有转写内容');
   });
 
   test('showToast should reset the auto-hide timer for consecutive messages', () => {
@@ -216,13 +223,12 @@ describe('UI loading state targeting', () => {
     expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:active-audio');
   });
 
-  test('updateRecordingButtons should hide pause and resume controls on Linux while recording', () => {
+  test.each([false, true])('Linux shows pause only when the active recorder supports it (%s)', (canPause) => {
     document.body.innerHTML = `
       <button id="btnStartRecording" style="display: inline-flex;"></button>
       <button id="btnPauseRecording" style="display: none;"></button>
       <button id="btnResumeRecording" style="display: none;"></button>
       <button id="btnStopRecording" style="display: none;"></button>
-      <div id="audioBars"></div>
       <div id="recordingIndicator"></div>
     `;
     document.body.dataset.platform = 'linux';
@@ -231,11 +237,11 @@ describe('UI loading state targeting', () => {
 
     ui.updateRecordingButtons({
       isRecording: true,
-      isPaused: false
+      isPaused: false,
+      canPause
     });
 
-    expect(document.getElementById('btnStartRecording').style.display).toBe('none');
-    expect(document.getElementById('btnPauseRecording').style.display).toBe('none');
+    expect(document.getElementById('btnPauseRecording').style.display).toBe(canPause ? 'inline-flex' : 'none');
     expect(document.getElementById('btnResumeRecording').style.display).toBe('none');
     expect(document.getElementById('btnStopRecording').style.display).toBe('inline-flex');
   });

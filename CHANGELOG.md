@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.2] - 2026-11-19
+
+### Changed
+
+- Redesigned the recording screen with a light lavender card that smoothly collapses into a compact toolbar when recording starts. The transcript and summary get more room during and after recording.
+- Keep the transcript visible while saving and generating the summary. Going back keeps the meeting on screen until the next recording starts successfully. Saved meetings remain available in history after restarting.
+- Use a lightweight status animation instead of capturing audio levels for a waveform. Show pause and resume only when supported by the active recorder.
+
 ## [2.8.1] - 2026-11-17
 
 ### Added

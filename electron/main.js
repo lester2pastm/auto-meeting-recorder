@@ -543,7 +543,7 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
         '-i', microphoneDevice,
         '-f', 'pulse',
         '-i', monitorDevice,
-        '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level[aout]',
+        '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2[aout]',
         '-map', '[aout]',
         '-acodec', 'libopus',
         '-b:a', '128k',
@@ -556,7 +556,6 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       args = [
         '-f', 'pulse',
         '-i', microphoneDevice,
-        '-af', 'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level',
         '-acodec', 'libopus',
         '-b:a', '128k',
         '-ar', '48000',
@@ -568,7 +567,6 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
       args = [
         '-f', 'pulse',
         '-i', monitorDevice,
-        '-af', 'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level',
         '-acodec', 'libopus',
         '-b:a', '128k',
         '-ar', '48000',
@@ -608,8 +606,6 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
     
     let errorOutput = '';
     const MAX_ERROR_OUTPUT = 102400; // 100KB
-    let lastAudioLevelSend = 0;
-    const AUDIO_LEVEL_INTERVAL = 150;
     
     ffmpegSystemAudioProcess.stderr.on('data', (data) => {
       const message = data.toString();
@@ -619,27 +615,6 @@ ipcMain.handle('start-ffmpeg-system-audio', async (event, { outputPath, device =
         errorOutput = errorOutput.slice(-MAX_ERROR_OUTPUT / 2) + message;
       } else {
         errorOutput += message;
-      }
-      
-      // 解析 astats 音量信息 - RMS 电平
-      const rmsMatch = message.match(/lavfi\.astats\.Overall\.RMS_level=([\-\d\.]+)/);
-      
-      if (rmsMatch) {
-        const rmsLevel = parseFloat(rmsMatch[1]);
-        
-        // 节流发送音量信息，避免 IPC 消息过载
-        const now = Date.now();
-        if (now - lastAudioLevelSend >= AUDIO_LEVEL_INTERVAL) {
-          lastAudioLevelSend = now;
-          
-          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-            mainWindow.webContents.send('audio-level', {
-              type: 'system',
-              rms: rmsLevel,
-              timestamp: now
-            });
-          }
-        }
       }
       
       // 只记录关键信息

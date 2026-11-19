@@ -117,9 +117,11 @@ function showSection(sectionId) {
     }
 }
 
-function updateSubtitleContent(text) {
+function updateSubtitleContent(text, followLive = false) {
     const subtitleContent = document.getElementById('subtitleContent');
     if (subtitleContent) {
+        const previousScroll = subtitleContent.scrollTop;
+        const nearBottom = subtitleContent.scrollHeight - previousScroll - subtitleContent.clientHeight < 32;
         if (text && text.trim()) {
             subtitleContent.innerHTML = `<div class="content-text">${escapeHtml(text)}</div>`;
         } else {
@@ -137,6 +139,7 @@ function updateSubtitleContent(text) {
                 </div>
             `;
         }
+        subtitleContent.scrollTop = followLive && nearBottom ? subtitleContent.scrollHeight : previousScroll;
     }
 }
 
@@ -527,43 +530,27 @@ function updateRecordingButtons(state, options = {}) {
     const btnPause = document.getElementById('btnPauseRecording');
     const btnResume = document.getElementById('btnResumeRecording');
     const btnStop = document.getElementById('btnStopRecording');
-    const audioBars = document.getElementById('audioBars');
+    const btnReturn = document.getElementById('btnReturnFromRecording');
     const recordingIndicator = document.getElementById('recordingIndicator');
+    const layout = document.getElementById('recorderView')?.dataset.recordingLayout;
     const isStarting = options.isStarting === true;
     const isProcessing = options.isProcessing === true;
+    const isRecording = state.isRecording && layout !== 'stopping';
     btnStart.setAttribute('aria-busy', String(isStarting));
-    const isLinuxElectron = document.body?.dataset?.platform === 'linux' ||
-        (typeof window !== 'undefined' &&
-            window.electronAPI &&
-            typeof navigator !== 'undefined' &&
-            typeof navigator.platform === 'string' &&
-            navigator.platform.toLowerCase().includes('linux'));
-    const shouldShowPauseControls = !isLinuxElectron;
+    const canPause = isRecording && state.canPause;
+    btnPause.style.display = canPause && !state.isPaused ? 'inline-flex' : 'none';
+    btnResume.style.display = canPause && state.isPaused ? 'inline-flex' : 'none';
+    btnStop.style.display = isRecording || layout === 'stopping' ? 'inline-flex' : 'none';
+    if (btnReturn) btnReturn.hidden = layout === 'recording' || layout === 'stopping';
 
-    if (state.isRecording) {
-        btnStart.style.display = 'none';
-        if (!shouldShowPauseControls) {
-            btnPause.style.display = 'none';
-            btnResume.style.display = 'none';
-            btnStop.style.display = 'inline-flex';
-            recordingIndicator.classList.add('active');
-        } else if (state.isPaused) {
-            btnPause.style.display = 'none';
-            btnResume.style.display = 'inline-flex';
-            btnStop.style.display = 'inline-flex';
-            recordingIndicator.classList.remove('active');
-        } else {
-            btnPause.style.display = 'inline-flex';
-            btnResume.style.display = 'none';
-            btnStop.style.display = 'inline-flex';
-            recordingIndicator.classList.add('active');
-        }
-    } else {
-        btnStart.style.display = 'inline-flex';
-        btnPause.style.display = 'none';
-        btnResume.style.display = 'none';
-        btnStop.style.display = 'none';
-        recordingIndicator.classList.remove('active');
+    const statusText = recordingIndicator.querySelector('.status-text');
+    const recordingActive = isRecording && !state.isPaused;
+    recordingIndicator.classList.toggle('active', recordingActive);
+    if (statusText) {
+        const key = recordingActive ? 'recordingStatus' : state.isPaused ? 'recordingPausedStatus' : 'recordingStoppedStatus';
+        const fallback = recordingActive ? '录音中' : state.isPaused ? '已暂停' : '已停止';
+        statusText.dataset.i18n = key;
+        statusText.textContent = i18n ? i18n.get(key) : fallback;
     }
 
     [btnStart, btnPause, btnResume, btnStop].forEach((button) => {
@@ -572,28 +559,28 @@ function updateRecordingButtons(state, options = {}) {
         }
 
         button.disabled = isStarting || isProcessing;
-        button.classList.toggle('btn-loading', isProcessing && button === btnStop && state.isRecording);
+        button.classList.toggle('btn-loading', isProcessing && button === btnStop && layout === 'stopping');
     });
 }
 
 function showLoading(message, targets = { transcript: true, summary: true }) {
-    const subtitleContent = document.getElementById('subtitleContent');
     const summaryContent = document.getElementById('summaryContent');
-    const transcriptMessage = targets.transcriptMessage || message;
-    const loadingHTML = getLoadingMarkup(transcriptMessage);
-    
-    if (subtitleContent && targets.transcript !== false) {
-        subtitleContent.innerHTML = loadingHTML;
-    }
-    
-    if (summaryContent && !summaryContent.hidden && targets.summary !== false) {
-        const loadingGenerating = i18n ? i18n.get('loadingGenerating') : '生成中...';
-        const summaryMessage = targets.summaryMessage || loadingGenerating;
-        summaryContent.innerHTML = getLoadingMarkup(summaryMessage);
-    }
+    const loadingGenerating = i18n ? i18n.get('loadingGenerating') : '生成中...';
+    const summaryMessage = targets.summaryMessage || (targets.transcript === false ? message : loadingGenerating);
+    setTabProgress('transcriptProgress', targets.transcript === false ? '' : targets.transcriptMessage || message);
+    setTabProgress('summaryProgress', targets.summary === false || summaryContent?.hidden ? '' : summaryMessage);
+}
+
+function setTabProgress(id, message) {
+    const progress = document.getElementById(id);
+    if (!progress) return;
+    progress.textContent = message;
+    progress.hidden = !message;
 }
 
 function hideLoading() {
+    setTabProgress('transcriptProgress', '');
+    setTabProgress('summaryProgress', '');
     const subtitleContent = document.getElementById('subtitleContent');
     const summaryContent = document.getElementById('summaryContent');
     

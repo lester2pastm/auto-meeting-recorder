@@ -96,25 +96,16 @@ def test_recorder_view_ui(page):
     print("  ✓ 暂停/停止按钮存在")
     
     # 检查录音时间显示
-    recording_time = page.locator('#recordingTime')
+    recording_time = page.locator('#idleRecordingTime')
     assert recording_time.is_visible(), "录音时间显示应该可见"
     time_text = recording_time.text_content()
     assert time_text == '00:00:00', f"初始时间应为00:00:00，实际为{time_text}"
     print(f"  ✓ 录音时间显示正确: {time_text}")
     
-    # 检查音频可视化
-    audio_bars = page.locator('#audioBars')
-    assert audio_bars.is_visible(), "音频可视化区域应该可见"
-    
-    bars = page.locator('.audio-bar')
-    bar_count = bars.count()
-    assert bar_count == 20, f"应该有20个音频柱，实际有{bar_count}个"
-    print(f"  ✓ 音频柱数量正确: {bar_count}")
-    
     # 检查录音状态指示器
     indicator = page.locator('#recordingIndicator')
-    assert indicator.is_visible(), "录音状态指示器应该可见"
-    print("  ✓ 录音状态指示器可见")
+    assert not indicator.is_visible(), "开始录音前应该隐藏录音状态"
+    print("  ✓ 开始录音前未显示录音状态")
     
     take_screenshot(page, '02_recorder_view_ui')
 

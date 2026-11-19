@@ -326,137 +326,72 @@ body {
 /* ============================================
    Recorder Section - 精致录音区
    ============================================ */
-.recorder-section {
-    margin-bottom: var(--space-6);
-}
-
 .recorder-main {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xl);
-    padding: var(--space-6) var(--space-8);
-    text-align: center;
-    box-shadow: var(--shadow-lg);
     position: relative;
     overflow: hidden;
+    padding: var(--space-8) clamp(1.5rem, 5vw, 3.5rem);
+    background: radial-gradient(ellipse at 82% 16%, rgba(99, 102, 241, .12), transparent 66%),
+                linear-gradient(112deg, var(--bg-card) 22%, #f6f5ff 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-sm);
 }
 
-.recorder-main::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--accent), var(--accent-light), var(--accent));
-    opacity: 0;
-    transition: opacity var(--transition-normal);
-}
-
-.recorder-main.recording::before {
-    opacity: 1;
-    animation: shimmer 2s infinite;
-}
-
-@keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-}
-
-.recorder-visualizer {
+.recorder-console-controls {
     position: relative;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: var(--space-4);
+    z-index: 1;
+    display: grid;
+    justify-items: start;
+    gap: var(--space-4);
 }
 
-/* Audio Bars - 精致音波动画 */
-.audio-bars {
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 3px;
-    height: 45px;
-}
-
-.audio-bar {
-    width: 4px;
-    background: linear-gradient(to top, var(--accent), var(--accent-light));
-    border-radius: var(--radius-full);
-    height: 4px;
-    opacity: 0.15;
-    transition: height 0.15s ease, opacity 0.15s ease;
-}
-
-.audio-bar.active {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(79, 70, 229, 0.4);
-}
-
-/* Recording Status */
-.recording-status {
-    position: absolute;
-    top: 0;
-    right: 0;
-    display: flex;
+.recorder-console-state {
+    display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    background: rgba(239, 68, 68, 0.08);
-    border-radius: var(--radius-full);
-    opacity: 0;
-    transform: scale(0.9);
-    transition: all var(--transition-normal);
+    color: var(--text-secondary);
+    font-size: .875rem;
+    letter-spacing: .07em;
 }
 
-.recording-status.active {
-    opacity: 1;
-    transform: scale(1);
+.recorder-console-state::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-light);
 }
 
-.status-dot {
-    width: 8px;
-    height: 8px;
-    background: var(--danger);
-    border-radius: var(--radius-full);
-    animation: pulse 1.5s ease-in-out infinite;
+.recorder-watermark {
+    position: absolute;
+    top: 50%;
+    right: 4%;
+    width: clamp(17rem, 40%, 22rem);
+    color: var(--accent-light);
+    opacity: .15;
+    transform: translateY(-41%) rotate(-17deg);
+    pointer-events: none;
 }
 
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+.recorder-main .recorder-time {
+    font-size: clamp(2.25rem, 4.2vw, 3.25rem);
+    letter-spacing: -.05em;
 }
 
-.status-text {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--danger);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+.recorder-main .btn-primary {
+    width: min(100%, 12.5rem);
+    min-height: 46px;
+    padding: var(--space-3);
 }
 
 /* Recording Time */
 .recorder-time {
     font-family: var(--font-mono);
-    font-size: 2.5rem;
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
     color: var(--text-primary);
     letter-spacing: -0.02em;
-    margin-bottom: var(--space-6);
     line-height: 1;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.recorder-time.recording {
-    color: var(--danger);
-    animation: pulse-text 2s ease-in-out infinite;
-}
-
-@keyframes pulse-text {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
 }
 
 /* Recorder Controls */
@@ -464,6 +399,95 @@ body {
     display: flex;
     justify-content: center;
     gap: var(--space-4);
+}
+
+#recorderView {
+    --recorder-transition: 280ms cubic-bezier(.2, .7, .2, 1);
+    --recording-content-height: max(300px, calc(100dvh - 9.5rem));
+}
+
+.recorder-layout-slot {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--recorder-transition), opacity var(--recorder-transition), visibility var(--recorder-transition);
+}
+
+.recorder-layout-slot > div {
+    min-height: 0;
+    overflow: clip;
+}
+
+.recorder-layout-slot[inert] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+}
+
+.recording-toolbar,
+.recording-toolbar-info,
+.recording-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.recording-toolbar {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.recording-toolbar .recorder-time {
+    font-size: 1rem;
+}
+
+.recording-toolbar .recorder-controls {
+    gap: var(--space-2);
+}
+
+.recording-toolbar .btn {
+    height: 40px;
+    padding: var(--space-2) var(--space-3);
+}
+
+.recording-toolbar .btn[hidden] {
+    display: none;
+}
+
+.recording-status {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    gap: var(--space-2);
+}
+
+.status-dot {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.recording-status.active {
+    color: var(--danger);
+}
+
+.recording-status.active .status-dot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    border-radius: inherit;
+    animation: recording-pulse 1.8s ease-out infinite;
+}
+
+@keyframes recording-pulse {
+    from { transform: scale(1); opacity: 0.45; }
+    to { transform: scale(2.4); opacity: 0; }
 }
 
 /* ============================================
@@ -650,6 +674,23 @@ body {
     max-height: 400px;
     transition: transform var(--transition-normal), box-shadow var(--transition-normal);
     overflow: hidden;
+}
+
+#recorderView .content-tabs {
+    transition: min-height var(--recorder-transition), max-height var(--recorder-transition), box-shadow var(--transition-normal);
+}
+
+#recorderView:not([data-recording-layout="idle"]) .content-tabs {
+    min-height: var(--recording-content-height);
+    max-height: var(--recording-content-height);
+}
+
+.tab-progress {
+    padding: var(--space-2) var(--space-5);
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+    border-bottom: 1px solid var(--border-light);
 }
 
 .content-tabs:hover {
@@ -1671,6 +1712,10 @@ select.custom-select-trigger {
    Responsive Design
    ============================================ */
 @media (max-width: 1200px) {
+    #recorderView {
+        --recording-content-height: max(300px, calc(100dvh - 8.5rem));
+    }
+
     .main {
         padding: var(--space-6);
     }
@@ -1723,6 +1768,10 @@ select.custom-select-trigger {
 }
 
 @media (max-width: 768px) {
+    #recorderView {
+        --recording-content-height: max(300px, calc(100dvh - 11.5rem));
+    }
+
     .app {
         flex-direction: column;
     }
@@ -1777,14 +1826,6 @@ select.custom-select-trigger {
         font-size: 1.5rem;
     }
 
-    .recorder-time {
-        font-size: 2.5rem;
-    }
-
-    .recorder-main {
-        padding: var(--space-6);
-    }
-
     .recorder-controls {
         flex-wrap: wrap;
     }
@@ -1792,6 +1833,30 @@ select.custom-select-trigger {
     .btn-large {
         padding: var(--space-3) var(--space-6);
         font-size: 0.9375rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .recorder-main {
+        padding-block: var(--space-6);
+    }
+
+    .recorder-watermark {
+        width: 15rem;
+        right: -3rem;
+        opacity: .12;
+        transform: translateY(-47%) rotate(-17deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #recorderView {
+        --recorder-transition: 0s;
+    }
+
+    #recorderView.view,
+    .recording-status.active .status-dot::after {
+        animation: none;
     }
 }
 

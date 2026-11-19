@@ -56,56 +56,49 @@
         <!-- 主内容区 -->
         <main class="main">
             <!-- 录音视图 -->
-            <div id="recorderView" class="view active">
-                <header class="page-header">
-                    <h1 data-i18n="appTitle">自动会议纪要</h1>
-                    <p data-i18n="appSubtitle">实时语音转写，智能生成会议纪要</p>
-                </header>
+            <div id="recorderView" class="view active" data-recording-layout="idle">
+                <div id="recorderIntro" class="recorder-layout-slot">
+                    <div>
+                        <header class="page-header">
+                            <h1 data-i18n="appTitle">自动会议纪要</h1>
+                            <p data-i18n="appSubtitle">实时语音转写，智能生成会议纪要</p>
+                        </header>
 
-                <!-- 录音控制区 -->
-                <section class="recorder-section">
-                    <div class="recorder-main">
-                        <div class="recorder-visualizer">
-                            <div class="audio-bars" id="audioBars">
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
-                                <div class="audio-bar"></div>
+                        <section class="recorder-main">
+                            <div class="recorder-console-controls">
+                                <span class="recorder-console-state" data-i18n="recordingStandby">待录音</span>
+                                <div class="recorder-time" id="idleRecordingTime">00:00:00</div>
+                                <button id="btnStartRecording" class="btn btn-primary btn-large">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <circle cx="12" cy="12" r="4" fill="currentColor"/>
+                                    </svg>
+                                    <span data-i18n="startRecording">开始录音</span>
+                                    <span class="loading-spinner" aria-hidden="true"></span>
+                                    <span data-i18n="startingRecording">正在启动录音…</span>
+                                </button>
                             </div>
-                            <div class="recording-status" id="recordingIndicator">
-                                <span class="status-dot"></span>
+                            <svg class="recorder-watermark" viewBox="0 0 24 24" aria-hidden="true"
+                                 fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round">
+                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"
+                                      fill="currentColor" fill-opacity=".28"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3m-3 0h6"/>
+                            </svg>
+                        </section>
+                    </div>
+                </div>
+
+                <div id="recordingToolbar" class="recorder-layout-slot" inert>
+                    <div>
+                      <div class="recording-toolbar">
+                        <div class="recording-toolbar-info">
+                            <div class="recording-status" id="recordingIndicator" role="status">
+                                <span class="status-dot" aria-hidden="true"></span>
                                 <span class="status-text" data-i18n="recordingStatus">录音中</span>
                             </div>
+                            <div class="recorder-time" id="recordingTime">00:00:00</div>
                         </div>
-
-                        <div class="recorder-time" id="recordingTime">00:00:00</div>
-
                         <div class="recorder-controls">
-                            <button id="btnStartRecording" class="btn btn-primary btn-large">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <circle cx="12" cy="12" r="4" fill="currentColor"/>
-                                </svg>
-                                <span data-i18n="startRecording">开始录音</span>
-                                <span class="loading-spinner" aria-hidden="true"></span>
-                                <span data-i18n="startingRecording">正在启动录音…</span>
-                            </button>
                             <button id="btnPauseRecording" class="btn btn-secondary" style="display: none;">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="6" y="4" width="4" height="16" rx="1"/>
@@ -127,9 +120,16 @@
                                     <span data-i18n="stop">停止</span>
                                 </span>
                             </button>
+                            <button id="btnReturnFromRecording" class="btn btn-secondary" hidden>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                    <path d="M19 12H5m7 7-7-7 7-7"/>
+                                </svg>
+                                <span data-i18n="returnFromRecording">返回</span>
+                            </button>
                         </div>
+                      </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- 内容展示区 -->
                 <section class="content-section">
@@ -189,6 +189,7 @@
                                     </button>
                                 </div>
                             </div>
+                            <div id="transcriptProgress" class="tab-progress" role="status" hidden></div>
                             <div id="subtitleContent" class="tab-content-body">
                                 <div class="empty-state">
                                     <div class="empty-icon">
@@ -238,6 +239,7 @@
                                     <button id="btnBindSummaryApi" type="button" class="btn btn-primary" data-i18n="bindSummaryApi">去绑定</button>
                                 </div>
                             </div>
+                            <div id="summaryProgress" class="tab-progress" role="status" hidden></div>
                             <div id="summaryContent" class="tab-content-body" hidden>
                                 <div class="empty-state">
                                     <div class="empty-icon">

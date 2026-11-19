@@ -16,10 +16,6 @@ document.body.innerHTML = `
   <div id="summaryContent"></div>
   <div id="recordingTime">00:00:00</div>
   <div id="recordingIndicator"></div>
-  <div id="audioBars">
-    <div class="audio-bar"></div>
-    <div class="audio-bar"></div>
-  </div>
 `;
 
 describe('UI 模块测试', () => {
@@ -205,27 +201,6 @@ describe('UI 模块测试', () => {
         recordingTime.textContent = formatted;
         expect(recordingTime.textContent).toBe(expected);
       });
-    });
-  });
-
-  describe('updateAudioVisualization - 音频可视化测试', () => {
-    it('应该更新音频柱状图高度', () => {
-      const audioBars = document.querySelectorAll('.audio-bar');
-      const dataArray = new Uint8Array([128, 200, 50, 255, 0, 100, 150, 180, 220, 30]);
-
-      // 模拟音频可视化更新
-      audioBars.forEach((bar, index) => {
-        if (index < dataArray.length) {
-          const value = dataArray[index];
-          const height = Math.max(4, (value / 255) * 100);
-          bar.style.height = `${height}%`;
-        }
-      });
-
-      // 验证第一个柱状图的高度
-      const firstBar = audioBars[0];
-      const expectedHeight = Math.max(4, (dataArray[0] / 255) * 100);
-      expect(firstBar.style.height).toBe(`${expectedHeight}%`);
     });
   });
 

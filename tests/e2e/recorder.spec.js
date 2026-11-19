@@ -22,12 +22,12 @@ test.describe('录音功能测试', () => {
     await expect(startBtn).toBeVisible();
 
     // 检查初始时间显示
-    const recordingTime = await page.locator('#recordingTime');
+    const recordingTime = await page.locator('#idleRecordingTime');
     await expect(recordingTime).toHaveText('00:00:00');
 
     // 检查录音状态指示器
     const recordingIndicator = await page.locator('#recordingIndicator');
-    await expect(recordingIndicator).toBeVisible();
+    await expect(recordingIndicator).toBeHidden();
   });
 
   test('录音控制按钮应该存在', async ({ page }) => {
@@ -44,14 +44,8 @@ test.describe('录音功能测试', () => {
     await expect(stopBtn).toBeAttached();
   });
 
-  test('应该显示音频可视化效果', async ({ page }) => {
-    // 检查音频柱状图容器
-    const audioBars = await page.locator('#audioBars');
-    await expect(audioBars).toBeVisible();
-
-    // 检查音频柱状图数量
-    const bars = await page.locator('.audio-bar');
-    await expect(bars).toHaveCount(20);
+  test('开始录音前不显示旧波形', async ({ page }) => {
+    await expect(page.locator('#recorderIntro').locator('#audioBars, .audio-bar')).toHaveCount(0);
   });
 });
 

@@ -54,14 +54,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveAudioToPath: (data, filePath) => ipcRenderer.invoke('save-audio-to-path', { data, filePath }),
   appendAudioToPath: (data, filePath) => ipcRenderer.invoke('append-audio-to-path', { data, filePath }),
   
-  // 监听音频级别变化（用于波形可视化）
-  onAudioLevel: (callback) => {
-    ipcRenderer.on('audio-level', (event, data) => callback(data));
-  },
-  removeAudioLevelListener: () => {
-    ipcRenderer.removeAllListeners('audio-level');
-  },
-  
   // 恢复管理相关接口
   readRecoveryMeta: () => ipcRenderer.invoke('read-recovery-meta'),
   writeRecoveryMeta: (meta) => ipcRenderer.invoke('write-recovery-meta', meta),
