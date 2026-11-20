@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.3] - 2026-11-20
+
+### Fixed
+
+- Restore offline live transcription on Linux x86_64 systems with glibc 2.31 by rebuilding and testing the Sherpa add-on before packaging.
+- Disable thinking for supported DeepSeek and DashScope summary requests. Give long transcripts more output tokens and time to receive the full response.
+- Report empty or truncated summaries as failures and preserve existing summaries when regeneration fails.
+
 ## [2.8.2] - 2026-11-19
 
 ### Changed

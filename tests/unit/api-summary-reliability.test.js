@@ -20,6 +20,91 @@ describe('generateSummary reliability', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  test.each([
+    ['https://api.deepseek.com/v1/chat/completions', 'deepseek-v4-flash', { thinking: { type: 'disabled' } }],
+    ['https://api.deepseek.com/v1/chat/completions', 'deepseek-flash', { thinking: { type: 'disabled' } }],
+    ['https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', 'qwen3.5-plus', { enable_thinking: false }],
+    ['https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', 'deepseek-v4-flash-0731', { enable_thinking: false }],
+    ['https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', 'qwen3-235b-a22b-thinking-2507', {}],
+    ['https://gateway.example.com/v1/chat/completions', 'deepseek-v4-flash', {}]
+  ])('uses matching summary and connection controls for %s with %s', async (url, model, controls) => {
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '完整纪要' }, finish_reason: 'stop' }] })
+    });
+
+    await api.generateSummary('会议转录', '# 模板', url, 'test-key', model);
+    await api.testSummaryApi(url, 'test-key', model);
+
+    const summaryBody = JSON.parse(fetch.mock.calls[0][1].body);
+    const connectionBody = JSON.parse(fetch.mock.calls[1][1].body);
+    expect(summaryBody).toEqual({
+      model, messages: expect.any(Array), max_tokens: 2000, temperature: 0.7, ...controls
+    });
+    expect(connectionBody).toEqual({ model, messages: expect.any(Array), max_tokens: 10, ...controls });
+  });
+
+  test('reports an invalid model or parameter as a failed summary connection test', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { message: 'Unsupported parameter' } })
+    });
+
+    const result = await api.testSummaryApi('https://api.deepseek.com/v1/chat/completions', 'test-key', 'deepseek-v4-flash');
+    expect(result).toEqual({ success: false, message: '连接失败: Unsupported parameter' });
+  });
+
+  test.each([
+    ['length', '半篇纪要', '达到模型输出上限'],
+    ['length', '', '达到模型输出上限'],
+    ['stop', '  \n ', '未返回会议纪要正文'],
+    ['stop', null, '未返回会议纪要正文']
+  ])('rejects incomplete or empty output (%s, %j)', async (finishReason, content, message) => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ finish_reason: finishReason, message: { content } }] })
+    });
+
+    const result = await api.generateSummary('会议转录', '# 模板', 'https://api.example.com/v1/chat/completions', 'test-key');
+
+    expect(result).toEqual({ success: false, message: expect.stringContaining(message) });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([[27000, 150000], [50000, 180000]])(
+    'uses 4000 output tokens and a %i-character transcript gets %i ms through body reading',
+    async (length, timeout) => {
+      jest.useFakeTimers();
+      const onProgress = jest.fn();
+      fetch.mockImplementationOnce(async (url, { signal }) => ({
+        ok: true,
+        json: () => new Promise((resolve, reject) => {
+          const error = new Error('The operation was aborted.');
+          error.name = 'AbortError';
+          signal.addEventListener('abort', () => reject(error), { once: true });
+        })
+      })).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: '重试成功' } }] })
+      });
+
+      const result = api.generateSummary('会'.repeat(length), '# 模板',
+        'https://api.example.com/v1/chat/completions', 'test-key', 'test-model', onProgress);
+      await new Promise((resolve) => realSetTimeout(resolve, 0));
+      expect(JSON.parse(fetch.mock.calls[0][1].body).max_tokens).toBe(4000);
+
+      jest.advanceTimersByTime(timeout - 1);
+      expect(fetch.mock.calls[0][1].signal.aborted).toBe(false);
+      jest.advanceTimersByTime(1);
+      expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+      await new Promise((resolve) => realSetTimeout(resolve, 0));
+      expect(onProgress).toHaveBeenCalledWith(expect.stringContaining('请求超时'));
+      jest.advanceTimersByTime(1000);
+      await expect(result).resolves.toEqual({ success: true, summary: '重试成功' });
+    }
+  );
+
   test('retries retryable failures with bounded backoff and reports progress', async () => {
     jest.spyOn(global, 'setTimeout').mockImplementation((fn, delay, ...args) => (
       realSetTimeout(fn, 0, ...args)

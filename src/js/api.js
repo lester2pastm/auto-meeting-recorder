@@ -1,6 +1,6 @@
 // 带超时的 fetch 封装函数（用于大文件上传）
 // 默认 10 分钟超时，支持音频转写等大文件操作
-async function fetchWithTimeout(url, options, timeout = 600000) {
+async function fetchWithTimeout(url, options, timeout = 600000, readResponse = null) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
@@ -9,14 +9,14 @@ async function fetchWithTimeout(url, options, timeout = 600000) {
             ...options,
             signal: controller.signal
         });
-        clearTimeout(timeoutId);
-        return response;
+        return readResponse ? await readResponse(response) : response;
     } catch (error) {
-        clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
             throw new Error(`请求超时（${timeout / 1000}秒）`);
         }
         throw error;
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 
@@ -52,7 +52,7 @@ function isNetworkErrorLike(error) {
 
 function getSummaryRequestTimeout(transcript) {
     const baseTimeout = 15000;
-    const maxTimeout = 120000;
+    const maxTimeout = 180000;
     const transcriptLength = typeof transcript === 'string' ? transcript.trim().length : 0;
 
     if (transcriptLength === 0) {
@@ -102,8 +102,7 @@ function isOpenRouterRequest(apiUrl) {
 }
 
 function isDashScopeCompatibleRequest(apiUrl) {
-    const normalizedUrl = normalizeProviderText(apiUrl);
-    return normalizedUrl.includes('dashscope') && normalizedUrl.includes('compatible-mode');
+    return /^https:\/\/(?:dashscope(?:-[a-z]+)?\.aliyuncs\.com|[^/.]+\.[^/.]+\.maas\.aliyuncs\.com)\/compatible-mode\//i.test(apiUrl);
 }
 
 function isOpenAIReasoningModel(model) {
@@ -118,13 +117,13 @@ function isGLMRequest(apiUrl, model) {
         || GLM_REASONING_MODEL_PATTERN.test(normalizeProviderText(model));
 }
 
-function isDashScopeThinkingModel(model) {
+function isDashScopeThinkingModel(model, forTitle) {
     const normalizedModel = normalizeProviderText(model);
-    return normalizedModel.includes('qwen3')
-        || normalizedModel.includes('qwen-plus')
-        || normalizedModel.includes('qwen-turbo')
-        || normalizedModel.includes('glm')
-        || normalizedModel.includes('minimax');
+    if (/(?:^|-)(?:thinking|instruct)(?:-|$)/.test(normalizedModel)) {
+        return false;
+    }
+    return /^(?:qwen[34](?:[.-]|$)|qwen-(?:plus|flash)(?:-|$)|deepseek-v4(?:[.-]|$))/.test(normalizedModel)
+        || (forTitle && /qwen-turbo|glm|minimax/.test(normalizedModel));
 }
 
 function isMiniMaxRequest(apiUrl) {
@@ -132,15 +131,22 @@ function isMiniMaxRequest(apiUrl) {
     return normalizedUrl.includes('minimaxi.com') || normalizedUrl.includes('minimax.io');
 }
 
-const TITLE_THINKING_CONTROL_STRATEGIES = [
+const THINKING_CONTROL_STRATEGIES = [
     {
-        matches: (apiUrl, model) => isDashScopeCompatibleRequest(apiUrl) && isDashScopeThinkingModel(model),
+        matches: (apiUrl, model, forTitle) => isDashScopeCompatibleRequest(apiUrl) && isDashScopeThinkingModel(model, forTitle),
         buildControls: () => ({
             enable_thinking: false
         })
     },
     {
-        matches: (apiUrl, model) => isDeepSeekCompatibleRequest(apiUrl, model),
+        matches: (apiUrl, model, forTitle) => {
+            if (isDashScopeCompatibleRequest(apiUrl)) {
+                return false;
+            }
+            const isOfficialModel = /^https:\/\/api\.deepseek\.com\//i.test(apiUrl)
+                && /^deepseek-(?:flash|v4-(?:pro|flash(?:-vision-exp)?))$/.test(normalizeProviderText(model));
+            return isOfficialModel || (forTitle && isDeepSeekCompatibleRequest(apiUrl, model));
+        },
         buildControls: () => ({
             thinking: {
                 type: 'disabled'
@@ -148,6 +154,7 @@ const TITLE_THINKING_CONTROL_STRATEGIES = [
         })
     },
     {
+        titleOnly: true,
         matches: (apiUrl, model) => isGLMRequest(apiUrl, model),
         buildControls: () => ({
             thinking: {
@@ -156,12 +163,14 @@ const TITLE_THINKING_CONTROL_STRATEGIES = [
         })
     },
     {
+        titleOnly: true,
         matches: (apiUrl, model) => isOpenAIRequest(apiUrl) && isOpenAIReasoningModel(model),
         buildControls: () => ({
             reasoning_effort: 'none'
         })
     },
     {
+        titleOnly: true,
         matches: (apiUrl, model) => isOpenRouterRequest(apiUrl) && isOpenAIReasoningModel(model),
         buildControls: () => ({
             reasoning: {
@@ -170,6 +179,7 @@ const TITLE_THINKING_CONTROL_STRATEGIES = [
         })
     },
     {
+        titleOnly: true,
         matches: (apiUrl) => isMiniMaxRequest(apiUrl),
         buildControls: () => ({
             extra_body: {
@@ -179,14 +189,10 @@ const TITLE_THINKING_CONTROL_STRATEGIES = [
     }
 ];
 
-function getOptionalThinkingControls(apiUrl, model, options = {}) {
-    if (!options.forceDisabled) {
-        return {};
-    }
-
-    for (const strategy of TITLE_THINKING_CONTROL_STRATEGIES) {
-        if (strategy.matches(apiUrl, model)) {
-            return strategy.buildControls(apiUrl, model);
+function getThinkingControls(apiUrl, model, forTitle) {
+    for (const strategy of THINKING_CONTROL_STRATEGIES) {
+        if ((!strategy.titleOnly || forTitle) && strategy.matches(apiUrl, model, forTitle)) {
+            return strategy.buildControls();
         }
     }
 
@@ -206,9 +212,7 @@ function buildChatCompletionRequestBody(apiUrl, model, messages, options = {}) {
 
     return {
         ...requestBody,
-        ...getOptionalThinkingControls(apiUrl, model, {
-            forceDisabled: !!options.disableThinking
-        })
+        ...getThinkingControls(apiUrl, model, options.forTitle)
     };
 }
 
@@ -383,8 +387,21 @@ async function parseSummaryError(response) {
         const errorData = await response.json();
         return errorData.error?.message || errorData.message || `生成失败: ${response.status}`;
     } catch (error) {
+        if (error.name === 'AbortError') {
+            throw error;
+        }
         return `生成失败: ${response.status}`;
     }
+}
+
+async function readChatCompletionResponse(response) {
+    if (!response.ok) {
+        const error = new Error(await parseSummaryError(response));
+        error.status = response.status;
+        throw error;
+    }
+
+    return response.json();
 }
 
 // 生成一段真实有效的极短静音 WAV，用于测试连接。
@@ -443,12 +460,6 @@ async function testSttApi(apiUrl, apiKey, model = 'whisper-1') {
     }
 }
 
-function getSummaryThinkingControls(apiUrl, model) {
-    return model === 'deepseek-flash' && /^https:\/\/api\.deepseek\.com\//i.test(apiUrl)
-        ? { thinking: { type: 'disabled' } }
-        : {};
-}
-
 async function testSummaryApi(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
     try {
         const response = await fetch(apiUrl, {
@@ -457,20 +468,16 @@ async function testSummaryApi(apiUrl, apiKey, model = 'gpt-3.5-turbo') {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'user', content: 'test' }
-                ],
-                max_tokens: 10,
-                ...getSummaryThinkingControls(apiUrl, model)
-            })
+            body: JSON.stringify(buildChatCompletionRequestBody(
+                apiUrl, model, [{ role: 'user', content: 'test' }], { maxTokens: 10 }
+            ))
         });
 
-        if (response.ok || response.status === 400) {
+        if (response.ok) {
             return { success: true, message: '连接成功' };
         } else {
-            return { success: false, message: `连接失败: ${response.status}` };
+            const message = await parseSummaryError(response);
+            return { success: false, message: `连接失败: ${message}` };
         }
     } catch (error) {
         return { success: false, message: `连接失败: ${error.message}` };
@@ -1090,35 +1097,30 @@ ${transcript}
 
         const maxAttempts = 3;
         const requestTimeout = getSummaryRequestTimeout(transcript);
+        const maxTokens = typeof transcript === 'string' && transcript.trim().length >= 20000 ? 4000 : 2000;
         const maxBackoff = 2000;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                const response = await fetchWithTimeout(apiUrl, {
+                const data = await fetchWithTimeout(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        model: model,
-                        messages: [
-                            { role: 'user', content: prompt }
-                        ],
-                        temperature: 0.7,
-                        max_tokens: 2000,
-                        ...getSummaryThinkingControls(apiUrl, model)
-                    })
-                }, requestTimeout);
+                    body: JSON.stringify(buildChatCompletionRequestBody(
+                        apiUrl, model, [{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens }
+                    ))
+                }, requestTimeout, readChatCompletionResponse);
 
-                if (!response.ok) {
-                    const error = new Error(await parseSummaryError(response));
-                    error.status = response.status;
-                    throw error;
+                const choice = data?.choices?.[0];
+                if (choice?.finish_reason === 'length') {
+                    return { success: false, message: getI18nValue('summaryOutputLimit') };
                 }
-
-                const data = await response.json();
-                const summary = data.choices[0].message.content;
+                const summary = choice?.message?.content;
+                if (typeof summary !== 'string' || !summary.trim()) {
+                    return { success: false, message: getI18nValue('summaryEmptyOutput') };
+                }
                 return { success: true, summary };
             } catch (error) {
                 const shouldRetry = attempt < maxAttempts && isRetryableSummaryError(error);
@@ -1183,7 +1185,7 @@ ${summary}`;
     try {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                const response = await fetchWithTimeout(apiUrl, {
+                const data = await fetchWithTimeout(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -1198,18 +1200,10 @@ ${summary}`;
                         {
                             temperature: 0,
                             maxTokens: 60,
-                            disableThinking: true
+                            forTitle: true
                         }
                     ))
-                }, requestTimeout);
-
-                if (!response.ok) {
-                    const error = new Error(await parseSummaryError(response));
-                    error.status = response.status;
-                    throw error;
-                }
-
-                const data = await response.json();
+                }, requestTimeout, readChatCompletionResponse);
                 const rawTitle = data.choices?.[0]?.message?.content || '';
                 const sanitizedTitle = sanitizeTitle(rawTitle);
 
@@ -1260,6 +1254,7 @@ if (typeof module !== 'undefined' && module.exports) {
         transcribeAudio,
         transcribeAudioSegments,
         transcribeSingleSegment,
+        testSummaryApi,
         generateSummary,
         generateMeetingTitle,
         calculateSegmentCount,

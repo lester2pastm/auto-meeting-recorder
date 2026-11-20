@@ -76,10 +76,26 @@ module.exports = async ({ electronPlatformName, arch }) => {
   const { Arch } = require('builder-util');
   const platform = electronPlatformName === 'win32' ? 'win' : 'linux';
   const nativePackage = 'sherpa-onnx-' + platform + '-' + Arch[arch];
+  let nativeDir;
   try {
-    require.resolve(nativePackage + '/package.json');
+    nativeDir = path.dirname(require.resolve(nativePackage + '/package.json'));
   } catch {
     throw new Error('Missing ' + nativePackage + '. Install dependencies for the target OS and architecture.');
+  }
+
+  if (platform === 'linux' && Arch[arch] === 'x64') {
+    const abiLimits = { GLIBC: '2.31', GLIBCXX: '3.4.28', CXXABI: '1.3.12' };
+    const libraries = (await fs.readdir(nativeDir)).filter((file) => /\.node$|\.so(?:\.\d+)*$/.test(file));
+    for (const file of libraries) {
+      const { stdout } = await run('readelf', ['--version-info', path.join(nativeDir, file)], {
+        env: { ...process.env, LC_ALL: 'C' }
+      });
+      const unsupported = [...stdout.matchAll(/Name: (GLIBC|GLIBCXX|CXXABI)_([0-9.]+)/g)]
+        .find(([, library, version]) => version.localeCompare(abiLimits[library], 'en', { numeric: true }) > 0);
+      if (unsupported) {
+        throw new Error(`${file} requires ${unsupported[1]}_${unsupported[2]}. Run scripts/rebuild-linux-x64-asr.sh on glibc 2.31 before packaging.`);
+      }
+    }
   }
   await prepareLocalAsr();
 };

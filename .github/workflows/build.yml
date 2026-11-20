@@ -92,8 +92,11 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Verify bundled speech recognition on Linux x64
-      run: npm run test:local-asr
+    - name: Build and verify the Linux x64 speech addon on glibc 2.31
+      run: |
+        npm run prepare:local-asr
+        docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace \
+          node:20-bullseye bash -ec 'bash scripts/rebuild-linux-x64-asr.sh && node tests/integration/local-asr-runtime.js'
 
     - name: Build Linux x64 app
       run: node scripts/run-with-retry.js --attempts 3 --delay-ms 15000 -- npm run build:linux
