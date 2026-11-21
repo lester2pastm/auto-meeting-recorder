@@ -11,9 +11,10 @@ function initRecoveryUI() {
     recoveryModal = document.getElementById('recoveryModal');
     
     // 绑定按钮事件
-    document.getElementById('btnContinueRecovery').addEventListener('click', handleContinueRecording);
-    document.getElementById('btnTranscribeRecovery').addEventListener('click', handleTranscribeNow);
-    document.getElementById('btnDeleteRecovery').addEventListener('click', handleDeleteRecovery);
+    const protect = typeof withUpdateTask === 'function' ? withUpdateTask : action => action;
+    document.getElementById('btnContinueRecovery').addEventListener('click', protect(handleContinueRecording));
+    document.getElementById('btnTranscribeRecovery').addEventListener('click', protect(handleTranscribeNow));
+    document.getElementById('btnDeleteRecovery').addEventListener('click', protect(handleDeleteRecovery));
     
     console.log('[RecoveryUI] Initialized');
 }

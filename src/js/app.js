@@ -160,6 +160,7 @@ async function initApp() {
         }
         
         showToast(i18n ? i18n.get('initSuccess') : '应用初始化成功', 'success');
+        setupAppUpdates();
     } catch (error) {
         console.error('Failed to initialize app:', error);
         showToast(i18n ? i18n.get('initFailed') : '应用初始化失败', 'error');
@@ -378,10 +379,10 @@ function showDependencyModal(missingDeps) {
 
 function setupEventListeners() {
     // 录音控制按钮
-    document.getElementById('btnStartRecording').addEventListener('click', handleStartRecording);
+    document.getElementById('btnStartRecording').addEventListener('click', withUpdateTask(handleStartRecording));
     document.getElementById('btnPauseRecording').addEventListener('click', handlePauseRecording);
     document.getElementById('btnResumeRecording').addEventListener('click', handleResumeRecording);
-    document.getElementById('btnStopRecording').addEventListener('click', handleStopRecording);
+    document.getElementById('btnStopRecording').addEventListener('click', withUpdateTask(handleStopRecording));
     document.getElementById('btnReturnFromRecording').addEventListener('click', () => {
         setRecordingLayout('idle');
         updateRecordingButtons(getRecordingState(), { isProcessing: isRecordingWorkflowBusy });
@@ -393,11 +394,11 @@ function setupEventListeners() {
     
     // 音频上传按钮
     document.getElementById('btnUploadAudio').addEventListener('click', handleUploadAudioClick);
-    document.getElementById('audioFileInput').addEventListener('change', handleAudioFileSelect);
-    document.getElementById('btnRetryTranscription').addEventListener('click', handleRetryTranscription);
+    document.getElementById('audioFileInput').addEventListener('change', withUpdateTask(handleAudioFileSelect));
+    document.getElementById('btnRetryTranscription').addEventListener('click', withUpdateTask(handleRetryTranscription));
     
     // 刷新纪要按钮
-    document.getElementById('btnRefreshSummary').addEventListener('click', handleRefreshSummary);
+    document.getElementById('btnRefreshSummary').addEventListener('click', withUpdateTask(handleRefreshSummary));
     document.getElementById('btnBindSummaryApi').addEventListener('click', () => {
         switchView('settings');
         document.getElementById('summaryApiSettings').scrollIntoView({ block: 'start' });
@@ -405,15 +406,124 @@ function setupEventListeners() {
     });
     
     // 设置页面按钮
-    document.getElementById('btnTestSttApi').addEventListener('click', handleTestSttApi);
-    document.getElementById('btnSaveSttSettings').addEventListener('click', handleSaveSttSettings);
-    document.getElementById('btnTestSummaryApi').addEventListener('click', handleTestSummaryApi);
-    document.getElementById('btnSaveTemplate').addEventListener('click', handleSaveTemplate);
+    document.getElementById('btnTestSttApi').addEventListener('click', withUpdateTask(handleTestSttApi));
+    document.getElementById('btnSaveSttSettings').addEventListener('click', withUpdateTask(handleSaveSttSettings));
+    document.getElementById('btnTestSummaryApi').addEventListener('click', withUpdateTask(handleTestSummaryApi));
+    document.getElementById('btnSaveTemplate').addEventListener('click', withUpdateTask(handleSaveTemplate));
     document.getElementById('btnRefreshAudioSources').addEventListener('click', () => refreshAudioSourceOptions());
-    document.getElementById('btnSaveAudioSources').addEventListener('click', handleSaveAudioSources);
+    document.getElementById('btnSaveAudioSources').addEventListener('click', withUpdateTask(handleSaveAudioSources));
 }
 
 let isRecordingWorkflowBusy = false;
+let updateTasks = 0;
+let updateRestartPending = false;
+let updateStatusConnected = false;
+
+function updateWorkBusy() {
+    return isExitProtectionActive() || updateTasks > 0;
+}
+
+function reportUpdateBusy() {
+    if (updateStatusConnected) window.electronAPI.appUpdate.setBusy(updateWorkBusy()).catch(() => {});
+}
+
+function withUpdateTask(action) {
+    return async (...args) => {
+        if (updateRestartPending) return;
+        updateTasks++;
+        reportUpdateBusy();
+        try {
+            return await action(...args);
+        } finally {
+            updateTasks--;
+            reportUpdateBusy();
+        }
+    };
+}
+
+function setupAppUpdates() {
+    const api = window.electronAPI?.appUpdate;
+    const controls = document.getElementById('appUpdateControls');
+    if (!api || !controls) return;
+    const automatic = document.getElementById('automaticAppUpdates');
+    const status = document.getElementById('appUpdateStatus');
+    const check = document.getElementById('checkAppUpdate');
+    const apply = document.getElementById('applyAppUpdate');
+    const release = document.getElementById('openAppRelease');
+    let state;
+
+    function render(next = state) {
+        if (!next) return;
+        state = next;
+        controls.hidden = state.mode === 'disabled';
+        automatic.checked = state.automatic;
+        const messages = {
+            checking: 'updateChecking', current: 'updateCurrent', available: 'updateAvailable',
+            unavailable: 'updateUnavailable', downloading: 'updateDownloading', ready: 'updateReady',
+            installing: 'updateInstalling'
+        };
+        const errors = {
+            limited: 'updateLimited', network: 'updateNetwork', space: 'updateSpace',
+            integrity: 'updateIntegrity', feed: 'updateFeed', install: 'updateInstallError',
+            installNetwork: 'updateInstallNetwork'
+        };
+        let key = errors[state.error] || messages[state.status];
+        if (state.status === 'downloading' && state.progress >= 100) key = 'updateVerifying';
+        if (!state.error && state.busy && state.mode !== 'manual' && ['ready', 'available'].includes(state.status)) key = 'updateBusy';
+        status.dataset.status = state.status;
+        status.textContent = key ? i18n.get(key) : '';
+        if (state.version) status.textContent += ` · v${state.version}`;
+        if (key === 'updateDownloading') status.textContent += ` · ${state.progress}%`;
+        check.hidden = ['ready', 'installing'].includes(state.status);
+        check.disabled = check.hidden || ['checking', 'downloading'].includes(state.status);
+        apply.hidden = !['appimage', 'nsis'].includes(state.mode) || !['available', 'ready', 'installing'].includes(state.status);
+        check.classList.toggle('btn-primary', apply.hidden);
+        check.classList.toggle('btn-outline', !apply.hidden);
+        apply.disabled = state.busy || updateRestartPending || state.status === 'installing';
+        apply.textContent = i18n.get(state.status === 'available' ? 'updateDownload' : 'updateRestart');
+        release.hidden = !state.version && !state.error;
+
+        const noticeKey = `updateNotice:${state.version}`;
+        if (state.status === 'ready' && !state.error && !apply.disabled && !updateWorkBusy() && state.version
+            && !localStorage.getItem(noticeKey)) {
+            localStorage.setItem(noticeKey, 'seen');
+            showToast(`${i18n.get('updateReady')} · v${state.version}`, 'info', {
+                label: i18n.get('updateView'),
+                onClick: () => {
+                    switchView('settings');
+                    controls.closest('.settings-card').scrollIntoView({ block: 'nearest' });
+                    apply.focus({ preventScroll: true });
+                }
+            });
+        }
+    }
+
+    api.onState(next => render(next));
+    api.state().then(next => {
+        if (!next || next.mode === 'disabled') return;
+        if (!state) render(next);
+        updateStatusConnected = true;
+        reportUpdateBusy();
+    }).catch(() => {});
+    document.getElementById('langToggle')?.addEventListener('click', () => render());
+    automatic.addEventListener('change', () => api.setAutomatic(automatic.checked).catch(() => render()));
+    check.addEventListener('click', () => api.check().catch(() => {}));
+    release.addEventListener('click', () => api.openRelease().catch(() => {}));
+    apply.addEventListener('click', async () => {
+        if (updateWorkBusy() || updateRestartPending) return;
+        if (state.status === 'available') {
+            await api.download().catch(() => {});
+        } else if (state.status === 'ready') {
+            updateRestartPending = true;
+            render();
+            const installing = await api.install().catch(() => false);
+            if (!installing) {
+                updateRestartPending = false;
+                render();
+            }
+        }
+    });
+}
 
 function setRecordingLayout(layout) {
     const view = document.getElementById('recorderView');
@@ -1625,7 +1735,7 @@ function setupAppControl() {
     });
     if (window.electronAPI && window.electronAPI.onCheckRecordingStatus) {
         window.electronAPI.onCheckRecordingStatus(() => {
-            if (isExitProtectionActive()) {
+            if (updateWorkBusy()) {
                 showExitConfirmModal();
             } else {
                 window.electronAPI.forceClose();

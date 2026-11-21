@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.8.3-blue.svg" alt="版本">
+  <img src="https://img.shields.io/badge/version-2.8.4-blue.svg" alt="版本">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="平台">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -49,7 +49,7 @@
 
 ### 为什么当前版本值得关注
 
-- 当前版本：`2.8.3`
+- 当前版本：`2.8.4`
 - 录音开始后控制区收成横条，录音中和结束后都为全文及纪要留出更多空间。返回后仍可查看本场内容，直到下一场录音开始。
 - 首页和历史详情支持纪要 Markdown 排版。未配置纪要 API 时也可以录音、转写并保存全文。
 - `src/index.html` 仍适合 UI 开发和浏览器 E2E 检查，但完整产品能力依赖 Electron IPC
@@ -93,6 +93,8 @@
 ### 下载
 
 普通使用场景下，直接从 [Releases](https://github.com/lester2pastm/auto-meeting-recorder/releases) 页面下载最新安装包即可。
+
+打开 **设置 → 关于** 可检查更新。AppImage 版优先差分下载，失败时自动下载全包。全包下载中断后，重试时从同一发布包的断点继续。发现更新的版本时，会清理旧断点并重新尝试差分。已签名的 Windows 版下载完整安装包。应用在会议任务空闲时下载，由用户点击「重启并更新」开始安装。Linux `.deb` 和 macOS 版提供官方下载入口。
 
 ### 从源码构建
 

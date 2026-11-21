@@ -479,7 +479,19 @@
                         </div>
                         <div class="settings-form">
                             <div class="about-version">
-                                <span data-i18n="version">版本</span>: <span id="appVersion">-</span>
+                                <span><span data-i18n="version">版本</span> <strong id="appVersion">-</strong></span>
+                                <p id="appUpdateStatus" class="form-help" role="status"></p>
+                            </div>
+                            <div id="appUpdateControls" hidden>
+                                <label class="update-preference">
+                                    <input id="automaticAppUpdates" type="checkbox">
+                                    <span data-i18n="updateAutomatic">自动检查更新</span>
+                                </label>
+                                <div class="form-actions">
+                                    <button id="checkAppUpdate" class="btn btn-primary" type="button" data-i18n="updateCheck">检查更新</button>
+                                    <button id="applyAppUpdate" class="btn btn-primary" type="button" hidden></button>
+                                    <button id="openAppRelease" class="btn btn-outline" type="button" data-i18n="updateRelease" hidden>查看官方发布</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -489,7 +501,7 @@
     </div>
 
     <!-- Toast 通知 -->
-    <div id="toast" class="toast"></div>
+    <div id="toast" class="toast" role="status"></div>
 
     <!-- 会议详情弹窗 -->
     <div id="detailModal" class="modal">

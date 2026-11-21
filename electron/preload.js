@@ -38,6 +38,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 获取应用版本
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  appUpdate: {
+    state: () => ipcRenderer.invoke('app-update-state'),
+    check: () => ipcRenderer.invoke('app-update-check'),
+    download: () => ipcRenderer.invoke('app-update-download'),
+    install: () => ipcRenderer.invoke('app-update-install'),
+    openRelease: () => ipcRenderer.invoke('app-update-release'),
+    setAutomatic: enabled => ipcRenderer.invoke('app-update-automatic', enabled),
+    setBusy: busy => ipcRenderer.invoke('app-update-busy', busy),
+    onState: callback => {
+      ipcRenderer.on('app-update-state', (_event, state) => callback(state));
+    }
+  },
   
   // FFmpeg 相关接口（Linux 系统音频录制）
   checkFFmpeg: () => ipcRenderer.invoke('check-ffmpeg'),

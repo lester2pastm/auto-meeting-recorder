@@ -247,15 +247,9 @@ function deleteMeeting(id) {
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_NAME], 'readwrite');
             const objectStore = transaction.objectStore(STORE_NAME);
-            const deleteRequest = objectStore.delete(id);
-
-            deleteRequest.onsuccess = () => {
-                resolve();
-            };
-
-            deleteRequest.onerror = () => {
-                reject(new Error('Failed to delete meeting'));
-            };
+            objectStore.delete(id);
+            transaction.oncomplete = () => resolve();
+            transaction.onabort = () => reject(transaction.error || new Error('Failed to delete meeting'));
         });
     });
 }
@@ -264,15 +258,9 @@ function saveSettings(settings) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([SETTINGS_STORE_NAME], 'readwrite');
         const objectStore = transaction.objectStore(SETTINGS_STORE_NAME);
-        const request = objectStore.put({ id: 'config', ...settings });
-
-        request.onsuccess = () => {
-            resolve(settings);
-        };
-
-        request.onerror = () => {
-            reject(new Error('Failed to save settings'));
-        };
+        objectStore.put({ id: 'config', ...settings });
+        transaction.oncomplete = () => resolve(settings);
+        transaction.onabort = () => reject(transaction.error || new Error('Failed to save settings'));
     });
 }
 
@@ -301,6 +289,7 @@ function updateMeeting(id, updates) {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([STORE_NAME], 'readwrite');
         const objectStore = transaction.objectStore(STORE_NAME);
+        transaction.onabort = () => reject(transaction.error || new Error('Failed to update meeting'));
         
         const getRequest = objectStore.get(id);
         
@@ -312,15 +301,8 @@ function updateMeeting(id, updates) {
             }
             
             const updated = { ...existing, ...updates };
-            const putRequest = objectStore.put(updated);
-            
-            putRequest.onsuccess = () => {
-                resolve(updated);
-            };
-            
-            putRequest.onerror = (event) => {
-                reject(new Error('Failed to update meeting'));
-            };
+            objectStore.put(updated);
+            transaction.oncomplete = () => resolve(updated);
         };
         
         getRequest.onerror = () => {

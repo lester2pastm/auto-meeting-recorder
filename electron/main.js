@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, screen, shell, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
 const { spawn, exec, execFile } = require('child_process');
 const { promisify } = require('util');
+const { createAppUpdate } = require('./app-update');
 const { startLocalAsr, supported: localAsrSupported } = require('./local-asr');
 const {
   checkLinuxDependencies,
@@ -77,6 +78,8 @@ async function cleanupOrphanFFmpeg() {
 
 let mainWindow;
 let localAsrSession = null;
+let appUpdate;
+let updateFrameGeneration = 0;
 
 function beginLocalAsr(sender, sampleRate, filePath = '', live = false) {
   if (localAsrSession) throw new Error('Local speech recognition is already running');
@@ -233,6 +236,14 @@ function createWindow() {
   });
 
   const sender = mainWindow.webContents;
+  if (appUpdate) {
+    sender.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
+      if (!inPlace && isMainFrame) {
+        updateFrameGeneration++;
+        appUpdate.setBusy(true);
+      }
+    });
+  }
   sender.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
       shell.openExternal(url).catch((error) => safeWarn('Could not open summary link:', error.message));
@@ -242,7 +253,11 @@ function createWindow() {
 
   // 加载应用
   mainWindow.loadFile(path.join(__dirname, '../src/index.html'));
-  mainWindow.on('closed', () => cancelLocalAsr(sender));
+  mainWindow.on('closed', () => {
+    cancelLocalAsr(sender);
+    updateFrameGeneration++;
+    appUpdate?.setBusy(true);
+  });
 
   // 开发模式下打开开发者工具
   if (process.argv.includes('--dev')) {
@@ -270,6 +285,41 @@ function createWindow() {
 
 let willQuit = false;
 
+function registerUpdateHandlers() {
+  appUpdate = createAppUpdate({
+    app, net, shell, store,
+    publish: state => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app-update-state', state);
+    }
+  });
+  const isCurrentWindow = event => mainWindow && !mainWindow.isDestroyed()
+    && event.sender === mainWindow.webContents && event.senderFrame === event.sender.mainFrame;
+  const handlers = {
+    state: () => appUpdate.getState(),
+    check: () => appUpdate.check(),
+    download: () => appUpdate.download(),
+    release: () => appUpdate.openRelease(),
+    automatic: (_event, enabled) => appUpdate.setAutomatic(enabled),
+    busy: (_event, busy) => appUpdate.setBusy(busy),
+    install: event => {
+      const generation = updateFrameGeneration;
+      return appUpdate.install(
+        () => !willQuit && generation === updateFrameGeneration && isCurrentWindow(event)
+          && !ffmpegSystemAudioProcess && !localAsrSession,
+        () => { willQuit = true; }
+      );
+    }
+  };
+  for (const [action, handler] of Object.entries(handlers)) {
+    ipcMain.handle(`app-update-${action}`, (event, value) => {
+      if (!isCurrentWindow(event)) return;
+      return handler(event, value);
+    });
+  }
+  app.on('will-quit', appUpdate.stop);
+  appUpdate.start();
+}
+
 // IPC 处理器：强制关闭应用
 ipcMain.on('force-close', () => {
   willQuit = true;
@@ -295,6 +345,8 @@ if (!gotTheLock) {
   // 应用就绪
   app.whenReady().then(async () => {
     await cleanupOrphanFFmpeg();
+    if (app.isPackaged) registerUpdateHandlers();
+    else ipcMain.handle('app-update-state', () => ({ mode: 'disabled' }));
     createWindow();
 
     app.on('activate', () => {

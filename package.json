@@ -1,11 +1,12 @@
 {
   "name": "meeting-minutes-app",
-  "version": "2.8.3",
+  "version": "2.8.4",
   "author": {
     "name": "lester2pastm",
     "email": "25032501+lester2pastm@users.noreply.github.com"
   },
   "description": "自动会议纪要桌面应用",
+  "homepage": "https://github.com/lester2pastm/auto-meeting-recorder",
   "main": "electron/main.js",
   "scripts": {
     "prepare:local-asr": "node scripts/prepare-local-asr.js",
@@ -20,10 +21,10 @@
     "use:linux": "node scripts/use-linux.js",
     "install:win": "node scripts/use-win.js && npm install",
     "install:linux": "node scripts/use-linux.js && npm install",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
+    "build": "electron-builder --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:linux": "electron-builder --linux --publish never",
     "test": "jest",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
@@ -46,6 +47,9 @@
   },
   "dependencies": {
     "electron-store": "^8.1.0",
+    "electron-updater": "6.8.12",
+    "js-yaml": "4.1.1",
+    "semver": "7.7.4",
     "sherpa-onnx-node": "2.0.1"
   },
   "build": {
@@ -80,6 +84,7 @@
     },
     "mac": {
       "target": "dmg",
+      "publish": null,
       "artifactName": "${productName}-${version}-mac.${ext}"
     },
     "linux": {
@@ -91,6 +96,13 @@
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
       "category": "Office"
     },
-    "publish": null
+    "deb": {
+      "publish": null
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "lester2pastm",
+      "repo": "auto-meeting-recorder"
+    }
   }
 }

@@ -58,6 +58,141 @@ async function configureApiSettings(page) {
   await expect(page.locator('#toast')).toContainText('设置已自动保存');
 }
 
+test('shows the primary action for current and ready update states', async ({ page }) => {
+  await gotoApp(page);
+  await page.evaluate(() => {
+    window.electronAPI = {
+      ...window.electronAPI,
+      appUpdate: {
+        state: async () => ({ mode: 'appimage', status: 'current', automatic: true, busy: false }),
+        onState: callback => { window.showUpdateState = callback; },
+        setBusy: async () => {},
+        check: async () => { window.checkedForUpdates = true; }
+      }
+    };
+    setupAppUpdates();
+  });
+  await openSettings(page);
+  const check = page.locator('#checkAppUpdate');
+  const restart = page.locator('#applyAppUpdate');
+  const status = page.locator('#appUpdateStatus');
+  await expect(status).toHaveText('当前已是最新版本');
+  await expect(status).toHaveAttribute('data-status', 'current');
+  await expect(check).toBeVisible();
+  await expect(check).toHaveClass(/btn-primary/);
+  await check.click();
+  await expect.poll(() => page.evaluate(() => window.checkedForUpdates)).toBe(true);
+  await expect(restart).toBeHidden();
+
+  await page.evaluate(() => window.showUpdateState({
+    mode: 'appimage', status: 'ready', version: '2.8.5', automatic: true, busy: false
+  }));
+  await expect(check).toBeHidden();
+  await expect(status).toHaveText('更新已就绪 · v2.8.5');
+  await expect(restart).toBeVisible();
+  await expect(restart).toBeEnabled();
+  await expect(restart).toHaveClass(/btn-primary/);
+  await expect(page.locator('#openAppRelease')).toBeVisible();
+
+  await page.evaluate(() => window.showUpdateState({
+    mode: 'appimage', status: 'current', automatic: true, busy: false
+  }));
+  await expect(check).toBeVisible();
+  await expect(check).toBeEnabled();
+  await expect(check).toHaveClass(/btn-primary/);
+  await expect(restart).toBeHidden();
+});
+
+async function mockReadyUpdate(page, busy = false) {
+  await page.evaluate(initialBusy => {
+    let state = { mode: 'appimage', status: 'ready', version: '2.8.5', automatic: true, busy: initialBusy };
+    let updateListener;
+    window.publishUpdateState = patch => {
+      state = { ...state, ...patch };
+      updateListener(state);
+    };
+    window.installAttempts = 0;
+    window.electronAPI = {
+      appUpdate: {
+        state: async () => state,
+        onState: listener => { updateListener = listener; },
+        setBusy: async busy => window.publishUpdateState({ busy }),
+        install: async () => { window.installAttempts++; return false; }
+      }
+    };
+    setupAppUpdates();
+  }, busy);
+}
+
+for (const api of ['Stt', 'Summary']) {
+  test(`blocks an update while the ${api} connection test is running or saving settings`, async ({ page }) => {
+    await gotoApp(page);
+    await mockReadyUpdate(page);
+    await openSettings(page);
+    await page.evaluate(api => {
+      const testConnection = () => new Promise(resolve => {
+        window.finishConnectionTest = () => resolve({ success: true });
+      });
+      if (api === 'Stt') testSttApi = testConnection;
+      else testSummaryApi = testConnection;
+      window.electronAPI.saveConfig = () => new Promise(resolve => {
+        window.finishSavingConfig = () => resolve({ success: true });
+      });
+    }, api);
+    const field = api.toLowerCase();
+    await page.fill(`#${field}ApiUrl`, `https://${field}.example.com`);
+    await page.fill(`#${field}ApiKey`, 'saved-key');
+    const restart = page.locator('#applyAppUpdate');
+    await page.locator(`#btnTest${api}Api`).click();
+    await expect.poll(() => page.evaluate(() => typeof window.finishConnectionTest)).toBe('function');
+    await expect(restart).toBeDisabled();
+    await page.evaluate(() => window.finishConnectionTest());
+    await expect.poll(() => page.evaluate(() => typeof window.finishSavingConfig)).toBe('function');
+    await expect(restart).toBeDisabled();
+    expect(await page.evaluate(() => window.installAttempts)).toBe(0);
+    await page.evaluate(() => window.finishSavingConfig());
+    await expect(restart).toBeEnabled();
+    expect(await page.evaluate(async field => (await getSettings())[`${field}ApiKey`], field)).toBe('saved-key');
+    await restart.click();
+    expect(await page.evaluate(() => window.installAttempts)).toBe(1);
+  });
+}
+
+test('shows the ready reminder only when idle and opens the About card', async ({ page }) => {
+  await page.setViewportSize({ width: 530, height: 760 });
+  await gotoApp(page);
+  await installRecordingMocks(page);
+  await page.evaluate(() => { window.__mockRecordingState.isRecording = true; });
+  await mockReadyUpdate(page, true);
+  const notice = page.getByRole('button', { name: '查看更新' });
+  await expect(notice).toBeHidden();
+  await page.evaluate(() => {
+    window.__mockRecordingState.isRecording = false;
+    reportUpdateBusy();
+  });
+  await expect(notice).toBeVisible();
+  await expect(notice).toHaveClass(/btn-secondary/);
+  await notice.click();
+  await expect(page.locator('#settingsView')).toHaveClass(/active/);
+  await expect(page.locator('#applyAppUpdate')).toBeInViewport();
+  await expect(page.locator('#applyAppUpdate')).toBeFocused();
+  await page.evaluate(() => window.publishUpdateState({ busy: false, error: 'installNetwork' }));
+  await expect(page.locator('#appUpdateStatus')).toContainText('更新包已下载，请联网确认后重试');
+  await expect(page.locator('#applyAppUpdate')).toBeEnabled();
+  await expect(page.locator('#checkAppUpdate')).toBeHidden();
+  await page.evaluate(() => window.publishUpdateState({ error: null }));
+  await expect(notice).toBeHidden();
+
+  await gotoApp(page);
+  await mockReadyUpdate(page);
+  await expect(notice).toBeHidden();
+  await page.evaluate(() => window.publishUpdateState({ version: '2.8.6' }));
+  await expect(notice).toBeVisible();
+  await notice.click();
+  await page.evaluate(() => window.publishUpdateState({ version: '2.8.5' }));
+  await expect(notice).toBeHidden();
+});
+
 async function installRecordingMocks(page) {
   await page.evaluate(() => {
     window.__mockRecordingState = {

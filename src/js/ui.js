@@ -21,7 +21,7 @@ function cleanupDetailAudioPreview() {
     }
 }
 
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', action) {
     const toast = document.getElementById('toast');
     
     const icons = {
@@ -40,10 +40,25 @@ function showToast(message, type = 'info') {
     if (toastTimer) {
         clearTimeout(toastTimer);
     }
-    
-    toastTimer = setTimeout(() => {
+
+    function dismiss() {
         toast.classList.remove('show');
-    }, 3000);
+        toast.querySelector('.toast-action')?.remove();
+    }
+
+    if (action) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-secondary toast-action';
+        button.textContent = action.label;
+        button.addEventListener('click', () => {
+            clearTimeout(toastTimer);
+            dismiss();
+            action.onClick();
+        });
+        toast.append(button);
+    }
+    toastTimer = setTimeout(dismiss, action ? 10000 : 3000);
 }
 
 // ============================================
@@ -312,7 +327,7 @@ function renderHistoryList(meetings) {
                     </svg>
                     ${viewText}
                 </button>
-                <button class="btn btn-danger" onclick="handleDeleteMeeting('${meeting.id}')">
+                <button class="btn btn-danger" onclick="withUpdateTask(handleDeleteMeeting)('${meeting.id}')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -452,7 +467,7 @@ async function renderMeetingDetail(meeting) {
             </h3>
             <div class="detail-content-area${isTranscriptProcessing ? ' is-loading' : ''}" id="detailTranscriptContent_${meeting.id}">${transcriptContent}</div>
             ${hasAudioFile ? `
-            <button class="action-btn test-btn${isTranscriptProcessing ? ' btn-loading' : ''}" id="btnRefreshTranscript_${meeting.id}" onclick="handleRefreshTranscriptInDetail('${meeting.id}')" style="margin-top: 12px;" ${isTranscriptProcessing ? 'disabled' : ''}>
+            <button class="action-btn test-btn${isTranscriptProcessing ? ' btn-loading' : ''}" id="btnRefreshTranscript_${meeting.id}" onclick="withUpdateTask(handleRefreshTranscriptInDetail)('${meeting.id}')" style="margin-top: 12px;" ${isTranscriptProcessing ? 'disabled' : ''}>
                 <span class="btn-content">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
                         <polyline points="23 4 23 10 17 10"/>
@@ -475,7 +490,7 @@ async function renderMeetingDetail(meeting) {
             </h3>
             <div class="detail-content-area${isSummaryProcessing ? ' is-loading' : ''}" id="detailSummaryContent_${meeting.id}">${summaryContent}</div>
             <div class="detail-content-actions" style="margin-top: 12px; display: flex; gap: 8px;">
-                <button class="action-btn test-btn${isSummaryProcessing ? ' btn-loading' : ''}" id="btnRefreshSummary_${meeting.id}" onclick="handleRefreshSummaryInDetail('${meeting.id}')" ${isSummaryProcessing ? 'disabled' : ''}>
+                <button class="action-btn test-btn${isSummaryProcessing ? ' btn-loading' : ''}" id="btnRefreshSummary_${meeting.id}" onclick="withUpdateTask(handleRefreshSummaryInDetail)('${meeting.id}')" ${isSummaryProcessing ? 'disabled' : ''}>
                     <span class="btn-content">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px">
                             <polyline points="23 4 23 10 17 10"/>
@@ -500,7 +515,8 @@ async function renderMeetingDetail(meeting) {
     if (isElectronEnv && meeting.audioFilename) {
         const exportBtn = document.getElementById(`btnExportAudio_${meeting.id}`);
         if (exportBtn) {
-            exportBtn.addEventListener('click', () => exportMeetingAudio(meeting));
+            const exportAudio = () => exportMeetingAudio(meeting);
+            exportBtn.addEventListener('click', typeof withUpdateTask === 'function' ? withUpdateTask(exportAudio) : exportAudio);
         }
     }
 }

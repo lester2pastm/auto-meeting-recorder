@@ -1105,8 +1105,56 @@ body {
 }
 
 .about-version {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
     font-size: var(--text-base);
     color: var(--text-secondary);
+}
+
+.about-version strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+#appUpdateControls {
+    margin-top: var(--space-4);
+}
+
+#appUpdateControls [hidden] {
+    display: none;
+}
+
+#appUpdateControls .btn:disabled {
+    opacity: 0.55;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.update-preference {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.update-preference input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent);
+}
+
+#appUpdateStatus[data-status="current"] {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--success-light);
+    color: var(--text-primary);
 }
 
 .settings-card-header {
@@ -1369,6 +1417,20 @@ select.custom-select-trigger {
 .toast.show {
     opacity: 1;
     transform: translateY(0) scale(1);
+}
+
+.toast:has(.toast-action) {
+    max-width: calc(100% - 2 * var(--space-6));
+}
+
+.toast:has(.toast-action) > svg,
+.toast-action {
+    flex-shrink: 0;
+}
+
+.toast.show .toast-action {
+    padding: var(--space-1) var(--space-3);
+    pointer-events: auto;
 }
 
 .toast.success {

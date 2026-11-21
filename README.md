@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.8.3-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.8.4-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Electron-28.0.0-47848F?logo=electron&logoColor=white" alt="Electron">
@@ -49,7 +49,7 @@
 
 ### Why this version matters
 
-- Current app version: `2.8.3`
+- Current app version: `2.8.4`
 - A compact toolbar leaves more room for the transcript and summary during and after recording. Going back keeps the latest meeting on screen until the next recording starts.
 - Meeting summaries display formatted Markdown on the recording screen and in history. Recording and transcription work before a summary API is configured.
 - `src/index.html` is still useful for UI development and browser-based E2E checks, but the full product experience depends on Electron IPC
@@ -93,6 +93,8 @@
 ### Download
 
 For normal use, download the latest packaged build directly from the [Releases](https://github.com/lester2pastm/auto-meeting-recorder/releases) page.
+
+Open **Settings → About** to check for updates. AppImage builds try a smaller differential download first and can fall back to the full package. An interrupted full AppImage download resumes on retry while the same release asset is still available. A newer release clears the partial download and another differential attempt starts. Signed Windows builds download the full installer. Updates are downloaded when meeting work is idle and installed when you choose **Restart and update**. For Linux `.deb` and macOS builds, the app links to the official release page.
 
 ### Build from source
 

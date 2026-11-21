@@ -239,8 +239,11 @@ describe('Storage 模块测试', () => {
       mockGetRequest.onsuccess();
       
       // 模拟更新成功
-      const updatedResult = { ...mockExistingMeeting, transcript: 'new text', transcriptStatus: 'completed' };
-      mockPutRequest.onsuccess();
+      const committed = jest.fn();
+      updatePromise.then(committed);
+      await Promise.resolve();
+      expect(committed).not.toHaveBeenCalled();
+      mockTransaction.oncomplete();
       
       const result = await updatePromise;
       
@@ -347,7 +350,7 @@ describe('Storage 模块测试', () => {
 
       mockGetRequest.onsuccess();
       await new Promise(resolve => setTimeout(resolve, 0));
-      mockDeleteRequest.onsuccess();
+      mockDeleteTransaction.oncomplete();
 
       await deletePromise;
 
