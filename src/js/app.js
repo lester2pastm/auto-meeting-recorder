@@ -460,7 +460,7 @@ function setupAppUpdates() {
         const messages = {
             checking: 'updateChecking', current: 'updateCurrent', available: 'updateAvailable',
             unavailable: 'updateUnavailable', downloading: 'updateDownloading', ready: 'updateReady',
-            installing: 'updateInstalling'
+            installing: state.manualInstall ? 'updatePreparingInstaller' : 'updateInstalling'
         };
         const errors = {
             limited: 'updateLimited', network: 'updateNetwork', space: 'updateSpace',
@@ -480,7 +480,8 @@ function setupAppUpdates() {
         check.classList.toggle('btn-primary', apply.hidden);
         check.classList.toggle('btn-outline', !apply.hidden);
         apply.disabled = state.busy || updateRestartPending || state.status === 'installing';
-        apply.textContent = i18n.get(state.status === 'available' ? 'updateDownload' : 'updateRestart');
+        apply.textContent = i18n.get(state.status === 'available' ? 'updateDownload'
+            : state.manualInstall ? 'updateOpenInstaller' : 'updateRestart');
         release.hidden = !state.version && !state.error;
 
         const noticeKey = `updateNotice:${state.version}`;

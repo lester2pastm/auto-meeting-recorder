@@ -48,9 +48,7 @@ async function main() {
   }
   await verifyManifest('artifacts/linux-x64-installer', 'latest-linux.yml', `${product}-linux-x86_64.AppImage`, true);
   await verifyManifest('artifacts/linux-arm64-installer', 'latest-linux-arm64.yml', `${product}-linux-arm64.AppImage`, true);
-  if (artifactNames.has('latest.yml')) {
-    await verifyManifest('artifacts/windows-installer', 'latest.yml', `${product}-win.exe`, false);
-  }
+  await verifyManifest('artifacts/windows-installer', 'latest.yml', `${product}-win.exe`, false);
 }
 
 main().catch(error => {

@@ -5,7 +5,7 @@ const { setTimeout, clearTimeout } = require('timers');
 
 const WRITE_PART = fs.constants.O_WRONLY | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0);
 
-function createAppImageDownload({ directory, fetch, verifyFile }) {
+function createUpdateDownload({ directory, fetch, verifyFile }) {
   const files = fs.promises;
 
   function partialPath(candidate) {
@@ -144,4 +144,4 @@ function createAppImageDownload({ directory, fetch, verifyFile }) {
   return { offset, discardExcept, download };
 }
 
-module.exports = { createAppImageDownload };
+module.exports = { createUpdateDownload };

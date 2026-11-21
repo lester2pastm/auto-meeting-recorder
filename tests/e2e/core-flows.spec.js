@@ -103,9 +103,9 @@ test('shows the primary action for current and ready update states', async ({ pa
   await expect(restart).toBeHidden();
 });
 
-async function mockReadyUpdate(page, busy = false) {
-  await page.evaluate(initialBusy => {
-    let state = { mode: 'appimage', status: 'ready', version: '2.8.5', automatic: true, busy: initialBusy };
+async function mockReadyUpdate(page, initialState = {}) {
+  await page.evaluate(overrides => {
+    let state = { mode: 'appimage', status: 'ready', version: '2.8.5', automatic: true, busy: false, ...overrides };
     let updateListener;
     window.publishUpdateState = patch => {
       state = { ...state, ...patch };
@@ -121,8 +121,23 @@ async function mockReadyUpdate(page, busy = false) {
       }
     };
     setupAppUpdates();
-  }, busy);
+  }, initialState);
 }
+
+test('offers to open an unsigned Windows installer with the usual update button', async ({ page }) => {
+  await gotoApp(page);
+  await mockReadyUpdate(page, { mode: 'nsis', manualInstall: true, status: 'available' });
+  await openSettings(page);
+  const apply = page.locator('#applyAppUpdate');
+  await expect(apply).toHaveText('下载更新');
+  await page.evaluate(() => window.publishUpdateState({ status: 'ready' }));
+  await expect(apply).toHaveText('打开安装包');
+  await expect(apply).toHaveClass(/btn-primary/);
+  await expect(page.locator('#checkAppUpdate')).toBeHidden();
+  await apply.click();
+  await expect.poll(() => page.evaluate(() => window.installAttempts)).toBe(1);
+  await expect(apply).toBeEnabled();
+});
 
 for (const api of ['Stt', 'Summary']) {
   test(`blocks an update while the ${api} connection test is running or saving settings`, async ({ page }) => {
@@ -163,7 +178,7 @@ test('shows the ready reminder only when idle and opens the About card', async (
   await gotoApp(page);
   await installRecordingMocks(page);
   await page.evaluate(() => { window.__mockRecordingState.isRecording = true; });
-  await mockReadyUpdate(page, true);
+  await mockReadyUpdate(page, { busy: true });
   const notice = page.getByRole('button', { name: '查看更新' });
   await expect(notice).toBeHidden();
   await page.evaluate(() => {

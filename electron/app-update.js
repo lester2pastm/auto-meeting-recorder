@@ -75,10 +75,11 @@ function createAppUpdate({ app, net, shell, store, publish, platform = process.p
   const image = platform === 'linux' && path.isAbsolute(imagePath || '') ? imagePath : null;
   const publishers = [].concat(config.publisherName || []).filter(name => typeof name === 'string' && name.trim());
   const mode = !app.isPackaged ? 'disabled' : config.provider && image ? 'appimage'
-    : config.provider && platform === 'win32' && arch === 'x64' && publishers.length ? 'nsis' : 'manual';
+    : config.provider && platform === 'win32' && arch === 'x64' ? 'nsis' : 'manual';
   const updater = ['appimage', 'nsis'].includes(mode) ? getUpdater(mode) : null;
+  const manualInstall = mode === 'nsis' && !publishers.length;
   const current = app.getVersion();
-  let state = { mode, status: 'idle', automatic: store.get('automaticUpdates', true), busy: true };
+  let state = { mode, manualInstall, status: 'idle', automatic: store.get('automaticUpdates', true), busy: true };
   let candidate;
   let downloaded;
   let checking;
@@ -87,18 +88,18 @@ function createAppUpdate({ app, net, shell, store, publish, platform = process.p
   let retried = false;
   let downloadRetry = 'unused';
   let stopped = false;
-  const appImageDownload = mode === 'appimage' && updater.httpExecutor && require('./appimage-download').createAppImageDownload({
-    directory: path.join(app.getPath('userData'), 'appimage-downloads'),
+  const fullDownload = updater?.httpExecutor && require('./update-download').createUpdateDownload({
+    directory: path.join(app.getPath('userData'), `${mode}-downloads`),
     fetch: (url, options) => updater.netSession.fetch(url, options),
     verifyFile
   });
 
-  if (appImageDownload) {
-    // In the pinned updater, only AppImage full downloads use this method.
+  if (fullDownload) {
+    // The pinned updater uses this method for full downloads. NSIS web installers are disabled below.
     const downloadFull = updater.httpExecutor.download.bind(updater.httpExecutor);
     updater.httpExecutor.download = (url, destination, options) => {
       if (activeDownload) activeDownload.full = true;
-      return appImageDownload.download(activeDownload?.candidate, url, destination, options, downloadFull);
+      return fullDownload.download(activeDownload?.candidate, url, destination, options, downloadFull);
     };
   }
 
@@ -147,8 +148,8 @@ function createAppUpdate({ app, net, shell, store, publish, platform = process.p
       pending.token.cancel();
       await pending.promise;
     }
-    if (appImageDownload) {
-      await appImageDownload.discardExcept(next);
+    if (fullDownload) {
+      await fullDownload.discardExcept(next);
       if (obsolete) await fs.promises.rm(obsolete, { force: true });
     }
   }
@@ -171,7 +172,7 @@ function createAppUpdate({ app, net, shell, store, publish, platform = process.p
   function check() {
     if (stopped || mode === 'disabled') return;
     if (checking) return checking;
-    if ((!appImageDownload && activeDownload) || ['ready', 'installing'].includes(state.status)) {
+    if ((!fullDownload && activeDownload) || ['ready', 'installing'].includes(state.status)) {
       schedule(INTERVAL);
       return;
     }
@@ -208,12 +209,12 @@ function createAppUpdate({ app, net, shell, store, publish, platform = process.p
     activeDownload = attempt;
     attempt.promise = (async () => {
       try {
-        const offset = appImageDownload ? appImageDownload.offset(attempt.candidate) : null;
-        if (appImageDownload) updater.disableDifferentialDownload = offset !== null;
+        const offset = fullDownload ? fullDownload.offset(attempt.candidate) : null;
+        updater.disableDifferentialDownload = mode === 'nsis' || offset !== null;
         set({ status: 'downloading', progress: offset ? Math.floor(offset / attempt.candidate.size * 100) : 0, error: null });
         const [file] = await updater.downloadUpdate(attempt.token);
         if (candidate !== attempt.candidate) {
-          if (appImageDownload && file) await fs.promises.rm(file, { force: true });
+          if (fullDownload && file) await fs.promises.rm(file, { force: true });
           return;
         }
         downloaded = file;
@@ -268,6 +269,11 @@ function createAppUpdate({ app, net, shell, store, publish, platform = process.p
         app.relaunch({ execPath: image, args: process.argv.slice(1) });
       } else {
         await verifyFile(downloaded, expected.sha512);
+        if (manualInstall) {
+          if (state.busy || !canQuit()) return false;
+          if (await shell.openPath(downloaded)) set({ status: 'ready', error: 'install' });
+          return false;
+        }
         if (await updater.verifyUpdateCodeSignature(publishers, downloaded) !== null) {
           throw Object.assign(new Error('Invalid publisher'), { code: 'ERR_UPDATER_INVALID_SIGNATURE' });
         }

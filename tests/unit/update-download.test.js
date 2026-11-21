@@ -5,7 +5,7 @@ const { createHash } = require('crypto');
 const { runInThisContext } = require('vm');
 global.TextDecoder ||= require('util').TextDecoder;
 const { CancellationToken } = require('electron-updater');
-const { createAppImageDownload } = require('../../electron/appimage-download');
+const { createUpdateDownload } = require('../../electron/update-download');
 
 const hash = data => createHash('sha512').update(data).digest('base64');
 const release = (version, data) => ({
@@ -30,7 +30,7 @@ function response(status, chunks = [], headers = {}, interrupted = false) {
 }
 
 function downloader(fetch) {
-  return createAppImageDownload({
+  return createUpdateDownload({
     directory: path.join(root, 'parts'), fetch,
     verifyFile: async (file, digest) => {
       if (hash(fs.readFileSync(file)) !== digest) {
@@ -52,7 +52,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'amr-appimage-download-'));
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'amr-update-download-'));
   destination = path.join(root, 'finished.AppImage');
   options = { cancellationToken: new CancellationToken(), onProgress: jest.fn() };
 });

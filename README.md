@@ -94,7 +94,7 @@
 
 For normal use, download the latest packaged build directly from the [Releases](https://github.com/lester2pastm/auto-meeting-recorder/releases) page.
 
-Open **Settings → About** to check for updates. AppImage builds try a smaller differential download first and can fall back to the full package. An interrupted full AppImage download resumes on retry while the same release asset is still available. A newer release clears the partial download and another differential attempt starts. Signed Windows builds download the full installer. Updates are downloaded when meeting work is idle and installed when you choose **Restart and update**. For Linux `.deb` and macOS builds, the app links to the official release page.
+Open **Settings → About** to check for updates. AppImage builds try a differential download and can fall back to the full package. Windows downloads the full installer. On both platforms, interrupted full downloads resume when retrying the same release asset. After verification, AppImage and signed Windows builds offer **Restart and update**. Unsigned Windows builds offer **Open installer** so you can start installation. Linux `.deb` and macOS builds link to the official release page.
 
 ### Build from source
 

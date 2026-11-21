@@ -14,10 +14,10 @@ const hash = value => createHash('sha512').update(value).digest('base64');
 beforeEach(() => { fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'amr-update-test-')); });
 afterEach(() => { fs.rmSync(fixture, { recursive: true, force: true }); });
 
-function environment({ platform = 'linux', automatic = false, signed = false, resumable = false } = {}) {
-  fs.writeFileSync(path.join(fixture, 'app-update.yml'), `provider: github\n${signed ? 'publisherName: [AMR]' : ''}`);
+function environment({ platform = 'linux', automatic = false, signed = false, resumable = false, configured = true } = {}) {
+  if (configured) fs.writeFileSync(path.join(fixture, 'app-update.yml'), `provider: github\n${signed ? 'publisherName: [AMR]' : ''}`);
   const image = path.join(fixture, 'project.AppImage');
-  const downloaded = path.join(fixture, 'download');
+  const downloaded = path.join(fixture, platform === 'win32' ? 'download.exe' : 'download');
   fs.writeFileSync(image, 'old');
   fs.writeFileSync(downloaded, 'new');
   const file = { url: platform === 'linux' ? 'new.AppImage' : 'new.exe', size: 3, sha512: hash('new') };
@@ -30,12 +30,13 @@ function environment({ platform = 'linux', automatic = false, signed = false, re
   if (resumable) updater.httpExecutor = { download: jest.fn() };
   const app = { isPackaged: true, getVersion: () => '2.9.0', getPath: () => fixture, quit: jest.fn(), relaunch: jest.fn() };
   const net = { fetch: jest.fn() };
+  const shell = { openPath: jest.fn().mockResolvedValue('') };
   const publish = jest.fn();
   const manager = createAppUpdate({
-    app, net, platform, arch: 'x64', imagePath: image, resourcesPath: fixture, getUpdater: () => updater,
+    app, net, shell, platform, arch: 'x64', imagePath: image, resourcesPath: fixture, getUpdater: () => updater,
     store: { get: () => automatic, set: jest.fn() }, publish
   });
-  return { manager, app, net, updater, image, downloaded, file, publish };
+  return { manager, app, net, shell, updater, image, downloaded, file, publish };
 }
 
 function waitForStatus(publish, status) {
@@ -107,9 +108,10 @@ test('keeps an update ready and explains that install needs a connection when of
   expect(app.quit).toHaveBeenCalledTimes(1);
 });
 
-test('Windows bypasses differential download and rejects the wrong publisher', async () => {
-  const { manager, updater, app } = environment({ platform: 'win32', signed: true });
+test('signed Windows full updates require the trusted publisher and restart through NSIS', async () => {
+  const { manager, updater, app, shell, downloaded } = environment({ platform: 'win32', signed: true });
   expect(updater.disableDifferentialDownload).toBe(true);
+  expect(manager.getState().manualInstall).toBe(false);
   manager.setBusy(false);
   await manager.check();
   await manager.download();
@@ -118,6 +120,39 @@ test('Windows bypasses differential download and rejects the wrong publisher', a
   expect(manager.getState().error).toBe('integrity');
   expect(updater.install).not.toHaveBeenCalled();
   expect(app.quit).not.toHaveBeenCalled();
+
+  await manager.check();
+  await manager.download();
+  updater.verifyUpdateCodeSignature.mockResolvedValue(null);
+  expect(await manager.install(() => true, jest.fn())).toBe(true);
+  expect(updater.verifyUpdateCodeSignature).toHaveBeenLastCalledWith(['AMR'], downloaded);
+  expect(updater.install).toHaveBeenCalledWith(true, true);
+  expect(app.quit).toHaveBeenCalledTimes(1);
+  expect(shell.openPath).not.toHaveBeenCalled();
+});
+
+test('unsigned Windows opens a verified installer only on request and while idle', async () => {
+  const { manager, updater, app, shell, downloaded } = environment({ platform: 'win32' });
+  manager.setBusy(false);
+  await manager.check();
+  await manager.download();
+  expect(manager.getState()).toMatchObject({ mode: 'nsis', status: 'ready', manualInstall: true });
+  expect(shell.openPath).not.toHaveBeenCalled();
+  const permitQuit = jest.fn();
+  const busyBeforeOpen = jest.fn().mockReturnValueOnce(true).mockReturnValue(false);
+  expect(await manager.install(busyBeforeOpen, permitQuit)).toBe(false);
+  expect(shell.openPath).not.toHaveBeenCalled();
+  expect(await manager.install(() => true, permitQuit)).toBe(false);
+  expect(shell.openPath).toHaveBeenCalledWith(downloaded);
+  expect(manager.getState().status).toBe('ready');
+  expect(permitQuit).not.toHaveBeenCalled();
+  expect(app.quit).not.toHaveBeenCalled();
+  expect(updater.install).not.toHaveBeenCalled();
+
+  fs.writeFileSync(downloaded, 'changed');
+  expect(await manager.install(() => true, permitQuit)).toBe(false);
+  expect(manager.getState()).toMatchObject({ status: 'error', error: 'integrity' });
+  expect(shell.openPath).toHaveBeenCalledTimes(1);
 });
 
 test('uses the saved full download, then cancels it and tries differential when a new release appears', async () => {
@@ -150,9 +185,12 @@ test('uses the saved full download, then cancels it and tries differential when 
   expect(updater.disableDifferentialDownload).toBe(false);
 });
 
-test.each([false, true])('rechecks the release before a short full-download retry (newer release: %s)', async newer => {
+test.each([
+  ['linux', false], ['linux', true], ['win32', false], ['win32', true]
+])('%s rechecks before retrying a full download (newer release: %s)', async (platform, newer) => {
   jest.useFakeTimers();
-  const { manager, updater, downloaded, file, publish } = environment({ automatic: true, resumable: true });
+  const { manager, updater, downloaded, file, publish } = environment({ platform, automatic: true, resumable: true });
+  const windows = platform === 'win32';
   const broken = async function* () {
     yield Buffer.from('n');
     throw new Error('net::ERR_CONNECTION_RESET');
@@ -165,7 +203,7 @@ test.each([false, true])('rechecks the release before a short full-download retr
   const downloadModes = [];
   updater.downloadUpdate.mockImplementation(async cancellationToken => {
     downloadModes.push(updater.disableDifferentialDownload);
-    return [await updater.httpExecutor.download('https://example.com/new.AppImage', downloaded, { cancellationToken })];
+    return [await updater.httpExecutor.download(`https://example.com/${file.url}`, downloaded, { cancellationToken })];
   });
   try {
     await manager.check();
@@ -183,9 +221,9 @@ test.each([false, true])('rechecks the release before a short full-download retr
     jest.advanceTimersByTime(1);
     expect(await ready).toMatchObject({ version: newer ? '2.11.0' : '2.10.0' });
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
-    expect(downloadModes).toEqual([false, !newer]);
+    expect(downloadModes).toEqual([windows, windows || !newer]);
     expect(updater.netSession.fetch.mock.calls[1][1].headers.Range).toBe(newer ? undefined : 'bytes=1-');
-    expect(fs.readdirSync(path.join(fixture, 'appimage-downloads'))).toEqual([]);
+    expect(fs.readdirSync(path.join(fixture, windows ? 'nsis-downloads' : 'appimage-downloads'))).toEqual([]);
   } finally {
     manager.stop();
     jest.useRealTimers();
@@ -222,8 +260,8 @@ test.each([
   }
 });
 
-test('unsigned Windows builds check official releases without running an installer', async () => {
-  const { manager, updater, net } = environment({ platform: 'win32' });
+test('Windows builds without packaged update configuration still check official releases', async () => {
+  const { manager, updater, net } = environment({ platform: 'win32', configured: false });
   net.fetch.mockResolvedValue({
     ok: true,
     json: async () => ({ tag_name: 'v2.10.0', assets: [{ name: 'AutoMeetingRecorder-2.10.0-win.exe' }] })
